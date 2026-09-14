@@ -22,7 +22,7 @@ jobs:
       - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl aria2 desktop-file-utils appstream dpkg-dev
+          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
