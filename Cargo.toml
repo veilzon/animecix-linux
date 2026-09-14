@@ -32,7 +32,7 @@ lto = true
 maintainer = "veilzon <veilzon@users.noreply.github.com>"
 copyright = "2026, veilzon <veilzon@users.noreply.github.com>"
 license-file = ["LICENSE", "0"]
-depends = "libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.4), mpv, aria2, xdg-utils, curl"
+depends = "libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.4), libglib2.0-0 (>= 2.66), mpv, aria2, xdg-utils, curl"
 section = "video"
 priority = "optional"
 extended-description = "GTK4/libadwaita ile yazılmış Türkçe anime izleme istemcisi; oynatmayı mpv'ye devreder, çok bağlantılı indirme için aria2c kullanır."
