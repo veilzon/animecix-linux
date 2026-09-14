@@ -42,7 +42,12 @@ jobs:
         run: |
           cargo test --release --bin animecix
           python3 tests/skip_harness.py
-          ./target/release/animecix --check-shaders
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Shader check
+        run: ./target/release/animecix --check-shaders
 
       - name: Build AppImage (thin, no version bump)
         # GITHUB_TOKEN bilerek verilmiyor: script içindeki publish_release
