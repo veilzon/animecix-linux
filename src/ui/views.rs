@@ -676,6 +676,24 @@ impl SettingsView {
         update_group.add(&check_btn);
         root.append(&update_group);
 
+        let proxy_group = adw::PreferencesGroup::new();
+        proxy_group.set_title("Okul Ağı (Proxy)");
+        let (proxy_row, proxy_sw) = crate::ui::components::switch_row(
+            "Filtreli Ağlarda Proxy Kullan",
+            "Liste, arama ve kapaklar proxy üzerinden gelir; video doğrudan oynar",
+            settings.proxy_enabled,
+        );
+        proxy_group.add(&proxy_row);
+        let proxy_url_row = adw::ActionRow::new();
+        proxy_url_row.set_title("Proxy Adresi");
+        let proxy_entry = gtk::Entry::new();
+        proxy_entry.set_text(&settings.proxy_base);
+        proxy_entry.set_placeholder_text(Some("https://proxy.ornek"));
+        proxy_entry.set_hexpand(true);
+        proxy_entry.set_sensitive(settings.proxy_enabled);
+        proxy_url_row.add_suffix(&proxy_entry);
+        proxy_group.add(&proxy_url_row);
+
         let shortcut_row_c = shortcut_row.clone();
         search_toggle.connect_active_notify(move |r| {
             shortcut_row_c.set_sensitive(r.is_active());
@@ -700,6 +718,8 @@ impl SettingsView {
             let light_r = light_sw.clone();
             let patience_spin_c = patience_spin.clone();
             let ask_r = ask_sw.clone();
+            let px_r = proxy_sw.clone();
+            let pxu_r = proxy_entry.clone();
             let s = s_base.clone();
             let on_save = on_save.clone();
             Rc::new(move || {
@@ -748,12 +768,23 @@ impl SettingsView {
                 updated.light_mode = light_r.is_active();
                 updated.source_patience_secs = patience_spin_c.value() as u64;
                 updated.fansub_ask_each_time = ask_r.is_active();
+                updated.proxy_enabled = px_r.is_active();
+                updated.proxy_base = pxu_r.text().trim().to_string();
                 on_save(updated);
             })
         };
 
         let sa_ask = save_all.clone();
         ask_sw.connect_active_notify(move |_| sa_ask());
+
+        let sa_px = save_all.clone();
+        let px_url_row_c = proxy_url_row.clone();
+        proxy_sw.connect_active_notify(move |sw| {
+            px_url_row_c.set_sensitive(sw.is_active());
+            sa_px();
+        });
+        let sa_pxu = save_all.clone();
+        proxy_entry.connect_changed(move |_| sa_pxu());
 
         let sa1 = save_all.clone();
         search_toggle.connect_active_notify(move |_| sa1());
@@ -835,6 +866,25 @@ impl SettingsView {
                 dlg.show();
             });
         }
+
+        let proxy_group = adw::PreferencesGroup::new();
+        proxy_group.set_title("Okul Ağı (Proxy)");
+        let (proxy_row, proxy_sw) = crate::ui::components::switch_row(
+            "Filtreli Ağlarda Proxy Kullan",
+            "Liste, arama ve kapaklar proxy üzerinden gelir; video doğrudan oynar",
+            s_base.proxy_enabled,
+        );
+        proxy_group.add(&proxy_row);
+        let proxy_url_row = adw::ActionRow::new();
+        proxy_url_row.set_title("Proxy Adresi");
+        let proxy_entry = gtk::Entry::new();
+        proxy_entry.set_text(&s_base.proxy_base);
+        proxy_entry.set_placeholder_text(Some("https://proxy.ornek"));
+        proxy_entry.set_hexpand(true);
+        proxy_entry.set_sensitive(s_base.proxy_enabled);
+        proxy_url_row.add_suffix(&proxy_entry);
+        proxy_group.add(&proxy_url_row);
+        root.insert_child_after(&proxy_group, Some(&dl_group));
 
         let data_group = adw::PreferencesGroup::new();
         data_group.set_title("Veri Yönetimi");

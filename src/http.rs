@@ -33,6 +33,38 @@ struct Inner {
     /// Kullanıcının tarayıcıdan aldığı cf_clearance bileti. Boşsa takılmaz.
     /// Değer ASLA log'a yazılmaz.
     cf_clearance: Mutex<String>,
+    /// Okul filtresi proxy'si (boşsa kapalı). Video hostlarına dokunulmaz,
+    /// yalnız PROXY_HOSTS'taki API/kapak/kasa hostları yeniden yazılır.
+    proxy_base: Mutex<String>,
+}
+
+/// Worker üzerinden taşınan hostlar (worker/proxy.js ALLOW ile birebir).
+/// Bu listede olmayan host (sibnet/streamtape/CDN mp4/localhost) aynen geçer.
+const PROXY_HOSTS: &[&str] = &[
+    "animecix.tv",
+    "tau-video.xyz",
+    "image.tmdb.org",
+    "raw.githubusercontent.com",
+];
+
+fn proxy_host_of(url: &str) -> &str {
+    url.split("//").nth(1).unwrap_or("").split('/').next().unwrap_or("")
+}
+
+/// Proxy açıksa ve host listedeyse `{proxy}/{host}{path+query}` üretir.
+/// Başlıklar HER ZAMAN özgün URL'ye göre hesaplanır (aşağıda rewrite'tan önce).
+fn proxy_rewrite(proxy: &str, url: &str) -> Option<String> {
+    let proxy = proxy.trim().trim_end_matches('/');
+    if proxy.is_empty() {
+        return None;
+    }
+    let host = proxy_host_of(url);
+    if !PROXY_HOSTS.contains(&host.to_lowercase().as_str()) {
+        return None;
+    }
+    let rest = url.split("//").nth(1).unwrap_or("");
+    let path = rest.split_at(host.len()).1;
+    Some(format!("{proxy}/{host}{path}"))
 }
 
 #[derive(Clone)]
@@ -126,7 +158,7 @@ impl ReqB<'_> {
     }
 }
 
-fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, clearance: &str) -> Result<RawResp, String> {
+fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, clearance: &str, proxy: &str) -> Result<RawResp, String> {
     let mut url = spec.url.clone();
     if let Some(q) = &spec.query {
         if !q.is_empty() {
@@ -138,6 +170,15 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
             url.push_str(&qs.join("&"));
         }
     }
+    // Başlıklar özgün host'a göre (rewrite'tan ÖNCE).
+    let mut extra: Vec<(String, String)> = browser_headers_for(&url, &spec.headers);
+    if let Some(c) = cookie_header_for(&url, &spec.headers, clearance) {
+        extra.push(("Cookie".to_string(), c));
+    }
+    // Proxy: yalnız izinli hostlar yeniden yazılır, diğerleri aynen geçer.
+    if let Some(pu) = proxy_rewrite(proxy, &url) {
+        url = pu;
+    }
     let mut rb = match spec.method {
         Method::Get => client.get(&url),
         Method::Post => client.post(&url),
@@ -146,11 +187,8 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     for (k, v) in &spec.headers {
         rb = rb.header(k, v);
     }
-    for (k, v) in browser_headers_for(&url, &spec.headers) {
-        rb = rb.header(&k, &v);
-    }
-    if let Some(c) = cookie_header_for(&url, &spec.headers, clearance) {
-        rb = rb.header("Cookie", &c);
+    for (k, v) in &extra {
+        rb = rb.header(k, v);
     }
     if let Some(j) = &spec.json_body {
         let body = serde_json::to_vec(j).map_err(|e| e.to_string())?;
@@ -162,7 +200,13 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     }
     let resp = rt.block_on(rb.send()).map_err(|e| e.to_string())?;
     let status = resp.status().as_u16();
-    let final_url = resp.uri().to_string();
+    // Worker redirect'i kendi takip eder; nihai adresi başlıkta verir.
+    let final_url = resp
+        .headers()
+        .get("x-final-url")
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_string)
+        .unwrap_or_else(|| resp.uri().to_string());
     let content_length = resp.content_length();
     let body = rt.block_on(resp.bytes()).map_err(|e| e.to_string())?.to_vec();
     Ok(RawResp {
@@ -183,7 +227,8 @@ fn exec_cascade(rt: &tokio::runtime::Runtime, inner: &Inner, spec: &Spec) -> Res
     let mut last: Option<Result<RawResp, String>> = None;
     for (idx, client) in order.iter().take(if inner.fallback.is_some() { 2 } else { 1 }) {
         let clearance = inner.cf_clearance.lock().map(|g| g.clone()).unwrap_or_default();
-        let res = exec_on(rt, client, &spec, &clearance);
+        let proxy = inner.proxy_base.lock().map(|g| g.clone()).unwrap_or_default();
+        let res = exec_on(rt, client, &spec, &clearance, &proxy);
         match &res {
             Ok(r) if r.status != 403 => {
                 inner.last_good.store(*idx, Ordering::Relaxed);
@@ -248,8 +293,18 @@ impl Http {
                 tx,
                 last_good: AtomicU8::new(0),
                 cf_clearance: Mutex::new(String::new()),
+                proxy_base: Mutex::new(String::new()),
             }),
         })
+    }
+
+    /// Okul filtresi proxy tabanı (boş string kapatır). Log'a yazılmaz.
+    pub fn set_proxy(&self, base: &str) {
+        let v = base.trim().trim_end_matches('/').to_string();
+        let v = if v.len() > 512 { String::new() } else { v };
+        if let Ok(mut g) = self.inner.proxy_base.lock() {
+            *g = v;
+        }
     }
 
     /// Cloudflare biletini kaydeder (boş string temizler). Log'a yazılmaz.
@@ -373,7 +428,7 @@ fn cookie_header_for(
 
 #[cfg(test)]
 mod tests {
-    use super::{browser_headers_for, cookie_header_for};
+    use super::{browser_headers_for, cookie_header_for, proxy_rewrite};
 
     #[test]
     fn animecix_api_gets_browser_headers() {
@@ -404,6 +459,49 @@ mod tests {
         ] {
             assert!(browser_headers_for(u, &[]).is_empty(), "{u} bozulmamalı");
         }
+    }
+
+    #[test]
+    fn proxy_rewrite_maps_allowlisted_hosts() {
+        let p = "https://proxy.ornek";
+        assert_eq!(
+            proxy_rewrite(p, "https://animecix.tv/secure/search/naruto?limit=20").as_deref(),
+            Some("https://proxy.ornek/animecix.tv/secure/search/naruto?limit=20")
+        );
+        assert_eq!(
+            proxy_rewrite(p, "https://tau-video.xyz/api/video/abc?vid=1").as_deref(),
+            Some("https://proxy.ornek/tau-video.xyz/api/video/abc?vid=1")
+        );
+        assert_eq!(
+            proxy_rewrite(p, "https://image.tmdb.org/t/p/w185/x.jpg").as_deref(),
+            Some("https://proxy.ornek/image.tmdb.org/t/p/w185/x.jpg")
+        );
+        assert_eq!(
+            proxy_rewrite(p, "https://raw.githubusercontent.com/veilzon/a/main/f.json").as_deref(),
+            Some("https://proxy.ornek/raw.githubusercontent.com/veilzon/a/main/f.json")
+        );
+        // Sondaki eğik çizgi yutulur, çift eğik çizgi çıkmaz.
+        assert_eq!(
+            proxy_rewrite("https://proxy.ornek/", "https://animecix.tv/secure/x").as_deref(),
+            Some("https://proxy.ornek/animecix.tv/secure/x")
+        );
+    }
+
+    #[test]
+    fn proxy_rewrite_leaves_video_and_local_hosts() {
+        let p = "https://proxy.ornek";
+        for u in [
+            "https://video.sibnet.ru/v/1/2.mp4",
+            "https://sibnet.ru/shell.php?videoid=1",
+            "https://streamtape.com/e/xyz",
+            "https://cdn.ornek/v.mp4",
+            "http://127.0.0.1:6800/jsonrpc",
+            "https://evil.com/animecix.tv/secure/x",
+        ] {
+            assert!(proxy_rewrite(p, u).is_none(), "{u} değişmemeli");
+        }
+        assert!(proxy_rewrite("", "https://animecix.tv/secure/x").is_none());
+        assert!(proxy_rewrite("   ", "https://animecix.tv/secure/x").is_none());
     }
 
     #[test]

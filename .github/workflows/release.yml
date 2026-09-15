@@ -70,8 +70,17 @@ jobs:
       - name: Install cargo-deb
         run: cargo install cargo-deb
 
-      - name: Build .deb
+      - name: Build .deb (normal)
         run: cargo deb -- --locked
+
+      - name: Build .deb (uncensored)
+        # Sıra önemli: önce normal paketlendi, şimdi proxy gömülü derle.
+        env:
+          ANIMECIX_PROXY_BASE: https://animecix-proxy.yasar-123-sevda.workers.dev
+        run: |
+          cargo build --release --locked
+          cp target/release/animecix target/release/animecix-uncensored
+          cargo deb --no-build --variant uncensored
 
       - name: Verify artifacts
         run: |
@@ -82,8 +91,11 @@ jobs:
           TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
           [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
           dpkg-deb --info target/debian/*.deb
-          dpkg-deb --contents target/debian/*.deb
+          dpkg-deb --contents target/debian/animecix_1.2.1-1_amd64.deb
+          dpkg-deb --contents target/debian/animecix-uncensored_1.2.1-1_amd64.deb
+          test -z "$(comm -12 <(dpkg-deb --contents target/debian/animecix_1.2.1-1_amd64.deb | awk '{print $6}' | sort) <(dpkg-deb --contents target/debian/animecix-uncensored_1.2.1-1_amd64.deb | awk '{print $6}' | sort))"
           desktop-file-validate packaging/arch/animecix.desktop
+          desktop-file-validate packaging/arch/animecix-uncensored.desktop
 
       - name: Publish to GitHub Release
         if: startsWith(github.ref, 'refs/tags/')
@@ -94,6 +106,7 @@ jobs:
             target/debian/*.deb
           body: |
             Kurulum (Debian/Ubuntu): sudo apt install ./animecix_*_amd64.deb
+            Kurulum (okul/filtreli ağ): sudo apt install ./animecix-uncensored_*_amd64.deb
             Kurulum (diğer): chmod +x AnimeciX-x86_64.AppImage && ./AnimeciX-x86_64.AppImage
             Gerekenler: mpv, aria2, curl.
             AppImage yeni sürümü açılışta kendisi indirir; .deb kullananlar apt ile günceller.
