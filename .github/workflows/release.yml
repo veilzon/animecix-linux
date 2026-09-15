@@ -1,5 +1,7 @@
 name: Release build (AppImage + .deb)
 
+# En eski desteklenen distro'da derle (bookworm, glibc 2.36),
+# her yere dağıt: ileriye uyumluluk kuralı.
 on:
   push:
     tags: ["v*"]
@@ -15,20 +17,33 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Git safe directory (container root sahipliği)
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev
+          apt-get update
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl ca-certificates git python3 file aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev xvfb binutils
+          rm -rf /var/lib/apt/lists/*
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
       - name: Rust cache
         uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bookworm
 
       - name: Version check (tag == Cargo.toml)
         if: startsWith(github.ref, 'refs/tags/')
@@ -40,7 +55,7 @@ jobs:
 
       - name: Tests
         run: |
-          cargo test --release --bin animecix
+          xvfb-run -a cargo test --release --bin animecix
           python3 tests/skip_harness.py
 
       - name: Build release binary
@@ -64,6 +79,10 @@ jobs:
         run: |
           ls -la AnimeciX-x86_64.AppImage target/debian/*.deb
           test ! "$(ldd target/release/animecix | grep 'not found' || true)"
+          MAXGLIBC=$(objdump -T target/release/animecix | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
+          echo "max glibc: $MAXGLIBC"
+          TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
+          [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
           dpkg-deb --info target/debian/*.deb
           dpkg-deb --contents target/debian/*.deb
           desktop-file-validate packaging/arch/animecix.desktop

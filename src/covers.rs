@@ -14,7 +14,7 @@ fn ensure_size_provider(w: i32, h: i32) {
     }
 
     let css = gtk::CssProvider::new();
-    css.load_from_string(&format!(
+    css.load_from_data(&format!(
         ".cover-fixed-{w}-{h} {{ \
             min-width:{w}px; max-width:{w}px; \
             min-height:{h}px; max-height:{h}px; \

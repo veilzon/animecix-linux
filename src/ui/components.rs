@@ -1,4 +1,5 @@
 use gtk::prelude::*;
+use adw::prelude::*;
 use crate::api::{Client, Title};
 
 pub fn bookmark_button(client: &Client, t: &Title) -> gtk::Button {
@@ -42,4 +43,18 @@ pub fn create_status_page(title: &str, description: &str, icon_name: &str) -> ad
     sp.set_icon_name(Some(icon_name));
     sp.set_vexpand(true);
     sp
+}
+
+/// Adw 1.2 uyumlu açma/kapama satırı (adw::SwitchRow 1.4 ister).
+/// Döner: (satır, anahtar). Satıra tıklamak anahtarı çevirir.
+pub fn switch_row(title: &str, subtitle: &str, active: bool) -> (adw::ActionRow, gtk::Switch) {
+    let row = adw::ActionRow::new();
+    row.set_title(title);
+    row.set_subtitle(subtitle);
+    let sw = gtk::Switch::new();
+    sw.set_valign(gtk::Align::Center);
+    sw.set_active(active);
+    row.add_suffix(&sw);
+    row.set_activatable_widget(Some(&sw));
+    (row, sw)
 }

@@ -164,10 +164,11 @@ impl WelcomeView {
         let pref_group = adw::PreferencesGroup::new();
         pref_group.set_title("Hızlı Tercihler");
 
-        let fs_row = adw::SwitchRow::new();
-        fs_row.set_title("MPV Otomatik Tam Ekran");
-        fs_row.set_subtitle("Video başladığında MPV tam ekranda açılır");
-        fs_row.set_active(settings.auto_fullscreen);
+        let (fs_row, fs_sw) = crate::ui::components::switch_row(
+            "MPV Otomatik Tam Ekran",
+            "Video başladığında MPV tam ekranda açılır",
+            settings.auto_fullscreen,
+        );
         pref_group.add(&fs_row);
 
         let theme_row = adw::ComboRow::new();
@@ -192,16 +193,18 @@ impl WelcomeView {
         }
         pref_group.add(&theme_row);
 
-        let intro_hint_row = adw::SwitchRow::new();
-        intro_hint_row.set_title("Atlama Bildirimleri");
-        intro_hint_row.set_subtitle("İntro/outro başında atlama ipucu göster");
-        intro_hint_row.set_active(settings.show_intro_hint);
+        let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
+            "Atlama Bildirimleri",
+            "İntro/outro başında atlama ipucu göster",
+            settings.show_intro_hint,
+        );
         pref_group.add(&intro_hint_row);
 
-        let music_hint_row = adw::SwitchRow::new();
-        music_hint_row.set_title("Şarkı İpucu");
-        music_hint_row.set_subtitle("Şarkı satırında Shift+M ile tarayıcıda aç ipucunu göster");
-        music_hint_row.set_active(settings.show_music_hint);
+        let (music_hint_row, music_hint_sw) = crate::ui::components::switch_row(
+            "Şarkı İpucu",
+            "Şarkı satırında Shift+M ile tarayıcıda aç ipucunu göster",
+            settings.show_music_hint,
+        );
         pref_group.add(&music_hint_row);
         root.append(&pref_group);
 
@@ -216,9 +219,9 @@ impl WelcomeView {
             let base = settings.clone();
             start_btn.connect_clicked(move |_| {
                 let mut s = base.clone();
-                s.auto_fullscreen = fs_row.is_active();
-                s.show_intro_hint = intro_hint_row.is_active();
-                s.show_music_hint = music_hint_row.is_active();
+                s.auto_fullscreen = fs_sw.is_active();
+                s.show_intro_hint = intro_hint_sw.is_active();
+                s.show_music_hint = music_hint_sw.is_active();
                 s.theme = crate::theme::THEMES
                     .get(theme_row.selected() as usize)
                     .map(|(id, _)| id.to_string())

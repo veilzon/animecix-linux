@@ -128,7 +128,7 @@ pub fn apply_theme(window: &adw::ApplicationWindow, theme_id: &str) {
         }
         true
     });
-    PROVIDER.with(|p| p.load_from_string(&theme_css(theme_id)));
+    PROVIDER.with(|p| p.load_from_data(&theme_css(theme_id)));
     if wants_force_dark(theme_id) {
         window.add_css_class("theme-dark");
     } else {

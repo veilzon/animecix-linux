@@ -639,9 +639,9 @@ impl App {
                      rgba({r1},{g1},{b1},0.20) 55%, rgba({r2},{g2},{b2},0.30)); }}"
                 );
                 let prov_a = gtk::CssProvider::new();
-                prov_a.load_from_string(&css_a);
+                prov_a.load_from_data(&css_a);
                 let prov_b = gtk::CssProvider::new();
-                prov_b.load_from_string(&css_b);
+                prov_b.load_from_data(&css_b);
                 root.set_widget_name("movie-tint-root");
                 let display = root.display();
                 gtk::style_context_add_provider_for_display(
@@ -952,12 +952,28 @@ impl App {
         match cached_internet_status() {
             crate::api::InternetStatus::Online => {}
             crate::api::InternetStatus::Offline { reason: _ } => {
-                let banner = adw::Banner::new("İnternet bağlantısı yok");
-                banner.set_button_label(Some("Yeniden Kontrol Et"));
+                let banner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+                banner.add_css_class("tip-banner");
+                let icon = gtk::Image::from_icon_name("dialog-warning-symbolic");
+                icon.set_icon_size(gtk::IconSize::Normal);
+                icon.set_valign(gtk::Align::Center);
+                let text = gtk::Label::new(Some("İnternet bağlantısı yok"));
+                text.add_css_class("tip-banner-text");
+                text.set_xalign(0.0);
+                text.set_wrap(true);
+                text.set_hexpand(true);
+                text.set_valign(gtk::Align::Center);
+                let retry_btn = gtk::Button::with_label("Yeniden Kontrol Et");
+                retry_btn.add_css_class("flat");
+                retry_btn.add_css_class("pill");
+                retry_btn.set_valign(gtk::Align::Center);
                 let this = self.clone_ref();
-                banner.connect_button_clicked(move |_| {
+                retry_btn.connect_clicked(move |_| {
                     this.refresh_internet_status();
                 });
+                banner.append(&icon);
+                banner.append(&text);
+                banner.append(&retry_btn);
                 outer.append(&banner);
             }
         }

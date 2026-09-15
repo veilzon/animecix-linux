@@ -114,7 +114,7 @@ pub fn ensure_tools_css() {
     static LOADED: OnceLock<()> = OnceLock::new();
     LOADED.get_or_init(|| {
         let css = gtk::CssProvider::new();
-        css.load_from_string(&tools_menu_css());
+        css.load_from_data(&tools_menu_css());
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
                 &display,

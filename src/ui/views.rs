@@ -441,10 +441,11 @@ impl SettingsView {
         let ep_group = adw::PreferencesGroup::new();
         ep_group.set_title("Hızlı Bölüm Arama");
 
-        let search_toggle_row = adw::SwitchRow::new();
-        search_toggle_row.set_title("Aktif");
-        search_toggle_row.set_subtitle("Bölüm ekranında klavye kısayolu ile hızlı bölüm arama çubuğunu aktif et");
-        search_toggle_row.set_active(settings.quick_search_enabled);
+        let (search_toggle_row, search_toggle) = crate::ui::components::switch_row(
+            "Aktif",
+            "Bölüm ekranında klavye kısayolu ile hızlı bölüm arama çubuğunu aktif et",
+            settings.quick_search_enabled,
+        );
 
         let shortcut_row = adw::ComboRow::new();
         shortcut_row.set_title("Kısayol Tuşu");
@@ -527,38 +528,43 @@ impl SettingsView {
         let player_group = adw::PreferencesGroup::new();
         player_group.set_title("Oynatıcı Ayarları");
 
-        let fs_row = adw::SwitchRow::new();
-        fs_row.set_title("MPV Otomatik Tam Ekran");
-        fs_row.set_subtitle("Video başladığında MPV'yi otomatik tam ekran modunda açar");
-        fs_row.set_active(settings.auto_fullscreen);
+        let (fs_row, fs_sw) = crate::ui::components::switch_row(
+            "MPV Otomatik Tam Ekran",
+            "Video başladığında MPV'yi otomatik tam ekran modunda açar",
+            settings.auto_fullscreen,
+        );
         player_group.add(&fs_row);
 
-        let intro_hint_row = adw::SwitchRow::new();
-        intro_hint_row.set_title("İntro/Outro Bildirimleri");
-        intro_hint_row.set_subtitle("İntro ve outro başlayınca mpv'de bilgi gösterir ('s'/'e' tuşları hep çalışır)");
-        intro_hint_row.set_active(settings.show_intro_hint);
+        let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
+            "İntro/Outro Bildirimleri",
+            "İntro ve outro başlayınca mpv'de bilgi gösterir ('s'/'e' tuşları hep çalışır)",
+            settings.show_intro_hint,
+        );
         player_group.add(&intro_hint_row);
 
-        let music_hint_row = adw::SwitchRow::new();
-        music_hint_row.set_title("Şarkıda 'Shift+M' Tuşu İpucu");
-        music_hint_row.set_subtitle("Şarkı satırında şarkıyı tarayıcıda açan 'Shift+M' tuşunu hatırlatır");
-        music_hint_row.set_active(settings.show_music_hint);
+        let (music_hint_row, music_hint_sw) = crate::ui::components::switch_row(
+            "Şarkıda 'Shift+M' Tuşu İpucu",
+            "Şarkı satırında şarkıyı tarayıcıda açan 'Shift+M' tuşunu hatırlatır",
+            settings.show_music_hint,
+        );
         player_group.add(&music_hint_row);
 
-        let play_q_row = adw::SwitchRow::new();
-        play_q_row.set_title("Oynatırken Kalite Sor");
-        play_q_row.set_subtitle("Bölüm açılırken kalite seçilsin (kapalıysa en iyi açılır)");
-        play_q_row.set_active(settings.play_ask_quality);
+        let (play_q_row, play_q_sw) = crate::ui::components::switch_row(
+            "Oynatırken Kalite Sor",
+            "Bölüm açılırken kalite seçilsin (kapalıysa en iyi açılır)",
+            settings.play_ask_quality,
+        );
         player_group.add(&play_q_row);
         root.append(&player_group);
 
         let perf_group = adw::PreferencesGroup::new();
         perf_group.set_title("Performans");
 
-        let light_row = adw::SwitchRow::new();
-        light_row.set_title("Hafif Mod (Düşük RAM)");
-        light_row.set_subtitle("Arayüzü CPU ile çizer, bellek kullanımını ~%35 azaltır. Uygulamayı yeniden başlatınca geçerli olur.");
-        light_row.set_active(settings.light_mode);
+        let (light_row, light_sw) = crate::ui::components::switch_row(
+            "Hafif Mod (Düşük RAM)",
+            "Arayüzü CPU ile çizer, bellek kullanımını ~%35 azaltır. Uygulamayı yeniden başlatınca geçerli olur.",
+            settings.light_mode,
+        );
         perf_group.add(&light_row);
 
         let patience_row = adw::ActionRow::new();
@@ -609,10 +615,11 @@ impl SettingsView {
 
         let fansub_group = adw::PreferencesGroup::new();
         fansub_group.set_title("Çeviri (Fansub) Seçimi");
-        let ask_row = adw::SwitchRow::new();
-        ask_row.set_title("Her bölümde sor");
-        ask_row.set_subtitle("Kapalıysa otomatik olarak en yüksek puanlı çeviri seçilir");
-        ask_row.set_active(settings.fansub_ask_each_time);
+        let (ask_row, ask_sw) = crate::ui::components::switch_row(
+            "Her bölümde sor",
+            "Kapalıysa otomatik olarak en yüksek puanlı çeviri seçilir",
+            settings.fansub_ask_each_time,
+        );
         fansub_group.add(&ask_row);
         let fansub_desc = gtk::Label::new(Some(
             "Bir bölüme tıkladığınızda mevcut çeviriler listelenir (örn. Kirigana, Wolwead). Puan yıldızı topluluk oylarına dayanır.",
@@ -631,17 +638,19 @@ impl SettingsView {
 
         let on_save = Rc::new(on_save);
 
-        let auto_update_row = adw::SwitchRow::new();
-        auto_update_row.set_title("Otomatik Güncelleme");
-        auto_update_row.set_subtitle("Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller");
-        auto_update_row.set_active(settings.auto_update);
+        let (auto_update_row, auto_update_sw) = crate::ui::components::switch_row(
+            "Otomatik Güncelleme",
+            "Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller",
+            settings.auto_update,
+        );
         auto_update_row.set_sensitive(crate::update::is_appimage());
         update_group.add(&auto_update_row);
 
-        let notify_row = adw::SwitchRow::new();
-        notify_row.set_title("Güncel Sürüm Bildirimi");
-        notify_row.set_subtitle("Başlatmada güncel sürümdeyken bilgilendirme göster");
-        notify_row.set_active(settings.notify_uptodate);
+        let (notify_row, notify_sw) = crate::ui::components::switch_row(
+            "Güncel Sürüm Bildirimi",
+            "Başlatmada güncel sürümdeyken bilgilendirme göster",
+            settings.notify_uptodate,
+        );
         notify_row.set_sensitive(crate::update::is_appimage());
         update_group.add(&notify_row);
 
@@ -668,29 +677,29 @@ impl SettingsView {
         root.append(&update_group);
 
         let shortcut_row_c = shortcut_row.clone();
-        search_toggle_row.connect_active_notify(move |r| {
+        search_toggle.connect_active_notify(move |r| {
             shortcut_row_c.set_sensitive(r.is_active());
         });
 
         let s_base = settings.clone();
 
         let save_all = {
-            let st_r = search_toggle_row.clone();
+            let st_r = search_toggle.clone();
             let sc_r = shortcut_row.clone();
             let ssc_r = search_sc_row.clone();
             let tsc_r = tools_sc_row.clone();
             let scale_r = scale_row.clone();
             let theme_r = theme_row.clone();
-            let fs_r = fs_row.clone();
-            let ih_r = intro_hint_row.clone();
-            let mh_r = music_hint_row.clone();
-            let pq_r = play_q_row.clone();
-            let au_r = auto_update_row.clone();
-            let notify_r = notify_row.clone();
+            let fs_r = fs_sw.clone();
+            let ih_r = intro_hint_sw.clone();
+            let mh_r = music_hint_sw.clone();
+            let pq_r = play_q_sw.clone();
+            let au_r = auto_update_sw.clone();
+            let notify_r = notify_sw.clone();
             let up_r = upscale_row.clone();
-            let light_r = light_row.clone();
+            let light_r = light_sw.clone();
             let patience_spin_c = patience_spin.clone();
-            let ask_r = ask_row.clone();
+            let ask_r = ask_sw.clone();
             let s = s_base.clone();
             let on_save = on_save.clone();
             Rc::new(move || {
@@ -744,10 +753,10 @@ impl SettingsView {
         };
 
         let sa_ask = save_all.clone();
-        ask_row.connect_active_notify(move |_| sa_ask());
+        ask_sw.connect_active_notify(move |_| sa_ask());
 
         let sa1 = save_all.clone();
-        search_toggle_row.connect_active_notify(move |_| sa1());
+        search_toggle.connect_active_notify(move |_| sa1());
         let sa2 = save_all.clone();
         shortcut_row.connect_selected_notify(move |_| sa2());
         let sa3 = save_all.clone();
@@ -759,21 +768,21 @@ impl SettingsView {
         let sa_theme = save_all.clone();
         theme_row.connect_selected_notify(move |_| sa_theme());
         let sa4 = save_all.clone();
-        fs_row.connect_active_notify(move |_| sa4());
+        fs_sw.connect_active_notify(move |_| sa4());
         let sa5a = save_all.clone();
-        intro_hint_row.connect_active_notify(move |_| sa5a());
+        intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();
-        music_hint_row.connect_active_notify(move |_| sa5b());
+        music_hint_sw.connect_active_notify(move |_| sa5b());
         let sa5c = save_all.clone();
-        play_q_row.connect_active_notify(move |_| sa5c());
+        play_q_sw.connect_active_notify(move |_| sa5c());
         let sa6 = save_all.clone();
-        auto_update_row.connect_active_notify(move |_| sa6());
+        auto_update_sw.connect_active_notify(move |_| sa6());
         let sa7 = save_all.clone();
-        notify_row.connect_active_notify(move |_| sa7());
+        notify_sw.connect_active_notify(move |_| sa7());
         let sa8 = save_all.clone();
         upscale_row.connect_selected_notify(move |_| sa8());
         let sa9 = save_all.clone();
-        light_row.connect_active_notify(move |_| sa9());
+        light_sw.connect_active_notify(move |_| sa9());
         let sa10 = save_all.clone();
         patience_spin.connect_value_changed(move |_| sa10());
 
@@ -800,12 +809,17 @@ impl SettingsView {
                 let s_base_c = s_o.clone();
                 let on_save_c = on_o.clone();
                 let row_c = row_o.clone();
-                let dialog = gtk::FileDialog::builder().title("İndirme Klasörü Seç").build();
-                dialog.select_folder(
+                let dlg = gtk::FileChooserNative::new(
+                    Some("İndirme Klasörü Seç"),
                     None::<&gtk::Window>,
-                    None::<&gio::Cancellable>,
-                    move |res| match res {
-                        Ok(f) => {
+                    gtk::FileChooserAction::SelectFolder,
+                    Some("_Seç"),
+                    Some("_Vazgeç"),
+                );
+                dlg.set_modal(true);
+                dlg.connect_response(move |d, r| {
+                    if r == gtk::ResponseType::Accept {
+                        if let Some(f) = d.file() {
                             if let Some(path) = f.path() {
                                 let dir = path.to_string_lossy().into_owned();
                                 let mut s = s_base_c.clone();
@@ -814,26 +828,29 @@ impl SettingsView {
                                 on_save_c(s);
                             }
                         }
-                        Err(e) => eprintln!("[DL] klasör seçilemedi: {e}"),
-                    },
-                );
+                    } else {
+                        eprintln!("[DL] klasör seçilemedi: vazgeçildi");
+                    }
+                });
+                dlg.show();
             });
         }
 
         let data_group = adw::PreferencesGroup::new();
         data_group.set_title("Veri Yönetimi");
 
-        let uninstall_row = adw::SwitchRow::new();
-        uninstall_row.set_title("Uygulamayı ve Başlatıcıyı da Sistemden Kaldır");
-        uninstall_row.set_subtitle("Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler");
-        uninstall_row.set_active(true);
+        let (uninstall_row, uninstall_sw) = crate::ui::components::switch_row(
+            "Uygulamayı ve Başlatıcıyı da Sistemden Kaldır",
+            "Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler",
+            true,
+        );
         data_group.add(&uninstall_row);
 
         let wipe_btn = gtk::Button::with_label("Tüm Verileri Sıfırla ve Temizle");
         wipe_btn.add_css_class("destructive-action");
         wipe_btn.set_margin_top(8);
         let on_wipe = Rc::new(on_wipe);
-        let un_c = uninstall_row.clone();
+        let un_c = uninstall_sw.clone();
 
         wipe_btn.connect_clicked(move |btn| {
             let remove_app = un_c.is_active();

@@ -8,8 +8,8 @@ repository = "https://github.com/veilzon/animecix-linux"
 license = "MIT"
 
 [dependencies]
-gtk = { package = "gtk4", version = "0.8", features = ["v4_14"] }
-adw = { package = "libadwaita", version = "0.6", features = ["v1_4"] }
+gtk = { package = "gtk4", version = "0.8", features = ["v4_8"] }
+adw = { package = "libadwaita", version = "0.6", features = ["v1_2"] }
 glib = "0.19"
 gio = "0.19"
 gdk-pixbuf = "0.19"
@@ -32,7 +32,7 @@ lto = true
 maintainer = "veilzon <veilzon@users.noreply.github.com>"
 copyright = "2026, veilzon <veilzon@users.noreply.github.com>"
 license-file = ["LICENSE", "0"]
-depends = "libgtk-4-1 (>= 4.14), libadwaita-1-0 (>= 1.4), libglib2.0-0 (>= 2.66), mpv, aria2, xdg-utils, curl"
+depends = "libgtk-4-1 (>= 4.8), libadwaita-1-0 (>= 1.2), libglib2.0-0 (>= 2.66), mpv, aria2, xdg-utils, curl"
 section = "video"
 priority = "optional"
 extended-description = "GTK4/libadwaita ile yazılmış Türkçe anime izleme istemcisi; oynatmayı mpv'ye devreder, çok bağlantılı indirme için aria2c kullanır."

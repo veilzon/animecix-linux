@@ -60,7 +60,7 @@ pub fn ensure_row_menu_css() {
     static LOADED: OnceLock<()> = OnceLock::new();
     LOADED.get_or_init(|| {
         let css = gtk::CssProvider::new();
-        css.load_from_string(&row_menu_css());
+        css.load_from_data(&row_menu_css());
         if let Some(display) = gtk::gdk::Display::default() {
             gtk::style_context_add_provider_for_display(
                 &display,

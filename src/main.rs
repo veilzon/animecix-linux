@@ -98,7 +98,7 @@ fn main() {
             theme.add_search_path(base.join("usr/share/icons"));
 
             let css = gtk::CssProvider::new();
-            css.load_from_string(
+            css.load_from_data(
                 r#"/* === FlowBoxChild Temizliği (Çift arka plan engelleme) === */
                 flowboxchild {
                     padding: 0;
