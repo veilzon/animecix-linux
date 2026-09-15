@@ -28,14 +28,12 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Git safe directory (container root sahipliği)
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
       - name: Install system dependencies
         run: |
           apt-get update
           apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl ca-certificates git python3 file aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev xvfb binutils
           rm -rf /var/lib/apt/lists/*
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
