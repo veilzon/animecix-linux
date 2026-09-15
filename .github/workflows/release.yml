@@ -31,7 +31,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential curl ca-certificates git python3 file aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev xvfb xauth binutils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake curl ca-certificates git python3 file aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev xvfb xauth binutils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
