@@ -20,3 +20,5 @@ demo.sh
 src/bin/probe.rs
 src/bin/scrolltest.rs
 flathub/
+worker/.wrangler/
+worker/node_modules/
