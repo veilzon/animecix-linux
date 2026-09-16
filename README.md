@@ -11,6 +11,8 @@
 Tek dosyalık taşınabilir **AppImage** olarak dağıtılır; uygulama başlatmada yeni sürümü
 kontrol eder ve kendini otomatik güncelleyebilir. 
 
+
+
 Ayrıca okul ve iş yerleri gibi filtreli ağlar için animecix-uncensored .deb paketi vardır; proxy varsayılan açık gelir, liste ve arama filtreye takılmadan çalışır. Normal sürümle yan yana kurulabilir (sudo apt install ./animecix-uncensored_*_amd64.deb). Video doğrudan oynatıldığı için ağın video sunucularına erişimi ayrıca gerekir (videolar açılmayabilir). Release sayfasında **1.2.1** sürümü için bulabilirsiniz.
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
