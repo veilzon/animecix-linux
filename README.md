@@ -35,6 +35,8 @@ kontrol eder ve kendini otomatik güncelleyebilir.
 
 ## Ekran Görüntüleri
 
+_ekran görüntüleri her zaman güncel olmayabilir._
+
 <p align="center">
   <img src="screenshots/temalar.png" width="100%">
   <b>5 koyu tema: Koyu, Bordo, Orman, Lacivert, Mor</b>
