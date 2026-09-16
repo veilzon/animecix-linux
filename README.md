@@ -12,7 +12,7 @@ Tek dosyalık taşınabilir **AppImage** olarak dağıtılır; uygulama başlatm
 kontrol eder ve kendini otomatik güncelleyebilir.
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
-> kullanır. Hizmet sağlayıcıya zarar vermeden, kendi sorumluluğunda kullanın.
+> kullanır. Hizmet sağlayıcıya zarar vermeden, kendi sorumluluğunuzda kullanın.
 
 ---
 
