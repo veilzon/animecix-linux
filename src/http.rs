@@ -260,6 +260,21 @@ impl Http {
                 .emulation(wreq_util::Emulation::Chrome149)
                 .timeout(Duration::from_secs(15))
                 .connect_timeout(Duration::from_secs(5));
+            // MEB TLS-intercept: okul ağı, tahtadaki tarayıcı/curl'ün güvendiği
+            // ara sertifikayı sistem deposuna (/etc/ssl/certs) kurar; wreq
+            // varsayılanı yalnız Mozilla webpki kökleri olduğu için o sertifika
+            // tanınmaz ve istek "certificate verify failed" ile kesilir.
+            // Debian/Pardus sistem deposu Mozilla setini de içerdiğinden bunu
+            // takmak güven kaybı değildir. Depo yüklenemezse depoda değişiklik
+            // olmadan devam edilir (fallback = bugünkü webpki davranışı).
+            match wreq::tls::trust::CertStore::builder().set_default_paths().build() {
+                Ok(store) => {
+                    b = b.tls_cert_store(store);
+                }
+                Err(e) => {
+                    eprintln!("animecix: sistem sertifika deposu yüklenemedi ({e}), webpki kökleriyle devam ediliyor");
+                }
+            }
             if let Some(p) = proxy {
                 let pr = wreq::Proxy::all(p).map_err(|e| e.to_string())?;
                 b = b.proxy(pr);
@@ -429,6 +444,17 @@ fn cookie_header_for(
 #[cfg(test)]
 mod tests {
     use super::{browser_headers_for, cookie_header_for, proxy_rewrite};
+
+    #[test]
+    fn system_cert_store_loads() {
+        // Bu makinede sistem deposu (/etc/ssl/certs) mevcut olmalı; Ok dönmesi
+        // Http::new'daki tls_cert_store dalının da çalışacağını kanıtlar.
+        // Ağ gerektirmez, yalnız yerel dosya okur.
+        match wreq::tls::trust::CertStore::builder().set_default_paths().build() {
+            Ok(_) => {}
+            Err(e) => panic!("sistem sertifika deposu yüklenemedi: {e}"),
+        }
+    }
 
     #[test]
     fn animecix_api_gets_browser_headers() {
