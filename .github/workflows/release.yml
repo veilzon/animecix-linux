@@ -90,11 +90,12 @@ jobs:
           echo "max glibc: $MAXGLIBC"
           TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
           [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
-          dpkg-deb --info target/debian/animecix_1.2.1-1_amd64.deb
-          dpkg-deb --info target/debian/animecix-uncensored_1.2.1-1_amd64.deb
-          dpkg-deb --contents target/debian/animecix_1.2.1-1_amd64.deb
-          dpkg-deb --contents target/debian/animecix-uncensored_1.2.1-1_amd64.deb
-          test -z "$(comm -12 <(dpkg-deb --contents target/debian/animecix_1.2.1-1_amd64.deb | grep '^-' | awk '{print $6}' | sort) <(dpkg-deb --contents target/debian/animecix-uncensored_1.2.1-1_amd64.deb | grep '^-' | awk '{print $6}' | sort))"
+          VER=$(grep -m1 '^version =' Cargo.toml | cut -d'"' -f2)
+          dpkg-deb --info target/debian/animecix_${VER}-1_amd64.deb
+          dpkg-deb --info target/debian/animecix-uncensored_${VER}-1_amd64.deb
+          dpkg-deb --contents target/debian/animecix_${VER}-1_amd64.deb
+          dpkg-deb --contents target/debian/animecix-uncensored_${VER}-1_amd64.deb
+          test -z "$(comm -12 <(dpkg-deb --contents target/debian/animecix_${VER}-1_amd64.deb | grep '^-' | awk '{print $6}' | sort) <(dpkg-deb --contents target/debian/animecix-uncensored_${VER}-1_amd64.deb | grep '^-' | awk '{print $6}' | sort))"
           desktop-file-validate packaging/arch/animecix.desktop
           desktop-file-validate packaging/arch/animecix-uncensored.desktop
 

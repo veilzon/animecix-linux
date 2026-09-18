@@ -48,6 +48,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.2.2" date="2026-09-18">
+      <description>
+        <p>İndirilenler yenilemesi: arama çubuğu, ikon butonlar, bölüm adlı başlıklar, duraklatmada üste atmama düzeltmesi; okul ağı TLS sertifika düzeltmesi.</p>
+      </description>
+    </release>
     <release version="1.2.1" date="2026-09-13">
       <description>
         <p>Başlık çubuğunda Geri butonu; Sayfalar menüsüne Ana Sayfa eklendi, Enter ile seçim düzeltildi; sayfa geçişlerinde klavye odağı (PgUp/PgDn her sayfada kaydırır); VPN/sing-box desteği kaldırıldı.</p>

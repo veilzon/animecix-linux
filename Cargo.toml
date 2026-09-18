@@ -1,6 +1,6 @@
 [package]
 name = "animecix"
-version = "1.2.1"
+version = "1.2.2"
 edition = "2021"
 description = "Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 homepage = "https://github.com/veilzon/animecix-linux"
