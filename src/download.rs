@@ -26,6 +26,11 @@ pub struct DownloadRecord {
     pub title: String,
     pub season: u64,
     pub episode: u64,
+    /// Bölüm adı (satır başlığı için).
+    /// NOT: kalıcılık elde yazılır (save/load_queue); struct'ta `serde`
+    /// derive'u olmadığı için `#[serde(default)]` yerine `load_queue`
+    /// içindeki `unwrap_or("")` varsayılanı eski kayıtları karşılar.
+    pub ep_name: String,
     pub fansub: String,
     pub quality: String,
     pub url: String,
@@ -323,6 +328,7 @@ pub fn build_record(
         title: series.to_string(),
         season: ep.season,
         episode: ep.episode,
+        ep_name: ep.name.clone(),
         fansub: fs.name.clone(),
         quality: label,
         url: url.to_string(),
@@ -371,6 +377,7 @@ pub fn save_queue(path: &Path, items: &[DownloadRecord]) -> Result<(), String> {
             };
             serde_json::json!({
                 "id": r.id, "title": r.title, "season": r.season, "episode": r.episode,
+                "ep_name": r.ep_name,
                 "fansub": r.fansub, "quality": r.quality, "url": r.url,
                 "referer": r.referer, "dest": r.dest.to_string_lossy(),
                 "total": r.total, "have": r.have, "status": status,
@@ -411,6 +418,7 @@ pub fn load_queue(path: &Path) -> Vec<DownloadRecord> {    let Ok(bytes) = std::
                 title: r["title"].as_str().unwrap_or("").to_string(),
                 season: r["season"].as_u64().unwrap_or(0),
                 episode: r["episode"].as_u64().unwrap_or(0),
+                ep_name: r["ep_name"].as_str().unwrap_or("").to_string(),
                 fansub: r["fansub"].as_str().unwrap_or("").to_string(),
                 quality,
                 url: r["url"].as_str().unwrap_or("").to_string(),
@@ -543,7 +551,7 @@ impl DownloadManager {
         self.save();
         self.emit(UiEvent::Changed);
         if !quiet {
-            self.emit(UiEvent::Toast("⬇ Kuyruğa eklendi".to_string()));
+            self.emit(UiEvent::Toast("Kuyruğa eklendi".to_string()));
         }
         self.ensure_worker();
     }
@@ -681,7 +689,7 @@ impl DownloadManager {
                             }
                             this.save();
                             this.emit(UiEvent::Changed);
-                            this.emit(UiEvent::Toast(format!("✅ İndi: {}", rec.dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())));
+                            this.emit(UiEvent::Toast(format!("İndi: {}", rec.dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())));
                             break;
                         }
                         DownloadEvent::Cancelled => {
@@ -699,7 +707,7 @@ impl DownloadManager {
                             this.set_status(&rec.id, DownloadStatus::Error(e.clone()));
                             this.save();
                             this.emit(UiEvent::Changed);
-                            this.emit(UiEvent::Toast(format!("⚠️ İndirme hatası: {e}")));
+                            this.emit(UiEvent::Toast(format!("İndirme hatası: {e}")));
                             break;
                         }
                     }
@@ -774,6 +782,44 @@ mod tests {
     }
 
     #[test]
+    fn build_record_fills_ep_name() {
+        let r = build_record(Path::new("/tmp/x"), "Dizi", &test_ep(), &test_fs(), "1080p", "https://cdn/v.mp4");
+        assert_eq!(r.ep_name, "Bölüm", "bölüm adı ep.name'den gelmeli");
+    }
+
+    #[test]
+    fn queue_roundtrip_keeps_ep_name() {
+        let dir = std::env::temp_dir().join("animecix-dl-epname");
+        let _ = std::fs::remove_dir_all(&dir);
+        let path = dir.join("downloads.json");
+        let mut rec = test_record("e1", dir.join("v.mp4"));
+        rec.ep_name = "Gün Batımı".to_string();
+        save_queue(&path, &[rec]).expect("kayıt");
+        let back = load_queue(&path);
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].ep_name, "Gün Batımı");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_queue_legacy_without_ep_name_defaults_empty() {
+        // ep_name alanı yokken yazılmış eski downloads.json sorunsuz açılmalı.
+        let dir = std::env::temp_dir().join("animecix-dl-legacy");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("q.json"),
+            r#"[{"id":"a","title":"T","season":1,"episode":7,"fansub":"F","quality":"1080p","url":"https://cdn/v.mp4","referer":null,"dest":"/tmp/x.mp4","total":10,"have":3,"status":"queued"}]"#,
+        )
+        .unwrap();
+        let back = load_queue(&dir.join("q.json"));
+        assert_eq!(back.len(), 1);
+        assert_eq!(back[0].ep_name, "", "eski kayıt boş bölüm adıyla açılmalı");
+        assert_eq!(back[0].episode, 7);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn load_queue_sanitizes_poisoned_quality() {
         let dir = std::env::temp_dir().join("animecix-dl-poison");
         let _ = std::fs::remove_dir_all(&dir);
@@ -826,6 +872,7 @@ mod tests {
             title: "Frieren".into(),
             season: 1,
             episode: 7,
+            ep_name: "Gün Batımı".into(),
             fansub: "Raion".into(),
             quality: "1080p".into(),
             url: "https://ornek/v.mp4".into(),
@@ -934,6 +981,7 @@ mod tests {
             title: "T".into(),
             season: 1,
             episode: 1,
+            ep_name: String::new(),
             fansub: "F".into(),
             quality: "1080p".into(),
             url: "http://127.0.0.1:9/v.mp4".into(),

@@ -86,7 +86,7 @@ pub struct App {
     pub settings: Rc<RefCell<api::Settings>>,
     pub progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
     pub progress_bars: Rc<RefCell<HashMap<String, (gtk::ProgressBar, gtk::Label)>>>,
-    pub dl_rows: Rc<RefCell<HashMap<String, (gtk::ProgressBar, gtk::Label)>>>,
+    pub dl_rows: Rc<RefCell<HashMap<String, crate::ui::downloads_view::DlRow>>>,
     pub loading_toast: Rc<RefCell<Option<adw::Toast>>>,
     pub opening_toast: Rc<RefCell<Option<adw::Toast>>>,
     pub opening_toast_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
@@ -175,6 +175,28 @@ pub(crate) fn resolve_upscale_shader(name: &str) -> Option<String> {    use std:
         }
     }
     candidates.into_iter().find(|p| p.exists()).map(|p| p.to_string_lossy().into_owned())
+}
+
+/// İndirilenler kaydırma konumunu geri yükler. Yerleşim (allocate) henüz
+/// bitmemişse (üst-sınır 0) en fazla 3 idle denemesi yapar.
+fn restore_downloads_scroll(stack: gtk::Stack, value: f64, attempt: u8) {
+    glib::idle_add_local_once(move || {
+        let mut retry = false;
+        if let Some(w) = stack.child_by_name("downloads") {
+            if let Ok(s) = w.downcast::<gtk::ScrolledWindow>() {
+                let adj = s.vadjustment();
+                if adj.upper() <= 0.0 && attempt < 3 {
+                    retry = true;
+                } else {
+                    let max = (adj.upper() - adj.page_size()).max(0.0);
+                    adj.set_value(value.min(max));
+                }
+            }
+        }
+        if retry {
+            restore_downloads_scroll(stack.clone(), value, attempt + 1);
+        }
+    });
 }
 
 impl App {
@@ -371,40 +393,48 @@ impl App {
                 }
                 if pump.stack.visible_child_name().as_deref() == Some("downloads") {
                     if struct_dirty {
-                        // Kaydırma konumunu koruyarak yeniden kur.
-                        let saved = pump
-                            .stack
-                            .child_by_name("downloads")
-                            .and_then(|w| w.downcast::<gtk::ScrolledWindow>().ok())
-                            .map(|s| s.vadjustment().value());
-                        pump.show_page(&Page::Downloads);
-                        if let Some(v) = saved {
-                            let stack_c = pump.stack.clone();
-                            glib::idle_add_local_once(move || {
-                                if let Some(w) =
-                                    stack_c.child_by_name("downloads")
-                                {
-                                    if let Ok(s) =
-                                        w.downcast::<gtk::ScrolledWindow>()
-                                    {
-                                        let adj = s.vadjustment();
-                                        let max = (adj.upper() - adj.page_size()).max(0.0);
-                                        adj.set_value(v.min(max));
-                                    }
+                        // Kayıt ID seti değişmediyse (duraklat/devam/hata/bitiş)
+                        // tam rebuild yok: satırlar yerinde tazelenir, kaydırma yaşar.
+                        let items = pump.dl_manager.snapshot();
+                        let same_ids = {
+                            let rows = pump.dl_rows.borrow();
+                            rows.len() == items.len()
+                                && items.iter().all(|r| rows.contains_key(&r.id))
+                        };
+                        if same_ids {
+                            let rows = pump.dl_rows.borrow();
+                            for rec in &items {
+                                if let Some(row) = rows.get(&rec.id) {
+                                    crate::ui::downloads_view::DownloadsView::refresh_row(
+                                        row,
+                                        rec,
+                                        &pump.dl_manager,
+                                    );
                                 }
-                            });
+                            }
+                        } else {
+                            // Ekle/kaldır var: kaydırma konumunu koruyarak yeniden kur.
+                            let saved = pump
+                                .stack
+                                .child_by_name("downloads")
+                                .and_then(|w| w.downcast::<gtk::ScrolledWindow>().ok())
+                                .map(|s| s.vadjustment().value());
+                            pump.show_page(&Page::Downloads);
+                            if let Some(v) = saved {
+                                restore_downloads_scroll(pump.stack.clone(), v, 0);
+                            }
                         }
                     } else if progress_dirty {
                         // Yerinde güncelle: yeniden kurulum yok, kaydırma oynamaz.
                         let items = pump.dl_manager.snapshot();
                         let rows = pump.dl_rows.borrow();
                         for rec in &items {
-                            if let Some((bar, lbl)) = rows.get(&rec.id) {
+                            if let Some(row) = rows.get(&rec.id) {
                                 let (f, txt, stxt) =
                                     crate::ui::downloads_view::DownloadsView::row_state(rec);
-                                bar.set_fraction(f);
-                                bar.set_text(Some(&txt));
-                                lbl.set_text(&stxt);
+                                row.bar.set_fraction(f);
+                                row.bar.set_text(Some(&txt));
+                                row.status.set_text(&stxt);
                             }
                         }
                     }
@@ -1484,6 +1514,7 @@ impl App {
                                     title: series,
                                     season: 1,
                                     episode: 1,
+                                    ep_name: title3.name.clone(),
                                     fansub: String::new(),
                                     quality: quality.clone(),
                                     url,
@@ -2226,7 +2257,7 @@ impl App {
                 }
                 // Sayaç yalnızca topluda; tekilde pompa bildirimi yeter.
                 if !is_single && n > 0 {
-                    let t = adw::Toast::new(&format!("⬇ {n} bölüm kuyruğa eklendi"));
+                    let t = adw::Toast::new(&format!("{n} bölüm kuyruğa eklendi"));
                     t.set_timeout(3);
                     self.toast.add_toast(t);
                 }
@@ -2239,7 +2270,7 @@ impl App {
                         String::new()
                     };
                     let t = adw::Toast::new(&format!(
-                        "⚠ Atlanan: {}{more}",
+                        "Atlanan: {}{more}",
                         shown.join(", ")
                     ));
                     t.set_timeout(5);
