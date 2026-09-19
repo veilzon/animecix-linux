@@ -106,6 +106,15 @@ impl CoverManager {
         }
     }
 
+    /// Kalite değişiminde L1'i boşaltır (devam eden indirmeler yetim kalır,
+    /// finish_cover eşleşme bulamayıp baytı atar; yeniden çekme diskten gelir).
+    pub fn clear_all(&self) {
+        self.cache.borrow_mut().clear();
+        self.order.borrow_mut().clear();
+        self.waiters.borrow_mut().clear();
+        self.queue.lock().unwrap().clear();
+    }
+
     pub fn cover_picture(&self, url: Option<&str>, w: i32, h: i32) -> gtk::Picture {
         let pic = new_sized_picture(w, h);
         self.load_cover(url, &pic, w, h);
@@ -114,9 +123,8 @@ impl CoverManager {
 
     pub fn load_cover(&self, url: Option<&str>, pic: &gtk::Picture, w: i32, h: i32) {
         let Some(url) = url else { return };
-        // Kaynak çözünürlük neyse o çekilir (w500/original düşürülmez);
-        // gösterim boyutuna decode anında küçültülür.
-        let url = url.to_string();
+        // Kalite ayarı uçta uygulanır: aynı poster farklı boyda ayrı önbelleklenir.
+        let url = crate::api::tmdb_sized_url(url, &self.client.current_cover_quality());
         let key = format!("{url}@{w}x{h}");
 
         if let Some(Some(t)) = self.cache.borrow().get(&key) {

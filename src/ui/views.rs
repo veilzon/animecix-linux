@@ -600,6 +600,19 @@ impl SettingsView {
         });
         img_group.add(&upscale_row);
 
+        let cover_q_row = adw::ComboRow::new();
+        cover_q_row.set_title("Kapak Kalitesi");
+        cover_q_row.set_subtitle("Liste ve film kapaklarının indirilen çözünürlüğü (değişim anında uygulanır)");
+        let cover_q_names: Vec<&str> = crate::api::COVER_QUALITIES.iter().map(|(_, n)| *n).collect();
+        cover_q_row.set_model(Some(&gtk::StringList::new(&cover_q_names)));
+        cover_q_row.set_selected(
+            crate::api::COVER_QUALITIES
+                .iter()
+                .position(|(id, _)| *id == settings.cover_quality)
+                .unwrap_or(1) as u32,
+        );
+        img_group.add(&cover_q_row);
+
         let upscale_desc = gtk::Label::new(Some(
             "Yalnızca kaynak çözünürlüğü ekrandan küçükse etki eder.\nHafif: DTD (iGPU dostu, hafif). Ultra: CNN (en kaliteli). Hafif + Keskinleştirme: DTD + keskinleştirme filtresi.",
         ));
@@ -697,6 +710,7 @@ impl SettingsView {
             let au_r = auto_update_sw.clone();
             let notify_r = notify_sw.clone();
             let up_r = upscale_row.clone();
+            let cq_r = cover_q_row.clone();
             let light_r = light_sw.clone();
             let patience_spin_c = patience_spin.clone();
             let ask_r = ask_sw.clone();
@@ -745,6 +759,10 @@ impl SettingsView {
                     4 => "hafif_keskin".into(),
                     _ => "off".into(),
                 };
+                updated.cover_quality = crate::api::COVER_QUALITIES
+                    .get(cq_r.selected() as usize)
+                    .map(|(id, _)| id.to_string())
+                    .unwrap_or_else(|| crate::api::DEFAULT_COVER_QUALITY.to_string());
                 updated.light_mode = light_r.is_active();
                 updated.source_patience_secs = patience_spin_c.value() as u64;
                 updated.fansub_ask_each_time = ask_r.is_active();
@@ -781,6 +799,8 @@ impl SettingsView {
         notify_sw.connect_active_notify(move |_| sa7());
         let sa8 = save_all.clone();
         upscale_row.connect_selected_notify(move |_| sa8());
+        let sa_cq = save_all.clone();
+        cover_q_row.connect_selected_notify(move |_| sa_cq());
         let sa9 = save_all.clone();
         light_sw.connect_active_notify(move |_| sa9());
         let sa10 = save_all.clone();

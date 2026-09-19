@@ -38,8 +38,10 @@ const CACHE_VERSION: &str = "2";
 pub struct Client {
     http: crate::http::Http,
     cache: std::sync::Mutex<HashMap<String, (u64, serde_json::Value)>>,
-    cache_dir: PathBuf,
-    translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
+    /// Kapak kalitesinin bellek kopyası (covers hot-path disk okumasın diye).
+    /// save_settings + Client::new ile ayarlarla eşlenir.
+    cover_quality_mem: std::sync::Mutex<String>,
+    cache_dir: PathBuf,    translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
     /// slug → (zaman, plan verisi). Bellek-içi, TTL 6sa.
     skip_plans: std::sync::Mutex<HashMap<String, (u64, CachedSkip)>>,
     /// Kasa sırrı önbelleği (zaman, sır). TTL 1sa; el girdisi bypass eder.
@@ -369,6 +371,9 @@ pub struct Settings {
     /// Tema kimliği (sabit palet; örn. "koyu", "bordo").
     #[serde(default = "default_theme")]
     pub theme: String,
+    /// Kapak kalitesi: "yuksek" (olduğu gibi), "orta" (w342), "dusuk" (w185).
+    #[serde(default = "default_cover_quality")]
+    pub cover_quality: String,
     /// Şarkı satırında `Shift+M` ipucu gösterilir (varsayılan açık).
     #[serde(default = "default_true")]
     pub show_music_hint: bool,
@@ -392,6 +397,32 @@ fn default_upscale() -> String { "hafif".into() }
 fn default_patience() -> u64 { 20 }
 fn default_ui_scale() -> f32 { 1.0 }
 fn default_theme() -> String { "koyu".into() }
+fn default_cover_quality() -> String { "orta".into() }
+
+/// Kapak kalite seçenekleri (id, görünen ad). Sıra ComboRow indeksleriyle eşleşir.
+pub const COVER_QUALITIES: [(&str, &str); 3] = [
+    ("yuksek", "Yüksek"),
+    ("orta", "Orta"),
+    ("dusuk", "Düşük"),
+];
+pub const DEFAULT_COVER_QUALITY: &str = "orta";
+
+/// TMDB kapak URL'sini kaliteye göre boyutlandırır. TMDB dışı URL aynen geçer.
+/// Bilinmeyen kalite güvenli varsayılana (orta) düşer.
+pub fn tmdb_sized_url(url: &str, quality: &str) -> String {
+    if !url.contains("image.tmdb.org/t/p/") {
+        return url.to_string();
+    }
+    let t = match quality {
+        "yuksek" => return url.to_string(),
+        "dusuk" => "w185",
+        _ => "w342",
+    };
+    url.replace("image.tmdb.org/t/p/original", &format!("image.tmdb.org/t/p/{t}"))
+        .replace("image.tmdb.org/t/p/w500", &format!("image.tmdb.org/t/p/{t}"))
+        .replace("image.tmdb.org/t/p/w342", &format!("image.tmdb.org/t/p/{t}"))
+        .replace("image.tmdb.org/t/p/w185", &format!("image.tmdb.org/t/p/{t}"))
+}
 
 /// Maraton özet kartı için (tamamlanan_sayısı, yüzde) hesaplar.
 /// Girdi: her yapımın 0.0-1.0 arası ilerleme oranı.
@@ -756,6 +787,7 @@ impl Default for Settings {
             show_intro_hint: true,
             play_ask_quality: false,
             theme: default_theme(),
+            cover_quality: default_cover_quality(),
             download_dir: None,
         }
     }
@@ -868,8 +900,10 @@ impl Client {
             translators: std::sync::Mutex::new(HashMap::new()),
             skip_plans: std::sync::Mutex::new(HashMap::new()),
             vault: std::sync::Mutex::new((0, String::new())),
+            cover_quality_mem: std::sync::Mutex::new(default_cover_quality()),
         };
         c.http.set_cf_clearance(&c.load_settings().cf_clearance);
+        c.remember_cover_quality(&c.load_settings().cover_quality);
         c
     }
 
@@ -2136,7 +2170,8 @@ impl Client {
         use gdk_pixbuf::prelude::PixbufLoaderExt;
         use std::collections::HashMap;
         // NOT: crate::covers'a dokunma; bu dosya src/bin/* tarafindan tek basina include ediliyor.
-        let bytes = self.get_bytes(url)?;
+        let sized = tmdb_sized_url(url, &self.current_cover_quality());
+        let bytes = self.get_bytes(&sized)?;
         let loader = gdk_pixbuf::PixbufLoader::new();
         loader.write(&bytes).ok()?;
         loader.close().ok()?;
@@ -2816,6 +2851,23 @@ impl Client {
             std::fs::create_dir_all(parent).ok();
         }
         let _ = std::fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default());
+        self.remember_cover_quality(&s.cover_quality);
+    }
+
+    fn remember_cover_quality(&self, q: &str) {
+        let q = COVER_QUALITIES
+            .iter()
+            .find(|(id, _)| *id == q)
+            .map(|(id, _)| id.to_string())
+            .unwrap_or_else(|| DEFAULT_COVER_QUALITY.to_string());
+        if let Ok(mut g) = self.cover_quality_mem.lock() {
+            *g = q;
+        }
+    }
+
+    /// Kapak indiricilerin o anki kalite ayarı (hot-path; disk okumaz).
+    pub fn current_cover_quality(&self) -> String {
+        self.cover_quality_mem.lock().map(|g| g.clone()).unwrap_or_else(|_| DEFAULT_COVER_QUALITY.to_string())
     }
 
     pub fn wipe_all_data(&self) {
@@ -3399,6 +3451,39 @@ mod tests {
         assert_eq!(back.theme, "bordo");
         assert!(!back.show_music_hint);
         assert!(back.show_intro_hint);
+    }
+
+    #[test]
+    fn settings_cover_quality_defaults_to_middle_and_roundtrips() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.cover_quality, "orta", "eski ayar dosyası ortaya düşmeli");
+        let mut s = Settings::default();
+        assert_eq!(s.cover_quality, "orta");
+        s.cover_quality = "dusuk".into();
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.cover_quality, "dusuk");
+    }
+
+    #[test]
+    fn tmdb_sized_url_maps_quality() {
+        let o = "https://image.tmdb.org/t/p/original/x.jpg";
+        let w500 = "https://image.tmdb.org/t/p/w500/x.jpg";
+        assert_eq!(tmdb_sized_url(o, "yuksek"), o, "yüksek aynen geçer");
+        assert_eq!(
+            tmdb_sized_url(o, "orta"),
+            "https://image.tmdb.org/t/p/w342/x.jpg"
+        );
+        assert_eq!(
+            tmdb_sized_url(w500, "dusuk"),
+            "https://image.tmdb.org/t/p/w185/x.jpg"
+        );
+        assert_eq!(
+            tmdb_sized_url(o, "bilinmeyen"),
+            "https://image.tmdb.org/t/p/w342/x.jpg",
+            "bilinmeyen ortaya düşer"
+        );
+        let other = "https://ornek.com/a.png";
+        assert_eq!(tmdb_sized_url(other, "dusuk"), other, "TMDB dışı aynen geçer");
     }
 
     #[test]

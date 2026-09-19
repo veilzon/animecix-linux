@@ -1323,11 +1323,25 @@ impl App {
         let view = views::SettingsView::build(
             &settings,
             move |new_s| {
+                let old_q = this_save.settings.borrow().cover_quality.clone();
                 *this_save.settings.borrow_mut() = new_s.clone();
                 this_save.client.save_settings(&new_s);
                 this_save.client.set_cf_clearance(&new_s.cf_clearance);
                 this_save.apply_ui_scale();
                 crate::theme::apply_theme(&this_save.window, &new_s.theme);
+                if new_s.cover_quality != old_q {
+                    // Kalite uçta uygulanır: L1 boşaltılır, görünen sayfa
+                    // yeniden kurulur (yeni boy diskten/ağdan gelir).
+                    this_save.covers.clear_all();
+                    if let Some(cur) = this_save.page_history.borrow().last().cloned() {
+                        this_save.show_page(&cur);
+                        // show_page history'e ekler; aynı sayfanın tekrarını geri al.
+                        this_save.page_history.borrow_mut().pop();
+                    }
+                    let toast = adw::Toast::new("Kapak kalitesi uygulandı");
+                    toast.set_timeout(2);
+                    this_save.toast.add_toast(toast);
+                }
                 let now = std::time::Instant::now();
                 let elapsed = now.duration_since(*last_save_c.borrow()).as_millis();
                 *last_save_c.borrow_mut() = now;
