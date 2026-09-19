@@ -106,15 +106,6 @@ impl CoverManager {
         }
     }
 
-    /// Kalite değişiminde L1'i boşaltır (devam eden indirmeler yetim kalır,
-    /// finish_cover eşleşme bulamayıp baytı atar; yeniden çekme diskten gelir).
-    pub fn clear_all(&self) {
-        self.cache.borrow_mut().clear();
-        self.order.borrow_mut().clear();
-        self.waiters.borrow_mut().clear();
-        self.queue.lock().unwrap().clear();
-    }
-
     pub fn cover_picture(&self, url: Option<&str>, w: i32, h: i32) -> gtk::Picture {
         let pic = new_sized_picture(w, h);
         self.load_cover(url, &pic, w, h);

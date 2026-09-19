@@ -1323,26 +1323,37 @@ impl App {
         let view = views::SettingsView::build(
             &settings,
             move |new_s| {
-                let old_q = this_save.settings.borrow().cover_quality.clone();
+                let old_s = this_save.settings.borrow().clone();
                 *this_save.settings.borrow_mut() = new_s.clone();
                 this_save.client.save_settings(&new_s);
                 this_save.client.set_cf_clearance(&new_s.cf_clearance);
                 this_save.apply_ui_scale();
                 crate::theme::apply_theme(&this_save.window, &new_s.theme);
-                if new_s.cover_quality != old_q {
-                    // Kalite uçta uygulanır: L1 boşaltılır, görünen sayfa
-                    // yeniden kurulur (yeni boy diskten/ağdan gelir).
-                    // NOT: borrow guard'ı show_page'ten ÖNCE düşmeli; if-let
-                    // koşulundaki geçici guard gövde boyunca yaşar ve
-                    // sinyal trampolini içinde panic→abort üretir.
-                    this_save.covers.clear_all();
-                    let cur = this_save.page_history.borrow().last().cloned();
-                    if let Some(cur) = cur {
-                        this_save.show_page(&cur);
-                    }
-                    let toast = adw::Toast::new("Kapak kalitesi uygulandı");
-                    toast.set_timeout(2);
-                    this_save.toast.add_toast(toast);
+                if new_s.cover_quality != old_s.cover_quality {
+                    // Kalite değişimi restart ister: dialog → covers wipe → restart.
+                    let dlg_app = this_save.clone_ref();
+                    let dialog = adw::MessageDialog::builder()
+                        .heading("Kapak Kalitesi Değişti")
+                        .body("Diskteki kapaklar silinip uygulama yeniden başlatılsın mı? Yeni kalitedeki kapaklar açılışta indirilir. Devam eden indirmeler kaldığı yerden devam eder.")
+                        .close_response("cancel")
+                        .default_response("cancel")
+                        .build();
+                    dialog.set_transient_for(Some(&this_save.window));
+                    dialog.add_response("cancel", "Vazgeç");
+                    dialog.add_response("restart", "Sil ve Yeniden Başlat");
+                    dialog.set_response_appearance("restart", adw::ResponseAppearance::Destructive);
+                    dialog.connect_response(None, move |_, resp| {
+                        if resp == "restart" {
+                            dlg_app.client.wipe_covers_dir();
+                            crate::restart_app();
+                        } else {
+                            // Vazgeç: eski ayarı geri yaz, sayfayı tazele.
+                            *dlg_app.settings.borrow_mut() = old_s.clone();
+                            dlg_app.client.save_settings(&old_s);
+                            dlg_app.show_page(&Page::Settings);
+                        }
+                    });
+                    dialog.present();
                 }
                 let now = std::time::Instant::now();
                 let elapsed = now.duration_since(*last_save_c.borrow()).as_millis();

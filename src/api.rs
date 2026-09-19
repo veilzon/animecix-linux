@@ -2870,8 +2870,15 @@ impl Client {
         self.cover_quality_mem.lock().map(|g| g.clone()).unwrap_or_else(|_| DEFAULT_COVER_QUALITY.to_string())
     }
 
-    pub fn wipe_all_data(&self) {
-        if let Ok(mut c) = self.cache.lock() { c.clear(); }
+    /// Yalnızca kapak disk önbelleğini siler (covers/). Ayarlara, API
+    /// önbelleğine ve indirmelere dokunmaz. Kalite değişiminde kullanılır.
+    pub fn wipe_covers_dir(&self) {
+        let dir = self.cache_dir.join("covers");
+        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::create_dir_all(&dir);
+    }
+
+    pub fn wipe_all_data(&self) {        if let Ok(mut c) = self.cache.lock() { c.clear(); }
 
         let st = State::default();
         self.save_state(&st);
