@@ -16,6 +16,7 @@ appimagetool-x86_64.AppImage
 assets/hicolor/index.theme
 
 # === Kalıntı / scratch dosyalar (yalnızca local'de kalır) ===
+HANDOVER.md
 demo.sh
 src/bin/probe.rs
 src/bin/scrolltest.rs
