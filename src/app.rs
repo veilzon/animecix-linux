@@ -1360,7 +1360,6 @@ impl App {
                 *this_save.settings.borrow_mut() = new_s.clone();
                 this_save.client.save_settings(&new_s);
                 this_save.client.set_cf_clearance(&new_s.cf_clearance);
-                this_save.client.apply_proxy(&new_s);
                 this_save.apply_ui_scale();
                 crate::theme::apply_theme(&this_save.window, &new_s.theme);
                 let now = std::time::Instant::now();

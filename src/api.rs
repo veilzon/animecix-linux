@@ -373,14 +373,6 @@ pub struct Settings {
     /// İndirme klasörü (boşsa Videolar/Animecix).
     #[serde(default)]
     pub download_dir: Option<String>,
-    /// Okul filtresi proxy'si açık mı (varsayılan: derlemede ANIMECIX_PROXY_BASE
-    /// gömüldüyse açık, yoksa kapalı).
-    #[serde(default = "default_proxy_enabled")]
-    pub proxy_enabled: bool,
-    /// Proxy tabanı, örn. https://proxy.ornek (boşsa proxy kapalı sayılır).
-    /// Değer log'a yazılmaz.
-    #[serde(default = "default_proxy_base")]
-    pub proxy_base: String,
 }
 fn default_loading() -> String { "overlay".into() }
 fn default_quick_search() -> bool { true }
@@ -392,34 +384,6 @@ fn default_upscale() -> String { "hafif".into() }
 fn default_patience() -> u64 { 20 }
 fn default_ui_scale() -> f32 { 1.0 }
 fn default_theme() -> String { "koyu".into() }
-
-/// Derlemede gömülü proxy tabanı (uncensored varyantı CI'da verir).
-fn baked_proxy_base() -> String {
-    option_env!("ANIMECIX_PROXY_BASE").unwrap_or("").trim().to_string()
-}
-fn default_proxy_enabled() -> bool { !baked_proxy_base().is_empty() }
-fn default_proxy_base() -> String { baked_proxy_base() }
-
-impl Settings {
-    /// Çalışma anı geçersiz kılma öncelikli etkin proxy tabanı.
-    /// ANIMECIX_PROXY_BASE env doluysa onu kullanır (rebuild'siz prova),
-    /// yoksa ayarlardaki açık+URL'yi kullanır, ikisi de yoksa None.
-    pub fn effective_proxy(&self) -> Option<String> {
-        if let Ok(v) = std::env::var("ANIMECIX_PROXY_BASE") {
-            let v = v.trim().trim_end_matches('/').to_string();
-            if !v.is_empty() {
-                return Some(v);
-            }
-        }
-        if self.proxy_enabled {
-            let v = self.proxy_base.trim().trim_end_matches('/').to_string();
-            if !v.is_empty() {
-                return Some(v);
-            }
-        }
-        None
-    }
-}
 
 /// Maraton özet kartı için (tamamlanan_sayısı, yüzde) hesaplar.
 /// Girdi: her yapımın 0.0-1.0 arası ilerleme oranı.
@@ -785,8 +749,6 @@ impl Default for Settings {
             play_ask_quality: false,
             theme: default_theme(),
             download_dir: None,
-            proxy_enabled: default_proxy_enabled(),
-            proxy_base: default_proxy_base(),
         }
     }
 }
@@ -881,17 +843,11 @@ impl Client {
             vault: std::sync::Mutex::new((0, String::new())),
         };
         c.http.set_cf_clearance(&c.load_settings().cf_clearance);
-        c.apply_proxy(&c.load_settings());
         c
     }
 
     pub fn set_cf_clearance(&self, v: &str) {
         self.http.set_cf_clearance(v);
-    }
-
-    /// Ayarlardaki proxy'yi HTTP katmanına iter (boşsa kapatır).
-    pub fn apply_proxy(&self, s: &Settings) {
-        self.http.set_proxy(&s.effective_proxy().unwrap_or_default());
     }
 
     pub fn load_translators(&self) -> Result<(), String> {
@@ -3419,55 +3375,6 @@ mod tests {
         s.tools_shortcut = "Alt+T".into();
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back.tools_shortcut, "Alt+T");
-    }
-
-    #[test]
-    fn settings_proxy_defaults_off_and_roundtrips() {
-        let baked = option_env!("ANIMECIX_PROXY_BASE").unwrap_or("").trim();
-        let old: Settings = serde_json::from_str("{}").unwrap();
-        if baked.is_empty() {
-            // Normal derleme: kapalı+boş, eski dosya bozulmaz.
-            assert!(!old.proxy_enabled, "eski ayar dosyası proxy'siz kalmalı");
-            assert!(old.proxy_base.is_empty());
-            assert!(old.effective_proxy().is_none());
-        } else {
-            // Uncensored derleme: gömülü URL ile açık gelir.
-            assert!(old.proxy_enabled);
-            assert_eq!(old.proxy_base, baked);
-            assert_eq!(old.effective_proxy().as_deref(), Some(baked));
-        }
-        let mut s = Settings::default();
-        s.proxy_enabled = true;
-        s.proxy_base = "https://proxy.ornek/".into();
-        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
-        assert!(back.proxy_enabled);
-        assert_eq!(
-            back.effective_proxy().as_deref(),
-            Some("https://proxy.ornek"),
-            "sondaki eğik çizgi yutulmalı"
-        );
-        // Açık ama URL boşsa kapalı sayılır.
-        let mut s2 = Settings::default();
-        s2.proxy_enabled = true;
-        s2.proxy_base = "   ".into();
-        assert!(s2.effective_proxy().is_none());
-    }
-
-    #[test]
-    #[ignore = "canlı ağ ister: worker + animecix.tv üzerinden uçtan uca arama"]
-    fn proxy_live_search_through_worker() {
-        let base = option_env!("ANIMECIX_PROXY_BASE")
-            .unwrap_or("https://animecix-proxy.yasar-123-sevda.workers.dev");
-        let s = Settings {
-            proxy_enabled: true,
-            proxy_base: base.to_string(),
-            ..Settings::default()
-        };
-        assert!(s.effective_proxy().is_some());
-        let c = super::Client::new();
-        c.apply_proxy(&s);
-        let out = c.search("naruto").expect("worker üzerinden arama başarısız");
-        assert!(!out.is_empty(), "arama sonucu boş dönmemeli");
     }
 
     #[test]

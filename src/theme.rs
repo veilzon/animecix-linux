@@ -23,6 +23,8 @@ struct Palette {
     on_accent: &'static str,
     /// Geniş yüzey boyası (bölüm satırları): koyu temada nötr, renklilerde accent.
     row_tint: &'static str,
+    /// Üst çubuk (headerbar) zemini: her temanın kendi koyu tonu.
+    header_bg: &'static str,
 }
 
 fn palette(id: &str) -> Palette {
@@ -34,6 +36,7 @@ fn palette(id: &str) -> Palette {
             accent: "#E5484D",
             on_accent: "#FFFFFF",
             row_tint: "#E5484D",
+            header_bg: "#261016",
         },
         "orman" => Palette {
             base: "#0D1A13",
@@ -42,6 +45,7 @@ fn palette(id: &str) -> Palette {
             accent: "#2EC27E",
             on_accent: "#FFFFFF",
             row_tint: "#2EC27E",
+            header_bg: "#10241B",
         },
         "lacivert" => Palette {
             base: "#0E1626",
@@ -50,6 +54,7 @@ fn palette(id: &str) -> Palette {
             accent: "#62A0EA",
             on_accent: "#10131A",
             row_tint: "#62A0EA",
+            header_bg: "#152238",
         },
         "mor" => Palette {
             base: "#170F2B",
@@ -58,6 +63,7 @@ fn palette(id: &str) -> Palette {
             accent: "#7C3AED",
             on_accent: "#FFFFFF",
             row_tint: "#7C3AED",
+            header_bg: "#211640",
         },
         "koyu" => Palette {
             base: "#1E1E1E",
@@ -66,6 +72,7 @@ fn palette(id: &str) -> Palette {
             accent: "#3584E4",
             on_accent: "#FFFFFF",
             row_tint: "#FFFFFF",
+            header_bg: "#2A2A2A",
         },
         _ => Palette {
             // Bilinmeyen: güvenli varsayılan = koyu.
@@ -75,6 +82,7 @@ fn palette(id: &str) -> Palette {
             accent: "#3584E4",
             on_accent: "#FFFFFF",
             row_tint: "#FFFFFF",
+            header_bg: "#2A2A2A",
         },
     }
 }
@@ -98,13 +106,20 @@ pub fn theme_css(theme_id: &str) -> String {
          @define-color accent_bg_color {a};\n\
          @define-color accent_fg_color {fg};\n\
          @define-color accent_color {a};\n\
-         @define-color row_tint {r};\n",
+         @define-color row_tint {r};\n\
+         @define-color headerbar_bg_color {hb};\n\
+         @define-color headerbar_fg_color #FFFFFF;\n\
+         headerbar {{ background-color: {hb}; \
+         background-image: linear-gradient(135deg, {o1}, {o2}); \
+         border-bottom: 1px solid alpha({a}, 0.35); }}\n\
+         headerbar button.flat {{ color: #FFFFFF; }}\n",
         base = p.base,
         o1 = p.over1,
         o2 = p.over2,
         a = p.accent,
         fg = p.on_accent,
         r = p.row_tint,
+        hb = p.header_bg,
     )
 }
 
@@ -167,6 +182,24 @@ mod tests {
     fn all_themes_force_dark() {
         for (id, _) in THEMES {
             assert!(wants_force_dark(id), "{id}");
+        }
+    }
+
+    #[test]
+    fn headerbar_follows_theme() {
+        use std::collections::HashSet;
+        let mut seen = HashSet::new();
+        for (id, _) in THEMES {
+            let css = theme_css(id);
+            assert!(css.contains("@define-color headerbar_bg_color #"), "{id}: başlık rengi yok");
+            assert!(css.contains("headerbar {"), "{id}: headerbar kuralı yok");
+            assert!(css.contains("headerbar button.flat"), "{id}: başlık buton rengi yok");
+            let hb = css
+                .lines()
+                .find(|l| l.starts_with("@define-color headerbar_bg_color"))
+                .unwrap()
+                .to_string();
+            assert!(seen.insert(hb.clone()), "iki tema aynı başlık rengini kullanmamalı: {hb}");
         }
     }
 
