@@ -127,8 +127,10 @@ impl CoverManager {
         let url = crate::api::tmdb_sized_url(url, &self.client.current_cover_quality());
         let key = format!("{url}@{w}x{h}");
 
-        if let Some(Some(t)) = self.cache.borrow().get(&key) {
-            let t = t.clone();
+        // NOT: borrow guard'ı lru_touch'tan ÖNCE düşmeli; lru_touch taşmada
+        // aynı cache'e borrow_mut yapar (if-let koşul guard'ı gövde boyu yaşar).
+        let hit = self.cache.borrow().get(&key).cloned();
+        if let Some(Some(t)) = hit {
             self.lru_touch(&key);
             pic.set_paintable(Some(&t));
             return;

@@ -1332,11 +1332,13 @@ impl App {
                 if new_s.cover_quality != old_q {
                     // Kalite uçta uygulanır: L1 boşaltılır, görünen sayfa
                     // yeniden kurulur (yeni boy diskten/ağdan gelir).
+                    // NOT: borrow guard'ı show_page'ten ÖNCE düşmeli; if-let
+                    // koşulundaki geçici guard gövde boyunca yaşar ve
+                    // sinyal trampolini içinde panic→abort üretir.
                     this_save.covers.clear_all();
-                    if let Some(cur) = this_save.page_history.borrow().last().cloned() {
+                    let cur = this_save.page_history.borrow().last().cloned();
+                    if let Some(cur) = cur {
                         this_save.show_page(&cur);
-                        // show_page history'e ekler; aynı sayfanın tekrarını geri al.
-                        this_save.page_history.borrow_mut().pop();
                     }
                     let toast = adw::Toast::new("Kapak kalitesi uygulandı");
                     toast.set_timeout(2);
