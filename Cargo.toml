@@ -27,36 +27,3 @@ aes-gcm = "0.10"
 
 [profile.release]
 lto = true
-
-[package.metadata.deb]
-maintainer = "veilzon <veilzon@users.noreply.github.com>"
-copyright = "2026, veilzon <veilzon@users.noreply.github.com>"
-license-file = ["LICENSE", "0"]
-depends = "libgtk-4-1 (>= 4.8), libadwaita-1-0 (>= 1.2), libglib2.0-0 (>= 2.66), mpv, aria2, xdg-utils, curl"
-section = "video"
-priority = "optional"
-extended-description = "GTK4/libadwaita ile yazılmış Türkçe anime izleme istemcisi; oynatmayı mpv'ye devreder, çok bağlantılı indirme için aria2c kullanır."
-assets = [
-    ["target/release/animecix", "usr/bin/", "755"],
-    ["packaging/arch/animecix.desktop", "usr/share/applications/animecix.desktop", "644"],
-    ["packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml", "usr/share/metainfo/io.github.veilzon.AnimeciX.metainfo.xml", "644"],
-    ["assets/icon-64.png", "usr/share/icons/hicolor/64x64/apps/animecix.png", "644"],
-    ["assets/icon-128.png", "usr/share/icons/hicolor/128x128/apps/animecix.png", "644"],
-    ["assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/animecix.png", "644"],
-    ["assets/icon-512.png", "usr/share/icons/hicolor/512x512/apps/animecix.png", "644"],
-    ["assets/upscale/*", "usr/share/animecix/assets/upscale/", "644"]
-]
-
-[package.metadata.deb.variants.uncensored]
-name = "animecix-uncensored"
-extended-description = "GTK4/libadwaita ile yazılmış Türkçe anime izleme istemcisi; filtreli ağlar (okul) için proxy varsayılan açık gelir. Oynatma doğrudan mpv ile yapılır."
-assets = [
-    ["target/release/animecix-uncensored", "usr/bin/", "755"],
-    ["packaging/arch/animecix-uncensored.desktop", "usr/share/applications/animecix-uncensored.desktop", "644"],
-    ["packaging/flatpak/io.github.veilzon.AnimeciX.Uncensored.metainfo.xml", "usr/share/metainfo/io.github.veilzon.AnimeciX.Uncensored.metainfo.xml", "644"],
-    ["assets/icon-64.png", "usr/share/icons/hicolor/64x64/apps/animecix-uncensored.png", "644"],
-    ["assets/icon-128.png", "usr/share/icons/hicolor/128x128/apps/animecix-uncensored.png", "644"],
-    ["assets/icon-256.png", "usr/share/icons/hicolor/256x256/apps/animecix-uncensored.png", "644"],
-    ["assets/icon-512.png", "usr/share/icons/hicolor/512x512/apps/animecix-uncensored.png", "644"],
-    ["assets/upscale/*", "usr/share/animecix-uncensored/assets/upscale/", "644"]
-]

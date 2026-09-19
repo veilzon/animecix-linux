@@ -1,14 +1,16 @@
-name: Release build (AppImage + .deb)
+name: Release build (AppImage)
 
-# En eski desteklenen distro'da derle (bookworm, glibc 2.36),
-# her yere dağıt: ileriye uyumluluk kuralı.
+# Sürüm akışı yereldir: release AppImage'ı bakımcının makinesinde üretilip
+# `gh release upload` ile yüklenir. Bu workflow tag/main'de derleyip test
+# ederek kodun AppImage üretebilir kaldığını garanti eder; release
+# sayfasına dokunmaz (publish adımı bilerek yoktur).
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
@@ -31,7 +33,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv desktop-file-utils appstream dpkg-dev xvfb xauth binutils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -63,61 +65,19 @@ jobs:
         run: ./target/release/animecix --check-shaders
 
       - name: Build AppImage (thin, no version bump)
-        # GITHUB_TOKEN bilerek verilmiyor: script içindeki publish_release
-        # atlanır, publish işini aşağıdaki release adımı tek elden yapar.
         run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux bash build_appimage.sh
-
-      - name: Install cargo-deb
-        run: cargo install cargo-deb
-
-      - name: Build .deb (normal)
-        run: cargo deb -- --locked
-
-      - name: Build .deb (uncensored)
-        # Sıra önemli: önce normal paketlendi, şimdi proxy gömülü derle.
-        env:
-          ANIMECIX_PROXY_BASE: https://animecix-proxy.yasar-123-sevda.workers.dev
-        run: |
-          cargo build --release --locked
-          cp target/release/animecix target/release/animecix-uncensored
-          cargo deb --no-build --variant uncensored
 
       - name: Verify artifacts
         run: |
-          ls -la AnimeciX-x86_64.AppImage target/debian/*.deb
+          ls -la AnimeciX-x86_64.AppImage
           test ! "$(ldd target/release/animecix | grep 'not found' || true)"
           MAXGLIBC=$(objdump -T target/release/animecix | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
           echo "max glibc: $MAXGLIBC"
           TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
           [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
-          VER=$(grep -m1 '^version =' Cargo.toml | cut -d'"' -f2)
-          dpkg-deb --info target/debian/animecix_${VER}-1_amd64.deb
-          dpkg-deb --info target/debian/animecix-uncensored_${VER}-1_amd64.deb
-          dpkg-deb --contents target/debian/animecix_${VER}-1_amd64.deb
-          dpkg-deb --contents target/debian/animecix-uncensored_${VER}-1_amd64.deb
-          test -z "$(comm -12 <(dpkg-deb --contents target/debian/animecix_${VER}-1_amd64.deb | grep '^-' | awk '{print $6}' | sort) <(dpkg-deb --contents target/debian/animecix-uncensored_${VER}-1_amd64.deb | grep '^-' | awk '{print $6}' | sort))"
-          desktop-file-validate packaging/arch/animecix.desktop
-          desktop-file-validate packaging/arch/animecix-uncensored.desktop
 
-      - name: Publish to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            AnimeciX-x86_64.AppImage
-            target/debian/*.deb
-          body: |
-            Kurulum (Debian/Ubuntu): sudo apt install ./animecix_*_amd64.deb
-            Kurulum (okul/filtreli ağ): sudo apt install ./animecix-uncensored_*_amd64.deb
-            Kurulum (diğer): chmod +x AnimeciX-x86_64.AppImage && ./AnimeciX-x86_64.AppImage
-            Gerekenler: mpv, aria2, curl.
-            AppImage yeni sürümü açılışta kendisi indirir; .deb kullananlar apt ile günceller.
-
-      - name: Upload artifacts (manual run)
-        if: ${{ !startsWith(github.ref, 'refs/tags/') }}
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: animecix-build
-          path: |
-            AnimeciX-x86_64.AppImage
-            target/debian/*.deb
+          path: AnimeciX-x86_64.AppImage
