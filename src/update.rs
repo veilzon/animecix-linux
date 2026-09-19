@@ -51,10 +51,7 @@ pub fn needs_update(current: &str, latest: &str) -> bool {
 }
 
 fn http_client() -> Result<reqwest::blocking::Client, String> {
-    reqwest::blocking::Client::builder()
-        .user_agent("animecix-updater")
-        .build()
-        .map_err(|e| e.to_string())
+    Ok(crate::api::shared_blocking_client())
 }
 
 fn latest_release() -> Result<GithubRelease, String> {
@@ -63,6 +60,8 @@ fn latest_release() -> Result<GithubRelease, String> {
     let resp = client
         .get(&url)
         .header("Accept", "application/vnd.github+json")
+        .header("User-Agent", "animecix-updater")
+        .timeout(std::time::Duration::from_secs(15))
         .send()
         .map_err(|e| e.to_string())?;
     if !resp.status().is_success() {

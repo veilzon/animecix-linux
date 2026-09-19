@@ -93,6 +93,7 @@ dependencies = [
  "tokio",
  "wreq",
  "wreq-util",
+ "zstd",
 ]
 
 [[package]]

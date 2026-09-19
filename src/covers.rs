@@ -64,8 +64,8 @@ pub struct CoverManager {
     order: Rc<RefCell<VecDeque<String>>>,
 }
 
-/// Çözümlü kapak üst sınırı (~150 adet, 140x210x4 ile <20MB).
-const MAX_L1_COVERS: usize = 150;
+/// Çözümlü kapak üst sınırı (~80 adet; raf boyunda ~10MB).
+const MAX_L1_COVERS: usize = 80;
 
 impl CoverManager {
     pub fn new(client: Arc<Client>) -> Self {
@@ -112,17 +112,11 @@ impl CoverManager {
         pic
     }
 
-    pub fn thumb_url(url: &str, hd: bool) -> String {
-        let t = if hd { "w342" } else { "w185" };
-        url.replace("image.tmdb.org/t/p/original", &format!("image.tmdb.org/t/p/{t}"))
-            .replace("image.tmdb.org/t/p/w500", &format!("image.tmdb.org/t/p/{t}"))
-            .replace("image.tmdb.org/t/p/w342", &format!("image.tmdb.org/t/p/{t}"))
-            .replace("image.tmdb.org/t/p/w185", &format!("image.tmdb.org/t/p/{t}"))
-    }
-
     pub fn load_cover(&self, url: Option<&str>, pic: &gtk::Picture, w: i32, h: i32) {
         let Some(url) = url else { return };
-        let url = Self::thumb_url(&url, false);
+        // Kaynak çözünürlük neyse o çekilir (w500/original düşürülmez);
+        // gösterim boyutuna decode anında küçültülür.
+        let url = url.to_string();
         let key = format!("{url}@{w}x{h}");
 
         if let Some(Some(t)) = self.cache.borrow().get(&key) {
@@ -149,7 +143,7 @@ impl CoverManager {
         loader.write(bytes).ok()?;
         loader.close().ok()?;
         let src = loader.pixbuf()?;
-        let pb = src.scale_simple(w, h, gdk_pixbuf::InterpType::Nearest)?;
+        let pb = src.scale_simple(w, h, gdk_pixbuf::InterpType::Bilinear)?;
         Some(gtk::gdk::Texture::for_pixbuf(&pb))
     }
 

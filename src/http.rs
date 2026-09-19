@@ -216,7 +216,9 @@ impl Http {
             let mut b = wreq::Client::builder()
                 .emulation(wreq_util::Emulation::Chrome149)
                 .timeout(Duration::from_secs(15))
-                .connect_timeout(Duration::from_secs(5));
+                .connect_timeout(Duration::from_secs(5))
+                .pool_max_idle_per_host(2)
+                .pool_idle_timeout(Duration::from_secs(20));
             if let Some(p) = proxy {
                 let pr = wreq::Proxy::all(p).map_err(|e| e.to_string())?;
                 b = b.proxy(pr);

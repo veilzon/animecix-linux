@@ -85,13 +85,11 @@ pub fn rpc_body(method: &str, secret: &str, params: serde_json::Value) -> serde_
 }
 
 fn rpc_call(port: u16, secret: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
-    let client = reqwest::blocking::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()
-        .map_err(|e| format!("rpc istemci: {e}"))?;
+    let client = crate::api::shared_blocking_client();
     let body = rpc_body(method, secret, params);
     let resp = client
         .post(format!("http://127.0.0.1:{port}/jsonrpc"))
+        .timeout(std::time::Duration::from_secs(10))
         .json(&body)
         .send()
         .map_err(|e| format!("rpc bağlanamadı (:{port}): {e}"))?;

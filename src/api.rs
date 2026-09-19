@@ -9,16 +9,26 @@ const TAU: &str = "https://tau-video.xyz";
 const API_TTL_SECS: u64 = 3 * 3600;
 const IMG_TTL_SECS: u64 = 7 * 24 * 3600;
 
-const MAX_IMG_CACHE_ENTRIES: usize = 150;
+const MAX_JSON_CACHE_ENTRIES: usize = 24;
 
-fn trim_img_cache(map: &mut HashMap<String, (u64, Vec<u8>)>) {
-    if map.len() <= MAX_IMG_CACHE_ENTRIES {
+/// JSON bellek önbelleğine ekler: arama sonuçları cache'lenmez (tek seferlik),
+/// taşma durumunda en eski zaman damgalılar atılır (LRU).
+fn mem_cache_insert(
+    map: &mut HashMap<String, (u64, serde_json::Value)>,
+    key: &str,
+    t: u64,
+    v: serde_json::Value,
+) {
+    if key.starts_with("search:") {
         return;
     }
-    let mut by_time: Vec<(u64, String)> =
-        map.iter().map(|(k, (t, _))| (*t, k.clone())).collect();
+    map.insert(key.to_string(), (t, v));
+    if map.len() <= MAX_JSON_CACHE_ENTRIES {
+        return;
+    }
+    let mut by_time: Vec<(u64, String)> = map.iter().map(|(k, (ts, _))| (*ts, k.clone())).collect();
     by_time.sort_unstable();
-    let excess = map.len() - MAX_IMG_CACHE_ENTRIES;
+    let excess = map.len() - MAX_JSON_CACHE_ENTRIES;
     for (_, k) in by_time.into_iter().take(excess) {
         map.remove(&k);
     }
@@ -28,8 +38,6 @@ const CACHE_VERSION: &str = "2";
 pub struct Client {
     http: crate::http::Http,
     cache: std::sync::Mutex<HashMap<String, (u64, serde_json::Value)>>,
-    bytes: std::sync::Mutex<HashMap<String, (u64, Vec<u8>)>>,
-    resolved: std::sync::Mutex<HashMap<String, (u64, String)>>,
     cache_dir: PathBuf,
     translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
     /// slug → (zaman, plan verisi). Bellek-içi, TTL 6sa.
@@ -765,6 +773,20 @@ pub enum InternetStatus {
 /// İnternet bağlantısını kontrol eder. Önce ICMP ping dener (root gerektirmez,
 /// Linux'ta SOCK_DGRAM ile datagram ping), tüm ping'ler başarısız olursa
 /// HTTP fallback (HEAD/GET isteği) ile doğrular. ~3 sn timeout.
+/// Paylaşılan engelleyici HTTP istemcisi (tek havuz; her çağrıda ayrı
+/// istemci kurmanın thread/havuz maliyetini önler). Varsayılan 30sn zaman
+/// aşımı; daha kısa isteyen çağrı isteğe `.timeout()` ekler.
+pub(crate) fn shared_blocking_client() -> reqwest::blocking::Client {
+    static C: std::sync::OnceLock<reqwest::blocking::Client> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::blocking::Client::builder()
+            .timeout(std::time::Duration::from_secs(30))
+            .build()
+            .expect("paylaşılan engelleyici istemci")
+    })
+    .clone()
+}
+
 pub fn check_internet() -> InternetStatus {
     use std::net::SocketAddr;
     use std::time::Duration;
@@ -783,30 +805,37 @@ pub fn check_internet() -> InternetStatus {
         }
     }
 
-    let http_timeout = Duration::from_secs(3);
-    match reqwest::blocking::Client::builder()
-        .timeout(http_timeout)
-        .build()
-    {
-        Ok(client) => match client.get(DEFAULT_PROBE_URL).send() {
-            Ok(r) if r.status().is_success() => return InternetStatus::Online,
-            Ok(r) => {
-                return InternetStatus::Offline {
-                    reason: format!("HTTP {} alındı", r.status()),
-                };
-            }
-            Err(e) => {
-                return InternetStatus::Offline {
-                    reason: format!("ağ erişilemez: {e}"),
-                };
-            }
-        },
+    let client = shared_blocking_client();
+    match client.get(DEFAULT_PROBE_URL).timeout(Duration::from_secs(3)).send() {
+        Ok(r) if r.status().is_success() => return InternetStatus::Online,
+        Ok(r) => {
+            return InternetStatus::Offline {
+                reason: format!("HTTP {} alındı", r.status()),
+            };
+        }
         Err(e) => {
             return InternetStatus::Offline {
-                reason: format!("istemci kurulamadı: {e}"),
+                reason: format!("ağ erişilemez: {e}"),
             };
         }
     };
+}
+
+/// Diskteki kapak baytları zstd çerçevesidir (magic: 28 B5 2F FD).
+/// Eski ham (sıkıştırmasız) dosyalar olduğu gibi okunur (geriye uyum).
+const ZSTD_IMG_MAGIC: [u8; 4] = [0x28, 0xB5, 0x2F, 0xFD];
+const ZSTD_IMG_LEVEL: i32 = 6;
+
+fn encode_stored_image(raw: &[u8]) -> Vec<u8> {
+    zstd::encode_all(raw, ZSTD_IMG_LEVEL).unwrap_or_else(|_| raw.to_vec())
+}
+
+fn decode_stored_image(stored: &[u8]) -> Option<Vec<u8>> {
+    if stored.len() >= 4 && stored[0..4] == ZSTD_IMG_MAGIC {
+        zstd::decode_all(stored).ok()
+    } else {
+        Some(stored.to_vec())
+    }
 }
 
 impl Client {
@@ -835,8 +864,6 @@ impl Client {
         let c = Self {
             http,
             cache: std::sync::Mutex::new(HashMap::new()),
-            bytes: std::sync::Mutex::new(HashMap::new()),
-            resolved: std::sync::Mutex::new(HashMap::new()),
             cache_dir,
             translators: std::sync::Mutex::new(HashMap::new()),
             skip_plans: std::sync::Mutex::new(HashMap::new()),
@@ -920,7 +947,7 @@ impl Client {
     }
 
     pub fn sweep_expired_covers(&self) {
-        const COVER_DISK_MAX_BYTES: u64 = 200 * 1024 * 1024;
+        const COVER_DISK_MAX_BYTES: u64 = 500 * 1024 * 1024;
         let dir = self.cache_dir.join("covers");
         let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
         let Ok(entries) = std::fs::read_dir(&dir) else { return; };
@@ -998,7 +1025,7 @@ impl Client {
 
         if let Some((t, v)) = self.disk_api_load(key) {
             if now.saturating_sub(t) < ttl {
-                self.cache.lock().unwrap().insert(key.to_string(), (t, v.clone()));
+                mem_cache_insert(&mut self.cache.lock().unwrap(), key, t, v.clone());
                 return Ok(v);
             }
             let stale = v.clone();
@@ -1009,12 +1036,12 @@ impl Client {
             }
             match net_res {
                 Ok(fresh) => {
-                    self.cache.lock().unwrap().insert(key.to_string(), (now, fresh.clone()));
+                    mem_cache_insert(&mut self.cache.lock().unwrap(), key, now, fresh.clone());
                     self.disk_api_save(key, now, &fresh);
                     return Ok(fresh);
                 }
                 Err(_) => {
-                    self.cache.lock().unwrap().insert(key.to_string(), (now, stale.clone()));
+                    mem_cache_insert(&mut self.cache.lock().unwrap(), key, now, stale.clone());
                     return Ok(stale);
                 }
             }
@@ -1025,7 +1052,7 @@ impl Client {
         if std::env::var_os("ANIMECIX_BENCH").is_some() {
             eprintln!("[bench] api {key} -> {:.1?}ms", t0.elapsed());
         }
-        self.cache.lock().unwrap().insert(key.to_string(), (now, v.clone()));
+        mem_cache_insert(&mut self.cache.lock().unwrap(), key, now, v.clone());
         self.disk_api_save(key, now, &v);
         Ok(v)
     }
@@ -2054,20 +2081,13 @@ impl Client {
         self.tau_resolve_full(&embed_id, &vid)
     }
 
+    /// Kapak baytı: disk (zstd) → ağ. RAM'de ham bayt tutulmaz;
+    /// gösterim için L1 texture önbelleği (covers.rs) yeterlidir.
     pub fn get_bytes(&self, url: &str) -> Option<Vec<u8>> {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs();
-
-        {
-            let b = self.bytes.lock().unwrap();
-            if let Some((t, v)) = b.get(url) {
-                if now.saturating_sub(*t) < IMG_TTL_SECS {
-                    return Some(v.clone());
-                }
-            }
-        }
 
         let disk_path = self.img_cache_path(url);
         if let Ok(meta) = std::fs::metadata(&disk_path) {
@@ -2076,11 +2096,14 @@ impl Client {
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
             if now.saturating_sub(disk_ts) < IMG_TTL_SECS {
-                if let Ok(data) = std::fs::read(&disk_path) {
-                    let mut m = self.bytes.lock().unwrap();
-                    m.insert(url.to_string(), (disk_ts, data.clone()));
-                    trim_img_cache(&mut m);
-                    return Some(data);
+                if let Ok(stored) = std::fs::read(&disk_path) {
+                    if let Some(raw) = decode_stored_image(&stored) {
+                        // Sıcak dosyayı süpürmeden koru (mtime = LRU).
+                        if let Ok(f) = std::fs::File::options().write(true).open(&disk_path) {
+                            let _ = f.set_modified(SystemTime::now());
+                        }
+                        return Some(raw);
+                    }
                 }
             }
         }
@@ -2094,7 +2117,7 @@ impl Client {
             eprintln!("[bench] img {} -> {:.1?}ms", host, t0.elapsed());
         }
         if let Some(ref data) = out {
-            let _ = std::fs::write(&disk_path, data);
+            let _ = std::fs::write(&disk_path, encode_stored_image(data));
         }
         out
     }
@@ -2113,11 +2136,7 @@ impl Client {
         use gdk_pixbuf::prelude::PixbufLoaderExt;
         use std::collections::HashMap;
         // NOT: crate::covers'a dokunma; bu dosya src/bin/* tarafindan tek basina include ediliyor.
-        let thumb = url
-            .replace("image.tmdb.org/t/p/original", "image.tmdb.org/t/p/w185")
-            .replace("image.tmdb.org/t/p/w500", "image.tmdb.org/t/p/w185")
-            .replace("image.tmdb.org/t/p/w342", "image.tmdb.org/t/p/w185");
-        let bytes = self.get_bytes(&thumb).or_else(|| self.get_bytes(url))?;
+        let bytes = self.get_bytes(url)?;
         let loader = gdk_pixbuf::PixbufLoader::new();
         loader.write(&bytes).ok()?;
         loader.close().ok()?;
@@ -2801,8 +2820,6 @@ impl Client {
 
     pub fn wipe_all_data(&self) {
         if let Ok(mut c) = self.cache.lock() { c.clear(); }
-        if let Ok(mut b) = self.bytes.lock() { b.clear(); }
-        if let Ok(mut r) = self.resolved.lock() { r.clear(); }
 
         let st = State::default();
         self.save_state(&st);
@@ -3160,7 +3177,6 @@ mod tests {
     }
 
     #[test]
-    #[test]
     fn settings_source_patience_roundtrips() {
         let mut s = Settings::default();
         assert_eq!(s.source_patience_secs, 20);
@@ -3321,6 +3337,35 @@ mod tests {
     fn cover_palette_missing_file_is_none() {
         let c = Client::new();
         assert!(c.cover_palette("https://image.tmdb.org/t/p/w185/olmayan.jpg").is_none());
+    }
+
+    #[test]
+    fn stored_image_zstd_roundtrip() {
+        let raw = vec![0xAB; 4096];
+        let enc = encode_stored_image(&raw);
+        assert_eq!(&enc[0..4], &ZSTD_IMG_MAGIC, "zstd çerçevesi yazılmalı");
+        assert!(enc.len() < raw.len(), "tekrarlı bayt küçülmeli");
+        assert_eq!(decode_stored_image(&enc).as_deref(), Some(raw.as_slice()));
+    }
+
+    #[test]
+    fn stored_image_legacy_raw_passthrough() {
+        // Eski (sıkıştırmasız) disk dosyaları okunmaya devam etmeli.
+        let raw = vec![1, 2, 3, 4, 5];
+        assert_eq!(decode_stored_image(&raw).as_deref(), Some(raw.as_slice()));
+        assert!(decode_stored_image(&[]).is_some());
+    }
+
+    #[test]
+    fn json_cache_caps_and_skips_search() {
+        let mut m: HashMap<String, (u64, serde_json::Value)> = HashMap::new();
+        for i in 0..40 {
+            mem_cache_insert(&mut m, &format!("lists:{i}"), i as u64, serde_json::Value::Null);
+        }
+        assert_eq!(m.len(), MAX_JSON_CACHE_ENTRIES, "tavan aşılmamalı");
+        assert!(!m.contains_key("lists:0"), "en eski atılmalı");
+        mem_cache_insert(&mut m, "search:naruto", 999, serde_json::Value::Null);
+        assert!(!m.contains_key("search:naruto"), "arama cache'lenmemeli");
     }
 
     #[test]

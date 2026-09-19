@@ -372,7 +372,7 @@ impl App {
             // İndirme pompası: kuyruk olaylarını arayüze taşır.
             let pump = app_inst.clone_ref();
             let rx = std::sync::Arc::new(std::sync::Mutex::new(dl_rx));
-            glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
+            glib::timeout_add_local(std::time::Duration::from_millis(1500), move || {
                 let mut progress_dirty = false;
                 let mut struct_dirty = false;
                 let mut toasts: Vec<String> = Vec::new();
@@ -661,17 +661,8 @@ impl App {
                      linear-gradient(135deg, rgba({r1},{g1},{b1},0.30), \
                      rgba({r2},{g2},{b2},0.20) 55%, rgba({r3},{g3},{b3},0.30)); }}"
                 );
-                let css_b = format!(
-                    "#movie-tint-root {{ background-color: rgba({r2},{g2},{b2},0.35); \
-                     background: radial-gradient(ellipse at 50% 100%, \
-                     rgba({r3},{g3},{b3},0.30), rgba(0,0,0,0) 70%), \
-                     linear-gradient(315deg, rgba({r3},{g3},{b3},0.30), \
-                     rgba({r1},{g1},{b1},0.20) 55%, rgba({r2},{g2},{b2},0.30)); }}"
-                );
                 let prov_a = gtk::CssProvider::new();
                 prov_a.load_from_data(&css_a);
-                let prov_b = gtk::CssProvider::new();
-                prov_b.load_from_data(&css_b);
                 root.set_widget_name("movie-tint-root");
                 let display = root.display();
                 gtk::style_context_add_provider_for_display(
@@ -679,34 +670,6 @@ impl App {
                     &prov_a,
                     gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
                 );
-                let weak2 = root.downgrade();
-                let disp2 = display.clone();
-                let (pa_c, pb_c) = (prov_a.clone(), prov_b.clone());
-                let showing_a = Rc::new(Cell::new(true));
-                glib::timeout_add_local(std::time::Duration::from_secs(5), move || {
-                    if weak2.upgrade().is_none() {
-                        gtk::style_context_remove_provider_for_display(&disp2, &pa_c);
-                        gtk::style_context_remove_provider_for_display(&disp2, &pb_c);
-                        return glib::ControlFlow::Break;
-                    }
-                    if showing_a.get() {
-                        gtk::style_context_remove_provider_for_display(&display, &prov_a);
-                        gtk::style_context_add_provider_for_display(
-                            &display,
-                            &prov_b,
-                            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-                        );
-                    } else {
-                        gtk::style_context_remove_provider_for_display(&display, &prov_b);
-                        gtk::style_context_add_provider_for_display(
-                            &display,
-                            &prov_a,
-                            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-                        );
-                    }
-                    showing_a.set(!showing_a.get());
-                    glib::ControlFlow::Continue
-                });
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -1167,9 +1130,12 @@ impl App {
         });
         scroll.add_controller(motion);
 
-        let scroll_t = scroll.clone();
+        let scroll_w = scroll.downgrade();
         let timer_state = drag_pos.clone();
         gtk::glib::timeout_add_local(std::time::Duration::from_millis(50), move || {
+            let Some(scroll_t) = scroll_w.upgrade() else {
+                return gtk::glib::ControlFlow::Break;
+            };
             if let Some((y, h)) = *timer_state.borrow() {
                 let margin = 50.0;
                 let adj = scroll_t.vadjustment();

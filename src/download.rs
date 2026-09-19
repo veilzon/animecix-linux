@@ -131,8 +131,7 @@ pub fn free_space(path: &Path) -> Option<u64> {
 }
 
 fn build_client_for(_url: &str) -> Result<reqwest::blocking::Client, String> {
-    let b = reqwest::blocking::Client::builder().timeout(std::time::Duration::from_secs(30));
-    b.build().map_err(|e| e.to_string())
+    Ok(crate::api::shared_blocking_client())
 }
 
 /// İndirmeyi başlatır (arka plan thread). `.part` varsa kaldığı yerden devam.
