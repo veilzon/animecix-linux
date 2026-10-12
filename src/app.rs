@@ -71,6 +71,7 @@ pub enum Msg {
         rest: Vec<api::FansubInfo>,
         quals: Result<Vec<crate::play_quality::PlayQuality>, String>,
     },
+    NextEpResolved(Title, Option<Episode>),
 }
 
 pub struct App {
@@ -840,6 +841,31 @@ impl App {
         if welcome_seen {
             app_inst.fetch_home();
         }
+        if client.is_logged_in() {
+            let sync_client = client.clone();
+            let (tx, rx) = std::sync::mpsc::channel::<usize>();
+            std::thread::spawn(move || {
+                if let Ok(count) = sync_client.sync_cloud_history() {
+                    let _ = tx.send(count);
+                }
+            });
+            let app_c = app_inst.clone_ref();
+            glib::timeout_add_local(std::time::Duration::from_millis(20), move || match rx.try_recv() {
+                Ok(count) => {
+                    if count > 0 {
+                        let cur_page = app_c.page_history.borrow().last().cloned();
+                        if let Some(Page::Home) | Some(Page::History) = cur_page.as_ref() {
+                            if let Some(p) = cur_page {
+                                app_c.show_page(&p);
+                            }
+                        }
+                    }
+                    glib::ControlFlow::Break
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
+            });
+        }
         // İnternet rozeti ilk boyamada bekletmesin: cache soğuksa iyimser
         // çiz (çevrimiçi varsay); gerçek kontrol arka planda yapılıp
         // bitince ana sayfa tazelenir.
@@ -1151,7 +1177,7 @@ impl App {
             let _ = tx.send(client.cover_palette(&url));
         });
         let weak = target.downgrade();
-        glib::idle_add_local(move || match rx.try_recv() {
+        glib::timeout_add_local(std::time::Duration::from_millis(20), move || match rx.try_recv() {
             Ok(pal) => {
                 let Some(root) = weak.upgrade() else { return glib::ControlFlow::Break };
                 let [c1, c2, c3] =
@@ -1213,6 +1239,7 @@ impl App {
                 std::time::Duration::from_millis(400),
                 move || {
                     let Some(visible) = stack_c.visible_child() else { return; };
+                    let home_widget = stack_c.child_by_name("home");
                     let mut to_rm = vec![];
                     let mut cur = stack_c.first_child();
                     while let Some(child) = cur {
@@ -1259,6 +1286,28 @@ impl App {
             Page::History => {
                 self.title_label.set_text("İzleme Geçmişi");
                 switch(&self.stack, "history", gtk::StackTransitionType::Crossfade, self.build_history_view());
+                if self.client.is_logged_in() {
+                    let (tx, rx) = std::sync::mpsc::channel::<usize>();
+                    let client_sync = self.client.clone();
+                    std::thread::spawn(move || {
+                        if let Ok(count) = client_sync.sync_cloud_history() {
+                            let _ = tx.send(count);
+                        }
+                    });
+                    let this_history_sync = self.clone_ref();
+                    glib::timeout_add_local(std::time::Duration::from_millis(25), move || match rx.try_recv() {
+                        Ok(count) => {
+                            if count > 0 {
+                                if let Some(Page::History) = this_history_sync.page_history.borrow().last() {
+                                    this_history_sync.show_page(&Page::History);
+                                }
+                            }
+                            glib::ControlFlow::Break
+                        }
+                        Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                        Err(std::sync::mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
+                    });
+                }
             }
             Page::Downloads => {
                 self.title_label.set_text("İndirilenler");
@@ -1426,6 +1475,107 @@ impl App {
     }
 
     /// Başlık kartı (kapak hemen yüklenir).
+    fn create_continue_card(&self, h: &crate::api::HistoryEntry) -> gtk::Box {
+        let box_ = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        box_.add_css_class("title-btn");
+        box_.add_css_class("continue-card");
+        box_.set_size_request(140, -1);
+        box_.set_hexpand(false);
+        box_.set_vexpand(false);
+        box_.set_halign(gtk::Align::Start);
+        box_.set_valign(gtk::Align::Start);
+
+        let is_movie = h.title.title_type.as_deref() == Some("movie")
+            || (h.episode.season == 0 && h.episode.episode == 0);
+
+        let badge_text = if is_movie {
+            "Film".to_string()
+        } else {
+            format!("S:{} B:{}", h.episode.season, h.episode.episode)
+        };
+
+        let overlay = gtk::Overlay::new();
+        overlay.set_size_request(140, 210);
+
+        let pic = self.covers.cover_picture(h.title.poster.as_deref(), 140, 210);
+        pic.set_size_request(140, 210);
+        pic.set_can_shrink(false);
+        pic.set_hexpand(false);
+        pic.set_vexpand(false);
+        pic.set_halign(gtk::Align::Start);
+        overlay.set_child(Some(&pic));
+
+        let badge_lbl = gtk::Label::new(Some(&badge_text));
+        badge_lbl.add_css_class("continue-overlay-badge");
+        badge_lbl.set_halign(gtk::Align::Start);
+        badge_lbl.set_valign(gtk::Align::Start);
+        badge_lbl.set_margin_start(6);
+        badge_lbl.set_margin_top(6);
+        overlay.add_overlay(&badge_lbl);
+
+        if let Some((pos, dur)) = self.client.get_progress(h.title.id, h.episode.season, h.episode.episode) {
+            if dur > 0.0 {
+                let frac = (pos / dur).clamp(0.0, 1.0);
+                if frac > 0.02 && frac < 0.98 {
+                    let pbar = gtk::ProgressBar::new();
+                    pbar.add_css_class("continue-progress-bar");
+                    pbar.set_fraction(frac);
+                    pbar.set_valign(gtk::Align::End);
+                    overlay.add_overlay(&pbar);
+                }
+            }
+        }
+
+        box_.append(&overlay);
+
+        let lbl = gtk::Label::new(Some(&h.title.name));
+        lbl.add_css_class("card-title");
+        lbl.set_wrap(true);
+        lbl.set_justify(gtk::Justification::Center);
+        lbl.set_xalign(0.5);
+        lbl.set_max_width_chars(16);
+        lbl.set_lines(2);
+        lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        box_.append(&lbl);
+
+        let sub_lbl = gtk::Label::new(Some(&badge_text));
+        sub_lbl.add_css_class("continue-sub-label");
+        sub_lbl.set_xalign(0.5);
+        sub_lbl.set_wrap(false);
+        sub_lbl.set_single_line_mode(true);
+        sub_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
+        box_.append(&sub_lbl);
+
+        let gesture = gtk::GestureClick::new();
+        let this = self.clone_ref();
+        let title_clone = h.title.clone();
+        let ep_clone = h.episode.clone();
+        gesture.connect_pressed(move |_, _, _, _| {
+            this.play(&title_clone, &ep_clone);
+        });
+        box_.add_controller(gesture);
+
+        let right_click = gtk::GestureClick::new();
+        right_click.set_button(3);
+        let this_rc = self.clone_ref();
+        let title_rc = h.title.clone();
+        right_click.connect_pressed(move |_, _, _, _| {
+            this_rc.open_episodes(title_rc.clone());
+        });
+        box_.add_controller(right_click);
+
+        if is_movie {
+            box_.set_tooltip_text(Some("▶ Tıkla: Filmi Kaldığı Yerden Başlat\nℹ Sağ Tık: Detaylar"));
+        } else {
+            box_.set_tooltip_text(Some(&format!(
+                "▶ Tıkla: S:{} B:{} Kaldığı Yerden Başlat\nℹ Sağ Tık: Bölüm Listesi",
+                h.episode.season, h.episode.episode
+            )));
+        }
+
+        box_
+    }
+
     fn create_title_card(&self, t: &Title) -> gtk::Box {
         self.create_title_card_sized(t, 140)
     }
@@ -1889,7 +2039,7 @@ impl App {
                     let _ = tx.send(client.mark_title_watched(&title));
                 });
                 let this_async = this_toggle.clone();
-                glib::idle_add_local(move || match rx.try_recv() {
+                glib::timeout_add_local(std::time::Duration::from_millis(20), move || match rx.try_recv() {
                     Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
                     msg => {
                         match msg {
@@ -2067,7 +2217,8 @@ impl App {
         scroll.set_hexpand(true);
         scroll.set_vexpand(true);
         scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-        let history = self.client.load_state().history;
+        let mut history = self.client.load_state().history;
+        history.sort_by(|a, b| b.ts.cmp(&a.ts));
         if history.is_empty() {
             let sp = components::create_status_page(
                 "İzleme Geçmişi Boş",
@@ -2080,10 +2231,11 @@ impl App {
 
         let this_del = self.clone_ref();
         let this_clr = self.clone_ref();
+        let this_sync = self.clone_ref();
         let this_open = self.clone_ref();
         let this_cov = self.clone_ref();
         let view = views::HistoryView::build(
-            &self.client,
+            self.client.clone(),
             &history,
             move |ids| {
                 this_del.client.remove_history_items(&ids);
@@ -2093,8 +2245,11 @@ impl App {
                 this_clr.client.clear_history();
                 this_clr.show_page(&Page::History);
             },
+            move || {
+                this_sync.show_page(&Page::History);
+            },
             move |h| {
-                this_open.open_episodes(h.title.clone());
+                this_open.play(&h.title, &h.episode);
             },
             move |url, pic, w, h| {
                 this_cov.covers.load_cover(url, pic, w, h);
@@ -2152,11 +2307,13 @@ impl App {
         let settings = self.settings.borrow();
         let this_save = self.clone_ref();
         let this_wipe = self.clone_ref();
+        let this_acct = self.clone_ref();
 
         let last_save: Rc<RefCell<std::time::Instant>> = Rc::new(RefCell::new(std::time::Instant::now()));
         let last_save_c = last_save.clone();
         let view = views::SettingsView::build(
             &settings,
+            self.client.clone(),
             move |new_s| {
                 let old_s = this_save.settings.borrow().clone();
                 *this_save.settings.borrow_mut() = new_s.clone();
@@ -2219,6 +2376,11 @@ impl App {
                     this_wipe.page_history.borrow_mut().push(Page::Welcome);
                     this_wipe.show_page(&Page::Welcome);
                 }
+            },
+            move || {
+                let current_s = this_acct.client.load_settings();
+                *this_acct.settings.borrow_mut() = current_s;
+                this_acct.show_page(&Page::Settings);
             },
         );
 
@@ -3538,13 +3700,17 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
             let _ = tx.send(res_fn());
         });
         let this = self.clone_ref();
-        glib::idle_add_local(move || match rx.try_recv() {
+        glib::timeout_add_local(std::time::Duration::from_millis(15), move || match rx.try_recv() {
             Ok(msg) => {
                 this.busy(false);
                 this.handle_msg(msg);
                 glib::ControlFlow::Break
             }
-            Err(_) => glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                this.busy(false);
+                glib::ControlFlow::Break
+            }
         });
     }
 
@@ -3758,6 +3924,27 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
                     self.toast.add_toast(t);
                 }
             }
+            Msg::NextEpResolved(title, next_ep) => {
+                self.busy(false);
+                match next_ep {
+                    Some(ep) => {
+                        let t = adw::Toast::new(&format!(
+                            "▶ Sonraki Bölüm: S{:02}E{:02} - {}",
+                            ep.season,
+                            ep.episode,
+                            glib::markup_escape_text(&ep.name)
+                        ));
+                        t.set_timeout(3);
+                        self.toast.add_toast(t);
+                        self.play(&title, &ep);
+                    }
+                    None => {
+                        let t = adw::Toast::new("🎉 Tebrikler! Tüm bölümleri tamamladınız.");
+                        t.set_timeout(4);
+                        self.toast.add_toast(t);
+                    }
+                }
+            }
         }
     }
 
@@ -3767,6 +3954,19 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
             let enriched = c.enrich_title(&title);
             let res = c.episodes(&enriched);
             move || Msg::Eps(enriched.clone(), res)
+        });
+    }
+
+    fn play_next_episode(&self, title: &Title, cur_season: u64, cur_episode: u64) {
+        let title_c = title.clone();
+        self.busy(true);
+        let toast = adw::Toast::new("⏭ Sonraki bölüm aranıyor…");
+        toast.set_timeout(2);
+        self.toast.add_toast(toast);
+        self.spawn(move |c| {
+            let eps = c.episodes(&title_c).unwrap_or_default();
+            let next = api::Client::find_next_episode(&eps, cur_season, cur_episode);
+            move || Msg::NextEpResolved(title_c, next)
         });
     }
 
@@ -3787,6 +3987,9 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
         let title_s = title.clone();
         let ep_s = ep.clone();
         self.spawn(move |c| {
+            if c.is_logged_in() {
+                let _ = c.get_cloud_progress(title_s.id, ep_s.season, ep_s.episode);
+            }
             let mut res = c.list_fansubs(title_s.id, ep_s.episode, ep_s.season);
             if matches!(&res, Err(e) if api::is_server_error(e)) {
                 std::thread::sleep(std::time::Duration::from_millis(1500));
@@ -4044,6 +4247,9 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
         let manual_r = self.settings.borrow().official_skip_secret.clone();
         self.busy(true);
         self.spawn(move |c| {
+            if c.is_logged_in() {
+                let _ = c.get_cloud_progress(title.id, ep.season, ep.episode);
+            }
             let pref = c.get_preferred_host(title.id);
             let res = if title.title_type.as_deref() == Some("movie") {
                 // Filmde atlama planı yok (bölüm eşlemesi belirsiz).
@@ -4118,14 +4324,22 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
         let tid = title.id;
         let season = ep.season;
         let episode = ep.episode;
-        let prog_key = format!("{tid}:{season}:{episode}");
-
         let saved_pos = self.client.get_progress(tid, season, episode)
-            .filter(|(pos, dur)| *pos > 5.0 && *dur > 0.0 && *pos / *dur < 0.95)
+            .filter(|(pos, dur)| *pos > 5.0 && (*dur <= 0.0 || *pos / *dur < 0.95))
             .map(|(pos, _)| pos);
+
+        if self.client.is_logged_in() {
+            let client_c = self.client.clone();
+            let title_c = title.clone();
+            std::thread::spawn(move || {
+                client_c.cloud_put_title(&title_c, episode, season);
+            });
+        }
 
         let sock_path = format!("/tmp/animecix-mpv-{tid}-{season}-{episode}.sock");
         let _ = std::fs::remove_file(&sock_path);
+        let next_flag_path = format!("/tmp/animecix-next-{tid}-{season}-{episode}.flag");
+        let _ = std::fs::remove_file(&next_flag_path);
 
         let auto_fullscreen = self.settings.borrow().auto_fullscreen;
         let upscale = self.settings.borrow().upscale.clone();
@@ -4143,6 +4357,9 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
         let song_url = plan.as_ref().and_then(|p| p.song_url.clone());
         if let Some(url) = &song_url {
             input_conf_content.push_str(&crate::music::music_keybind_line(url));
+        }
+        if title.title_type.as_deref() != Some("movie") {
+            input_conf_content.push_str(&crate::skip::next_keybind_lines(&next_flag_path));
         }
         let _ = std::fs::write(&input_conf_path, input_conf_content);
 
@@ -4281,12 +4498,14 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
             let sock_c = sock_path.clone();
             let skip_c = skip_shared.clone();
             let show_intro_hint_c = show_intro_hint;
-            let client_c = client.clone();
-            let current_shared_c = current_shared.clone();
+            let auto_next_c = self.settings.borrow().auto_next_episode && title.title_type.as_deref() != Some("movie");
+            let next_flag_poll = next_flag_path.clone();
             let (sender, receiver) = std::sync::mpsc::channel::<(f64, f64)>();
             std::thread::spawn(move || {
                 let mut op_prompted = false;
                 let mut ed_prompted = false;
+                let mut auto_next_triggered = false;
+                let mut eof_timer: Option<std::time::Instant> = None;
 
                 while alive.load(std::sync::atomic::Ordering::Relaxed)
                     && !std::path::Path::new(&sock_poll).exists()
@@ -4319,6 +4538,27 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
                                 }
                             }
                         }
+
+                        if auto_next_c && !auto_next_triggered && dur > 60.0 {
+                            let eof = crate::player::query_mpv_prop(&sock_c, "eof-reached") == Some(1.0);
+                            if eof || pos >= (dur - 1.5) {
+                                auto_next_triggered = true;
+                                let msg = "⏭ Bölüm Bitti! 3 saniye içinde sonraki bölüm açılıyor... (İptal için 'q')";
+                                for cmd in crate::skip::skip_osd_cmds(msg, 3500) {
+                                    crate::player::send_mpv_cmd_retry(&sock_c, &cmd, 1);
+                                }
+                                eof_timer = Some(std::time::Instant::now());
+                            }
+                        }
+
+                        if let Some(t) = eof_timer {
+                            if t.elapsed().as_millis() >= 3000 {
+                                let _ = std::fs::File::create(&next_flag_poll);
+                                let _ = crate::player::send_mpv_cmd(&sock_c, "{\"command\":[\"quit\"]}\n");
+                                break;
+                            }
+                        }
+
                         if sender.send((pos, dur)).is_err() { break; }
                     } else {
                         if !alive.load(std::sync::atomic::Ordering::Relaxed) { break; }
@@ -4334,7 +4574,19 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
             let client_prog = client.clone();
             let receiver = std::sync::Arc::new(std::sync::Mutex::new(receiver));
             let current_shared_t = current_shared.clone();
+            let this_next = self.clone_ref();
+            let title_next = title.clone();
+            let next_flag_c = next_flag_path.clone();
             let mut marked_ep: Option<(u64, u64)> = None;
+            let mut last_cloud_report = std::time::Instant::now();
+            let (cloud_tx, cloud_rx) = std::sync::mpsc::channel::<(u64, u64, u64, f64)>();
+            let cp_worker = client.clone();
+            std::thread::spawn(move || {
+                while let Ok((t, s, e, p)) = cloud_rx.recv() {
+                    let _ = cp_worker.report_cloud_progress(t, s, e, p);
+                }
+            });
+
             glib::timeout_add_local(std::time::Duration::from_millis(500), move || {
                 let rx = receiver.lock().unwrap();
                 let mut latest: Option<(f64, f64)> = None;
@@ -4355,6 +4607,20 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
                     let last = progress2.borrow().get(&pk_cur).copied();
                     if let Some((pos, dur)) = last {
                         client_prog.save_progress(tid, cur.1, cur.0, pos, dur);
+                        if client_prog.is_logged_in() {
+                            let _ = cloud_tx.send((tid, cur.1, cur.0, pos));
+                        }
+                    }
+                    let should_play_next = std::path::Path::new(&next_flag_c).exists();
+                    let _ = std::fs::remove_file(&next_flag_c);
+
+                    if should_play_next {
+                        client_prog.save_watched(&api::Watched { title_id: tid, episode: cur.0, season: cur.1 }, "");
+                        let this_n = this_next.clone();
+                        let title_n = title_next.clone();
+                        glib::idle_add_local_once(move || {
+                            this_n.play_next_episode(&title_n, cur.1, cur.0);
+                        });
                     }
                     return glib::ControlFlow::Break;
                 }
@@ -4376,9 +4642,16 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
                         }
                     }
                     client_prog.save_progress(tid, cur.1, cur.0, pos, dur);
+                    if client_prog.is_logged_in() && last_cloud_report.elapsed().as_secs() >= 15 {
+                        last_cloud_report = std::time::Instant::now();
+                        let _ = cloud_tx.send((tid, cur.1, cur.0, pos));
+                    }
                     if api::Client::played_enough(pos, dur) && marked_ep != Some(cur) {
                         client_prog.save_watched(&api::Watched { title_id: tid, episode: cur.0, season: cur.1 }, "");
                         marked_ep = Some(cur);
+                        if client_prog.is_logged_in() {
+                            let _ = cloud_tx.send((tid, cur.1, cur.0, pos));
+                        }
                     }
                 }
                 glib::ControlFlow::Continue
@@ -4396,7 +4669,7 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
             let upscale_c = upscale;
             let ass_path_c = ass_path.clone();
             let mpv_child_c = mpv_child.clone();
-            let mut candidates: Vec<String> = candidates.to_vec();
+            let candidates: Vec<String> = candidates.to_vec();
             let fallback_embeds_c = fallback_embeds.to_vec();
             let fast_embeds_c = fast_embeds.to_vec();
             let candidates_len_c = candidates.len();
@@ -4420,66 +4693,121 @@ fn set_ep_row_visible(inner: &gtk::Box, visible: bool) {
                         }
                     };
                     let _ = std::fs::remove_file(&sock_path_c);
-                    let mut cmd = std::process::Command::new("mpv");
-                    cmd.arg("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
-                        .arg(format!("--force-media-title={media_title_c}"))
-                        .arg("--keep-open=yes")
-                        .arg(format!("--input-ipc-server={sock_path_c}"));
-                    if auto_fullscreen_c { cmd.arg("--fullscreen"); }
-                    // Atlama OSD'si alt-solda (şarkı ASS'i sağ-üstte; üst-üste binmez).
-                    cmd.arg("--osd-align-x=left")
-                        .arg("--osd-align-y=bottom")
-                        .arg("--osd-margin-x=30")
-                        .arg("--osd-margin-y=30");
-                    cmd.arg(format!("--input-conf={input_conf_path_c}"));
-                    if let Some(ass) = ass_path_c.as_deref() {
-                        cmd.arg(format!("--sub-file={ass}"));
-                    }
-                    if let Some(fdir) = crate::font::ensure_fonts() {
-                        cmd.args(crate::font::mpv_font_args(&fdir));
-                    }
-                    cmd.args(saved_pos_c.map(|p| format!("--start={p:.1}")).as_slice())
-                        .arg("--cache=yes")
-                        .arg("--demuxer-max-bytes=128MiB")
-                        .arg("--demuxer-max-back-bytes=32MiB")
-                        .arg("--demuxer-readahead-secs=120")
-                        .arg("--cache-pause=yes")
-                        .arg("--cache-pause-wait=3")
-                        .arg("--cache-secs=120")
-                        .arg("--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5")
-                        .arg("--network-timeout=10")
-                        .arg("--hwdec=auto-safe")
-                        .arg("--ytdl-format=bestvideo[height<=1080]+bestaudio/best")
-                        .args(crate::api::upscale_mpv_args(&upscale_c, match upscale_c.as_str() {
+                    let use_celluloid = std::process::Command::new("which")
+                        .arg("celluloid")
+                        .output()
+                        .map(|o| o.status.success())
+                        .unwrap_or(false);
+
+                    let build_cmd = |is_celluloid: bool| -> std::process::Command {
+                        let mut cmd = if is_celluloid {
+                            let mut c = std::process::Command::new("celluloid");
+                            c.arg("--new-window");
+                            c
+                        } else {
+                            std::process::Command::new("mpv")
+                        };
+
+                        let mut add_arg = |arg: &str| {
+                            if is_celluloid {
+                                if let Some(opt) = arg.strip_prefix("--") {
+                                    cmd.arg(format!("--mpv-{opt}"));
+                                } else {
+                                    cmd.arg(arg);
+                                }
+                            } else {
+                                cmd.arg(arg);
+                            }
+                        };
+
+                        add_arg("--user-agent=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                        add_arg(&format!("--force-media-title={media_title_c}"));
+                        add_arg("--keep-open=yes");
+                        add_arg(&format!("--input-ipc-server={sock_path_c}"));
+                        if auto_fullscreen_c { add_arg("--fullscreen"); }
+                        // Atlama OSD'si alt-solda (şarkı ASS'i sağ-üstte; üst-üste binmez).
+                        add_arg("--osd-align-x=left");
+                        add_arg("--osd-align-y=bottom");
+                        add_arg("--osd-margin-x=30");
+                        add_arg("--osd-margin-y=30");
+                        add_arg(&format!("--input-conf={input_conf_path_c}"));
+                        if let Some(ass) = ass_path_c.as_deref() {
+                            add_arg(&format!("--sub-file={ass}"));
+                        }
+                        if let Some(fdir) = crate::font::ensure_fonts() {
+                            for a in crate::font::mpv_font_args(&fdir) {
+                                add_arg(&a);
+                            }
+                        }
+                        if let Some(p) = saved_pos_c {
+                            add_arg(&format!("--start={p:.1}"));
+                        }
+                        add_arg("--cache=yes");
+                        add_arg("--demuxer-max-bytes=128MiB");
+                        add_arg("--demuxer-max-back-bytes=32MiB");
+                        add_arg("--demuxer-readahead-secs=120");
+                        add_arg("--cache-pause=yes");
+                        add_arg("--cache-pause-wait=3");
+                        add_arg("--cache-secs=120");
+                        add_arg("--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5");
+                        add_arg("--network-timeout=10");
+                        add_arg("--hwdec=auto-safe");
+                        add_arg("--ytdl-format=bestvideo[height<=1080]+bestaudio/best");
+                        for a in crate::api::upscale_mpv_args(&upscale_c, match upscale_c.as_str() {
                             "hafif" => resolve_upscale_shader("Anime4K_Upscale_DTD_x2.glsl"),
                             "ultra" => resolve_upscale_shader("Anime4K_Upscale_CNN_x2_UL.glsl"),
                             "hafif_keskin" => resolve_upscale_shader("Anime4K_Upscale_DTD_x2.glsl"),
                             _ => None,
-                        }.as_deref(), None))
-                        .arg(url.as_str());
-                    if url.contains("video.sibnet.ru/v/") {
-                        let vid = url
-                            .split("/v/")
-                            .nth(1)
-                            .and_then(|s| s.split('/').nth(1))
-                            .map(|s| s.trim_end_matches(".mp4"))
-                            .unwrap_or("");
-                        let referer = if vid.is_empty() {
-                            "https://video.sibnet.ru/".to_string()
-                        } else {
-                            format!("https://video.sibnet.ru/shell.php?videoid={}", vid)
-                        };
-                        cmd.arg(format!(
-                            "--http-header-fields=Referer: {}\nAccept: */*",
-                            referer
-                        ));
-                    }
-                    eprintln!("[SUP] mpv spawn deneniyor (ep={}, kaynak={}, url={:.80})", episode, i, url);
-                    let child = match cmd.spawn() {
-                        Ok(c) => c,
-                        Err(e) => { eprintln!("[SUP] HATA mpv başlatılamadı (ep={}, kaynak={}): {}", episode, i, e); continue; }
+                        }.as_deref(), None) {
+                            add_arg(&a);
+                        }
+                        if url.contains("video.sibnet.ru/v/") {
+                            let vid = url
+                                .split("/v/")
+                                .nth(1)
+                                .and_then(|s| s.split('/').nth(1))
+                                .map(|s| s.trim_end_matches(".mp4"))
+                                .unwrap_or("");
+                            let referer = if vid.is_empty() {
+                                "https://video.sibnet.ru/".to_string()
+                            } else {
+                                format!("https://video.sibnet.ru/shell.php?videoid={}", vid)
+                            };
+                            add_arg(&format!(
+                                "--http-header-fields=Referer: {}\nAccept: */*",
+                                referer
+                            ));
+                        }
+                        cmd.arg(url.as_str());
+                        cmd
                     };
-                    eprintln!("[SUP] mpv spawn edildi (ep={}, kaynak={})", episode, i);
+
+                    let child = if use_celluloid {
+                        eprintln!("[SUP] Celluloid spawn deneniyor (ep={}, kaynak={}, url={:.80})", episode, i, url);
+                        match build_cmd(true).spawn() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!("[SUP] Celluloid başlatılamadı ({}), mpv fallback deneniyor...", e);
+                                match build_cmd(false).spawn() {
+                                    Ok(c) => c,
+                                    Err(e_mpv) => {
+                                        eprintln!("[SUP] HATA mpv de başlatılamadı: {}", e_mpv);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        eprintln!("[SUP] mpv spawn deneniyor (ep={}, kaynak={}, url={:.80})", episode, i, url);
+                        match build_cmd(false).spawn() {
+                            Ok(c) => c,
+                            Err(e) => {
+                                eprintln!("[SUP] HATA mpv başlatılamadı: {}", e);
+                                continue;
+                            }
+                        }
+                    };
+                    eprintln!("[SUP] Oynatıcı spawn edildi (ep={}, kaynak={})", episode, i);
                     *mpv_child_c.lock().unwrap() = Some(child);
 
                     let start = std::time::Instant::now();

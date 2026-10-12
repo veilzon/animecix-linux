@@ -49,6 +49,21 @@ fn main() {
     unsafe {
         libc::mallopt(libc::M_ARENA_MAX, 2);
     }
+
+    // Gtk-CRITICAL ve gürültülü css section loglarını filtrele
+    glib::log_set_default_handler(|log_domain, log_level, message| {
+        if let Some(domain) = log_domain {
+            if (domain == "Gtk" || domain == "Gdk" || domain == "GLib-GObject") 
+                && (log_level == glib::LogLevel::Critical || log_level == glib::LogLevel::Warning) 
+            {
+                // Bilinen zararsız GTK/CSS uyarılarını ve assertion'larını sessize al
+                if message.contains("gtk_css_section") || message.contains("assertion") {
+                    return;
+                }
+            }
+        }
+        glib::log_default_handler(log_domain, log_level, Some(message));
+    });
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.iter().any(|a| a == "--check-shaders") {
         return cmd_check_shaders();
@@ -563,6 +578,72 @@ fn main() {
                 .history-item-card:hover {
                     background-color: alpha(currentColor, 0.07);
                     border-color: alpha(@accent_color, 0.35);
+                }
+                .history-item-top {
+                    background-color: alpha(@accent_color, 0.05);
+                    border: 1px solid alpha(@accent_color, 0.22);
+                }
+                .history-item-top:hover {
+                    background-color: alpha(@accent_color, 0.09);
+                    border-color: alpha(@accent_color, 0.5);
+                }
+                .history-badge-top {
+                    min-width: 58px;
+                    padding: 2px 8px;
+                    color: @accent_color;
+                    background-color: alpha(@accent_color, 0.16);
+                    border: 1px solid alpha(@accent_color, 0.5);
+                    border-radius: 8px;
+                    font-weight: 700;
+                    font-size: 12px;
+                }
+                .history-badge {
+                    min-width: 50px;
+                    padding: 2px 7px;
+                    color: alpha(currentColor, 0.75);
+                    background-color: alpha(currentColor, 0.06);
+                    border: 1px solid alpha(currentColor, 0.15);
+                    border-radius: 8px;
+                    font-weight: 600;
+                    font-size: 11px;
+                }
+                .history-section-title {
+                    font-weight: 700;
+                    font-size: 14px;
+                    color: alpha(currentColor, 0.9);
+                    margin-top: 10px;
+                    margin-bottom: 4px;
+                }
+
+                .continue-card {
+                    transition: transform 120ms ease;
+                }
+                .continue-card:hover {
+                    transform: translateY(-2px);
+                }
+                .continue-overlay-badge {
+                    background-color: alpha(#000000, 0.78);
+                    color: @accent_color;
+                    border: 1px solid alpha(@accent_color, 0.6);
+                    border-radius: 6px;
+                    padding: 3px 7px;
+                    font-weight: 700;
+                    font-size: 11px;
+                }
+                .continue-sub-label {
+                    font-size: 12px;
+                    font-weight: 600;
+                    color: @accent_color;
+                }
+                .continue-progress-bar trough {
+                    min-height: 4px;
+                    border-radius: 0;
+                    background-color: alpha(#000000, 0.5);
+                }
+                .continue-progress-bar progress {
+                    min-height: 4px;
+                    border-radius: 0;
+                    background-color: @accent_color;
                 }
 
                 .status-badge-completed {

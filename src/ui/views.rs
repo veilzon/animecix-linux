@@ -87,14 +87,15 @@ impl MarathonView {
             let fracs: Vec<f64> = summary_titles.iter().map(|t| client_s.title_progress_frac(t)).collect();
             let _ = stx.send(marathon_summary(&fracs));
         });
-        glib::idle_add_local(move || match srx.try_recv() {
+        glib::timeout_add_local(std::time::Duration::from_millis(25), move || match srx.try_recv() {
             Ok((done, percent)) => {
                 stats_lbl.set_text(&format!("{} / {} Anime Tamamlandı", done, total_count));
                 percent_pill.set_text(&format!("%{}", percent));
                 pbar.set_fraction((percent as f64 / 100.0).clamp(0.0, 1.0));
                 glib::ControlFlow::Break
             }
-            Err(_) => glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
         });
 
         let list_box = gtk::Box::new(gtk::Orientation::Vertical, 8);
@@ -205,7 +206,7 @@ impl MarathonView {
             let badge_u = status_badge.clone();
             let name_u = name_lbl.clone();
             let guard_u = chk_guard.clone();
-            glib::idle_add_local(move || match rx.try_recv() {
+            glib::timeout_add_local(std::time::Duration::from_millis(20), move || match rx.try_recv() {
                 Ok(frac) => {
                     prog.set_fraction(frac);
                     let done = frac >= 0.999;
@@ -220,7 +221,8 @@ impl MarathonView {
                     if done { name_u.add_css_class("dim-label"); } else { name_u.remove_css_class("dim-label"); }
                     glib::ControlFlow::Break
                 }
-                Err(_)   => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
             });
 
             let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -257,10 +259,11 @@ pub struct HistoryView;
 
 impl HistoryView {
     pub fn build(
-        _client: &Client,
+        client: std::sync::Arc<Client>,
         history: &[HistoryEntry],
         on_delete_selected: impl Fn(Vec<u64>) + 'static,
         on_clear_all: impl Fn() + 'static,
+        on_sync: impl Fn() + 'static,
         on_item_click: impl Fn(HistoryEntry) + 'static,
         cover_loader: impl Fn(Option<&str>, &gtk::Picture, i32, i32) + 'static,
     ) -> gtk::Box {
@@ -303,6 +306,44 @@ impl HistoryView {
         let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         spacer.set_hexpand(true);
         action_bar.append(&spacer);
+
+        if client.is_logged_in() {
+            let sync_btn = gtk::Button::with_label("🔄 Bulutla Eşitle");
+            sync_btn.add_css_class("flat");
+            sync_btn.add_css_class("pill");
+            sync_btn.set_valign(gtk::Align::Center);
+
+            let client_c = client.clone();
+            let on_sync_rc = Rc::new(on_sync);
+            let on_sync_c = on_sync_rc.clone();
+            sync_btn.connect_clicked(move |btn| {
+                btn.set_sensitive(false);
+                btn.set_label("Eşitleniyor...");
+                let (tx, rx) = std::sync::mpsc::channel::<()>();
+                let c = client_c.clone();
+                std::thread::spawn(move || {
+                    let _ = c.sync_cloud_history();
+                    let _ = tx.send(());
+                });
+                let btn_clone = btn.clone();
+                let on_sync_done = on_sync_c.clone();
+                glib::timeout_add_local(std::time::Duration::from_millis(25), move || match rx.try_recv() {
+                    Ok(()) => {
+                        btn_clone.set_sensitive(true);
+                        btn_clone.set_label("🔄 Bulutla Eşitle");
+                        on_sync_done();
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        btn_clone.set_sensitive(true);
+                        glib::ControlFlow::Break
+                    }
+                });
+            });
+            action_bar.append(&sync_btn);
+        }
+
         action_bar.append(&clear_all_btn);
 
         root.append(&action_bar);
@@ -324,9 +365,37 @@ impl HistoryView {
             }
         };
 
-        for h in history {
+        let mut sorted_history = history.to_vec();
+        sorted_history.sort_by(|a, b| b.ts.cmp(&a.ts));
+
+        let now_sec = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let top_count = sorted_history.len().min(10);
+
+        if top_count > 0 {
+            let top_title = gtk::Label::new(Some("⭐ Kaldığın Yerden Devam Et (Son 10)"));
+            top_title.add_css_class("history-section-title");
+            top_title.set_xalign(0.0);
+            list_box.append(&top_title);
+        }
+
+        for (idx, h) in sorted_history.iter().enumerate() {
+            if idx == 10 && sorted_history.len() > 10 {
+                let older_title = gtk::Label::new(Some(&format!("📚 Daha Önceki Geçmiş ({} Anime)", sorted_history.len() - 10)));
+                older_title.add_css_class("history-section-title");
+                older_title.set_xalign(0.0);
+                list_box.append(&older_title);
+            }
+
+            let is_top = idx < 10;
             let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 10);
             row_box.add_css_class("history-item-card");
+            if is_top {
+                row_box.add_css_class("history-item-top");
+            }
             row_box.set_vexpand(false);
             row_box.set_height_request(84);
 
@@ -357,6 +426,18 @@ impl HistoryView {
             text_box.set_valign(gtk::Align::Center);
             text_box.set_hexpand(true);
 
+            let is_movie = h.title.title_type.as_deref() == Some("movie")
+                || (h.episode.season == 0 && h.episode.episode == 0);
+
+            let badge_str = if is_movie {
+                "Film".to_string()
+            } else {
+                format!("S:{} B:{}", h.episode.season, h.episode.episode)
+            };
+
+            let title_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            title_row.set_valign(gtk::Align::Center);
+
             let name = gtk::Label::new(Some(&h.title.name));
             name.set_xalign(0.0);
             name.set_wrap(false);
@@ -364,17 +445,72 @@ impl HistoryView {
             name.set_ellipsize(gtk::pango::EllipsizeMode::End);
             name.add_css_class("title-3");
 
-            let sub = gtk::Label::new(Some(&format!(
-                "S{:02} E{:02} · {}",
-                h.episode.season, h.episode.episode, h.episode.name
-            )));
+            let badge = gtk::Label::new(Some(&badge_str));
+            if is_top {
+                badge.add_css_class("history-badge-top");
+            } else {
+                badge.add_css_class("history-badge");
+            }
+            badge.set_valign(gtk::Align::Center);
+
+            title_row.append(&name);
+            title_row.append(&badge);
+
+            let time_str = if h.ts > 0 && now_sec >= h.ts {
+                let diff = now_sec - h.ts;
+                if diff < 60 {
+                    "Az önce".to_string()
+                } else if diff < 3600 {
+                    format!("{} dk önce", diff / 60)
+                } else if diff < 86400 {
+                    format!("{} saat önce", diff / 3600)
+                } else if diff < 86400 * 30 {
+                    format!("{} gün önce", diff / 86400)
+                } else if diff < 86400 * 365 {
+                    format!("{} ay önce", diff / (86400 * 30))
+                } else {
+                    format!("{} yıl önce", diff / (86400 * 365))
+                }
+            } else {
+                String::new()
+            };
+
+            let sub_text = if is_movie {
+                if time_str.is_empty() {
+                    if h.episode.name.is_empty() || h.episode.name == "Film" {
+                        "Film".to_string()
+                    } else {
+                        format!("Film · {}", h.episode.name)
+                    }
+                } else {
+                    if h.episode.name.is_empty() || h.episode.name == "Film" {
+                        format!("Film · {}", time_str)
+                    } else {
+                        format!("Film · {} · {}", h.episode.name, time_str)
+                    }
+                }
+            } else {
+                if time_str.is_empty() {
+                    format!(
+                        "S:{} B:{} · {}",
+                        h.episode.season, h.episode.episode, h.episode.name
+                    )
+                } else {
+                    format!(
+                        "S:{} B:{} · {} · {}",
+                        h.episode.season, h.episode.episode, h.episode.name, time_str
+                    )
+                }
+            };
+
+            let sub = gtk::Label::new(Some(&sub_text));
             sub.set_xalign(0.0);
             sub.set_wrap(false);
             sub.set_single_line_mode(true);
             sub.set_ellipsize(gtk::pango::EllipsizeMode::End);
             sub.add_css_class("dim-label");
 
-            text_box.append(&name);
+            text_box.append(&title_row);
             text_box.append(&sub);
             episodes_view::append_title_submeta(&text_box, &h.title);
 
@@ -429,8 +565,10 @@ pub struct SettingsView;
 impl SettingsView {
     pub fn build(
         settings: &Settings,
+        client: std::sync::Arc<Client>,
         on_save: impl Fn(Settings) + 'static,
         on_wipe: impl Fn(bool) + 'static,
+        on_account_change: impl Fn() + 'static,
     ) -> gtk::Box {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         root.set_margin_top(12);
@@ -442,6 +580,90 @@ impl SettingsView {
         settings_search.set_placeholder_text(Some("Ayarlarda ara…"));
         settings_search.set_hexpand(true);
         root.append(&settings_search);
+
+        let account_group = adw::PreferencesGroup::new();
+        account_group.set_title("AnimeciX Hesabı");
+
+        let on_account_change = Rc::new(on_account_change);
+
+        if let Some(user) = &settings.user_profile {
+            let row = adw::ActionRow::new();
+            row.set_title(&user.display_name);
+            row.set_subtitle(&format!("@{} • ID: {} • Bulut Senkronizasyonu Aktif", user.username, user.id));
+
+            let avatar_icon = gtk::Image::from_icon_name("avatar-default-symbolic");
+            avatar_icon.set_pixel_size(32);
+            row.add_prefix(&avatar_icon);
+
+            let sync_btn = gtk::Button::with_label("Şimdi Eşitle");
+            sync_btn.add_css_class("flat");
+            sync_btn.add_css_class("pill");
+            sync_btn.set_valign(gtk::Align::Center);
+            let client_sync = client.clone();
+            let on_change_sync = on_account_change.clone();
+            sync_btn.connect_clicked(move |btn| {
+                btn.set_sensitive(false);
+                let (tx, rx) = std::sync::mpsc::channel::<()>();
+                let client_c = client_sync.clone();
+                std::thread::spawn(move || {
+                    let _ = client_c.sync_cloud_history();
+                    let _ = tx.send(());
+                });
+                let btn_c = btn.clone();
+                let on_change_c = on_change_sync.clone();
+                glib::timeout_add_local(std::time::Duration::from_millis(25), move || match rx.try_recv() {
+                    Ok(()) => {
+                        btn_c.set_sensitive(true);
+                        on_change_c();
+                        glib::ControlFlow::Break
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                    Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                        btn_c.set_sensitive(true);
+                        glib::ControlFlow::Break
+                    }
+                });
+            });
+            row.add_suffix(&sync_btn);
+
+            let logout_btn = gtk::Button::with_label("Çıkış Yap");
+            logout_btn.add_css_class("destructive-action");
+            logout_btn.add_css_class("pill");
+            logout_btn.set_valign(gtk::Align::Center);
+            let client_logout = client.clone();
+            let on_change_logout = on_account_change.clone();
+            logout_btn.connect_clicked(move |_| {
+                client_logout.logout();
+                on_change_logout();
+            });
+            row.add_suffix(&logout_btn);
+
+            account_group.add(&row);
+        } else {
+            let row = adw::ActionRow::new();
+            row.set_title("Giriş Yapılmadı");
+            row.set_subtitle("İzleme geçmişinizi ve kaldığınız yeri senkronize etmek için hesabınızı bağlayın");
+
+            let login_btn = gtk::Button::with_label("Giriş Yap / Bağla");
+            login_btn.add_css_class("suggested-action");
+            login_btn.add_css_class("pill");
+            login_btn.set_valign(gtk::Align::Center);
+
+            let client_login = client.clone();
+            let on_change_login = on_account_change.clone();
+            login_btn.connect_clicked(move |btn| {
+                if let Some(win) = btn.root().and_downcast::<gtk::Window>() {
+                    let on_change_c = on_change_login.clone();
+                    crate::ui::login_dialog::show_login_dialog(&win, client_login.clone(), move |_| {
+                        on_change_c();
+                    });
+                }
+            });
+            row.add_suffix(&login_btn);
+
+            account_group.add(&row);
+        }
+        root.append(&account_group);
 
         let ep_group = adw::PreferencesGroup::new();
         ep_group.set_title("Hızlı Bölüm Arama");
@@ -560,6 +782,13 @@ impl SettingsView {
             settings.play_ask_quality,
         );
         player_group.add(&play_q_row);
+
+        let (next_ep_row, next_ep_sw) = crate::ui::components::switch_row(
+            "Otomatik Sonraki Bölüm",
+            "Bölüm bittiğinde veya '>' / 'N' tuşuna basıldığında sonraki bölüme (sezon bittiyse sonraki sezona) geçer",
+            settings.auto_next_episode,
+        );
+        player_group.add(&next_ep_row);
         root.append(&player_group);
 
         let perf_group = adw::PreferencesGroup::new();
@@ -727,6 +956,7 @@ impl SettingsView {
             let nf_r = news_font_row.clone();
             let theme_r = theme_row.clone();
             let fs_r = fs_sw.clone();
+            let ne_r = next_ep_sw.clone();
             let ih_r = intro_hint_sw.clone();
             let mh_r = music_hint_sw.clone();
             let pq_r = play_q_sw.clone();
@@ -763,6 +993,7 @@ impl SettingsView {
                     .map(|(id, _)| id.to_string())
                     .unwrap_or_else(|| crate::theme::DEFAULT_THEME.to_string());
                 updated.auto_fullscreen = fs_r.is_active();
+                updated.auto_next_episode = ne_r.is_active();
                 updated.show_intro_hint = ih_r.is_active();
                 updated.show_music_hint = mh_r.is_active();
                 updated.play_ask_quality = pq_r.is_active();

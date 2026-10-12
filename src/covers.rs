@@ -269,7 +269,15 @@ impl CoverManager {
                     this.pump_covers();
                     glib::ControlFlow::Break
                 }
-                Err(_) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    let curr = this.active.get();
+                    if curr > 0 {
+                        this.active.set(curr - 1);
+                    }
+                    this.pump_covers();
+                    glib::ControlFlow::Break
+                }
             });
         }
     }
