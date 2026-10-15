@@ -26,7 +26,7 @@ kontrol eder ve kendini otomatik güncelleyebilir.
 - **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (S/E), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), isteğe bağlı oynatma kalite seçici
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme
-- **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
+- (YAKINDA) **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
 - **Otomatik güncelleme**: AppImage sürümü başlatmada yeni sürümü denetler, tek tıkla günceller
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
