@@ -129,6 +129,8 @@ jobs:
           P=pkg
           mkdir -p "$P/DEBIAN"
           cp -r girdi/usr "$P/"
+          # upload-artifact çalıştırma iznini düşürür; pakette +x şart.
+          chmod +x "$P/usr/bin/animecix"
           cat > "$P/DEBIAN/control" <<EOF
           Package: animecix
           Version: $VER
@@ -184,7 +186,8 @@ jobs:
           # iskele dizini doğrudan buildroot olur: %files'taki mutlak yollar bunun altına çözülür.
           mkdir -p "$PWD/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           mkdir -p iskele
-          cp -r girdi/usr/* iskele/
+          cp -r girdi/usr iskele/
+          chmod +x iskele/usr/bin/animecix
           find iskele -type f | sort
           cat > "$PWD/rpmbuild/SPECS/animecix.spec" <<EOF
           Name: animecix
