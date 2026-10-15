@@ -138,7 +138,7 @@ bash build_appimage.sh
 | `s` | Oynatıcıda intro sonuna atla |
 | `e` | Oynatıcıda outro sonuna atla |
 | `n` / `p` | Oynatıcıda sonraki / önceki bölüm |
-| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm |
+| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm (alternatif) |
 | `Shift+M` (`M`) | Çalan şarkıyı tarayıcıda aç (şarkı bilgisi varsa) |
 | `Esc` | Geri / aramayı kapat |
 
