@@ -151,7 +151,7 @@ jobs:
         run: |
           VER=$(cat girdi/VER)
           apt-get update -qq
-          apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb
+          apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb gh
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
           rm -rf /var/lib/apt/lists/*
