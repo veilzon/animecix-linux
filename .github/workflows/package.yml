@@ -33,7 +33,7 @@ jobs:
       - name: AppImage'ı release'den indir (beklemeli)
         run: |
           for i in $(seq 1 20); do
-            gh release download "$TAG" -p 'AnimeciX-x86_64.AppImage' --clobber && break
+            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p 'AnimeciX-x86_64.AppImage' --clobber && break
             echo "AppImage yok, 30sn bekleniyor ($i/20)"
             sleep 30
           done
@@ -109,7 +109,7 @@ jobs:
         run: |
           VER=$(cat girdi/VER)
           TAG="v$VER"
-          gh release upload "$TAG" "animecix_${VER}_amd64.deb" --clobber
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "animecix_${VER}_amd64.deb" --clobber
           ls -la animecix_${VER}_amd64.deb
 
   rpm:
@@ -182,7 +182,7 @@ jobs:
         run: |
           VER=$(cat /girdi/VER)
           TAG="v$VER"
-          gh release upload "$TAG" ./animecix-*.x86_64.rpm --clobber
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" ./animecix-*.x86_64.rpm --clobber
 
   ekran:
     needs: hazirla
@@ -198,7 +198,7 @@ jobs:
 
       - name: AppImage'ı release'den indir
         run: |
-          gh release download "$TAG" -p 'AnimeciX-x86_64.AppImage' --clobber
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p 'AnimeciX-x86_64.AppImage' --clobber
           chmod +x AnimeciX-x86_64.AppImage
           ./AnimeciX-x86_64.AppImage --appimage-extract
 
