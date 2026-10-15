@@ -156,6 +156,12 @@ jobs:
           xvfb-run -a animecix --check-icons
           rm -rf /var/lib/apt/lists/*
 
+      - name: Deb'i paylaş (ekran job'u için)
+        uses: actions/upload-artifact@v4
+        with:
+          name: animecix-deb
+          path: animecix_*_amd64.deb
+
       - name: Release'e yükle
         run: |
           VER=$(cat girdi/VER)
@@ -228,28 +234,25 @@ jobs:
           ls -lh ./animecix-*.x86_64.rpm
 
   ekran:
-    needs: derle
+    # Release AppImage'ı bakımcı makinesinde derlenir (glibc 2.43+), CI
+    # koşucularında açılmaz. O yüzden ekran, CI'ın kurduğu deb'ten alınır.
+    needs: deb
     runs-on: ubuntu-24.04
     continue-on-error: true
     timeout-minutes: 20
     steps:
-      - name: Etiketi çöz
-        run: |
-          TAG="${{ inputs.tag }}"
-          [ -z "$TAG" ] && TAG="${{ github.event.release.tag_name }}"
-          [ -z "$TAG" ] && TAG="${{ github.ref_name }}"
-          echo "TAG=$TAG" >> "$GITHUB_ENV"
+      - uses: actions/download-artifact@v4
+        with:
+          name: animecix-deb
+          path: deb
 
-      - name: AppImage'ı release'den indir
+      - name: Deb'i kur
         run: |
-          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p 'AnimeciX-x86_64.AppImage' --clobber
-          chmod +x AnimeciX-x86_64.AppImage
-          ./AnimeciX-x86_64.AppImage --appimage-extract
-
-      - name: Sistem bağımlılıkları
-        run: |
+          DEB=$(ls deb/animecix_*_amd64.deb | head -n 1)
+          echo "DEB=$DEB"
           sudo apt-get update -qq
-          sudo apt-get install -y libgtk-4-1 libadwaita-1-0 mpv aria2 xvfb scrot
+          sudo apt-get install -y "./$DEB" xvfb scrot
+          which animecix
 
       - name: Sayfaları çek (home, settings, downloads)
         run: |
@@ -260,7 +263,7 @@ jobs:
           export GDK_BACKEND=x11
           sleep 2
           for sayfa in home settings downloads; do
-            ./squashfs-root/AppRun --goto="$sayfa" &
+            animecix --goto="$sayfa" &
             APP_PID=$!
             sleep 15
             scrot "ss-$sayfa.png" || echo "$sayfa çekilemedi"
