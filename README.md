@@ -18,16 +18,20 @@ kontrol eder ve kendini otomatik güncelleyebilir.
 
 ## Özellikler
 
-- **İndirme yöneticisi**: bölüm ve film indirme; 6 bağlantıyla hızlı indirme, kaldığı yerden devam, toplu indirme sihirbazı
-- **Sayfalar menüsü**: Ana Sayfa, Favoriler, Maraton, Geçmiş, İndirilenler ve Ayarlar tek menüde; Ctrl+T ile anında erişim (kısayol değiştirilebilir)
+- **Yan menü**: Ana Sayfa, Keşfet, Takvim, Haberler, Favoriler, Maraton, Geçmiş, İndirilenler ve Ayarlar tek tıkla; daraltınca sadece simgeler kalır
+- **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı), sayfalı raflar
+- **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
 - **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
-- **Hızlı arama**: ana ekranda ortalı arama çubuğu (Ctrl+S); bölüm ekranında hızlı bölüm arama
-- **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (S/E), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, isteğe bağlı oynatma kalite seçici
+- **Hızlı arama**: üst çubuktaki arama hapı yazarken sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
+- **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (S/E), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), isteğe bağlı oynatma kalite seçici
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam
+- **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme
+- **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
 - **Otomatik güncelleme**: AppImage sürümü başlatmada yeni sürümü denetler, tek tıkla günceller
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
-- **Ayarlar**: tema, kısayollar, indirme klasörü, masaüstü başlatıcı, veri sıfırlama
+- **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
+- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, masaüstü başlatıcı, veri sıfırlama
 - **Hızlı yükleme**: HTTP/2 multiplexing, bağlantı havuzu (keep-alive) ve DNS önbelleği;
   kapak görselleri paralel (12 worker) indirilir
 
@@ -46,14 +50,18 @@ _ekran görüntüleri her zaman güncel olmayabilir._
 
 | | |
 |:---:|:---:|
-| <img src="screenshots/home.png" width="100%" alt="Ana Sayfa"> | <img src="screenshots/episodes.png" width="100%" alt="Bölümler"> |
+| <img src="screenshots/anasayfa.png" width="100%" alt="Ana Sayfa"> | <img src="screenshots/episodes.png" width="100%" alt="Bölümler"> |
 | **Ana Sayfa** | **Bölümler** |
-| <img src="screenshots/film.png" width="100%" alt="Film"> | <img src="screenshots/favorites.png" width="100%" alt="Favoriler"> |
-| **Film** | **Favoriler** |
-| <img src="screenshots/marathon.png" width="100%" alt="İzleme Maratonu"> | <img src="screenshots/history.png" width="100%" alt="Geçmiş"> |
-| **İzleme Maratonu** | **Geçmiş** |
-| <img src="screenshots/downloads.png" width="100%" alt="İndirilenler"> | <img src="screenshots/settings.png" width="100%" alt="Ayarlar"> |
-| **İndirilenler** | **Ayarlar** |
+| <img src="screenshots/keşfet.png" width="100%" alt="Keşfet"> | <img src="screenshots/film.png" width="100%" alt="Film"> |
+| **Keşfet** | **Film** |
+| <img src="screenshots/favoriler.png" width="100%" alt="Favoriler"> | <img src="screenshots/maraton.png" width="100%" alt="İzleme Maratonu"> |
+| **Favoriler** | **İzleme Maratonu** |
+| <img src="screenshots/geçmiş.png" width="100%" alt="Geçmiş"> | <img src="screenshots/takvim.png" width="100%" alt="Yayın Takvimi"> |
+| **Geçmiş** | **Yayın Takvimi** |
+| <img src="screenshots/haberler.png" width="100%" alt="Haberler"> | <img src="screenshots/indirilenler.png" width="100%" alt="İndirilenler"> |
+| **Haberler** | **İndirilenler** |
+| <img src="screenshots/ayarlar.png" width="100%" alt="Ayarlar"> | <img src="screenshots/kısayollar.png" width="100%" alt="Kısayollar"> |
+| **Ayarlar** | **Kısayollar (F1)** |
 
 </div>
 
@@ -120,9 +128,10 @@ export GITHUB_TOKEN=ghp_xxxxxxxx
 bash build_appimage.sh
 ```
 
-`build_appimage.sh` her çalıştığında `Cargo.toml` sürümünü otomatik artırır, `cargo build --release`
+`build_appimage.sh` varsayılan olarak `Cargo.toml` sürümünü otomatik artırır
+(`VERSION_BUMP=none` ile atlanır), `cargo build --release`
 çalıştırır ve `GITHUB_TOKEN` tanımlıysa `AnimeciX-x86_64.AppImage` dosyasını
-`v<surum>` etiketli bir GitHub Release olarak yükler.
+`v<sürüm>` etiketli bir GitHub Release olarak yükler.
 
 ---
 
@@ -130,11 +139,14 @@ bash build_appimage.sh
 
 | Kısayol | İşlev |
 |---|---|
+| `F1` | Kısayollar penceresini aç |
+| `F11` | Tam ekran |
 | `/` | Bölüm ekranında hızlı bölüm arama |
 | `Ctrl+S` | Ana ekranda arama çubuğuna odaklan |
-| `Ctrl+T` | Sayfalar menüsünü aç/kapat |
 | `s` | Oynatıcıda intro sonuna atla |
 | `e` | Oynatıcıda outro sonuna atla |
+| `n` / `p` | Oynatıcıda sonraki / önceki bölüm |
+| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm |
 | `Shift+M` (`M`) | Çalan şarkıyı tarayıcıda aç (şarkı bilgisi varsa) |
 | `Esc` | Geri / aramayı kapat |
 
