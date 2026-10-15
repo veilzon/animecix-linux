@@ -1,9 +1,10 @@
 name: Paketle (deb/rpm + ekran görüntüleri)
 
-# Akış: release AppImage'ını indirip içinden çıkan ikiliyle thin deb/rpm üretir,
-# aynı release'e ekler. Bakımcı AppImage'ı release'e geç yüklerse dispatch ile
-# elle tetiklenir (tag girdisi). Gelecek sürümlerde release yayınlanınca
-# otomatik koşar (AppImage geç gelirse indirme adımı bekler).
+# Akış: vTAG kaynağından CI'da derler (glibc 2.36 tabanı = Debian 12),
+# thin deb/rpm üretip aynı release'e ekler. Neden kaynaktan?
+# Release AppImage'ındaki binary bakımcı makinesinde derlenir (glibc 2.38+),
+# Ubuntu 22.04/Debian 12'de çalışmaz. Dağıtım paketi = dağıtım tabanında derleme.
+# Destek: Debian 12+, Ubuntu 24.04+, Fedora 40+ (thin: sistem mpv/GTK kullanır).
 on:
   workflow_dispatch:
     inputs:
@@ -21,8 +22,15 @@ env:
   GH_TOKEN: ${{ github.token }}
 
 jobs:
-  hazirla:
-    runs-on: ubuntu-22.04
+  derle:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
     steps:
       - name: Etiketi çöz
         run: |
@@ -34,67 +42,93 @@ jobs:
           echo "VER=${TAG#v}" >> "$GITHUB_ENV"
           echo "Çözülen etiket: $TAG"
 
-      - name: AppImage'ı release'den indir (beklemeli)
-        run: |
-          for i in $(seq 1 10); do
-            gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p 'AnimeciX-x86_64.AppImage' --clobber && break
-            echo "AppImage henüz release'e eklenmemiş, 30sn bekleniyor ($i/10) TAG=$TAG"
-            sleep 30
-          done
-          test -f AnimeciX-x86_64.AppImage
-          ls -lh AnimeciX-x86_64.AppImage
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
 
-      - name: Çıkar ve doğrula
+      - name: Sistem bağımlılıkları
         run: |
-          chmod +x AnimeciX-x86_64.AppImage
-          ./AnimeciX-x86_64.AppImage --appimage-extract
-          test -x squashfs-root/usr/bin/animecix
-          test -f squashfs-root/tr.com.animecix.desktop
-          echo "$VER" > VER
+          apt-get update
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git file
+          rm -rf /var/lib/apt/lists/*
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bookworm-paket
+
+      - name: Sürüm kontrolü (tag == Cargo.toml)
+        run: |
+          VER_TOML=$(grep -m1 '^version =' Cargo.toml | cut -d'"' -f2)
+          echo "tag=$VER cargo=$VER_TOML"
+          [ "$VER" = "$VER_TOML" ] || { echo "Etiket v$VER != Cargo.toml $VER_TOML"; exit 1; }
+
+      - name: Derle
+        run: cargo build --release --locked
+
+      - name: glibc taban kontrolü (<= 2.36)
+        run: |
+          MAXGLIBC=$(objdump -T target/release/animecix | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
+          echo "max glibc: $MAXGLIBC"
+          TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
+          [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc tabanı kaydı: $MAXGLIBC (deb Debian 12'de kurulmaz)"; exit 1; }
+
+      - name: Girdiyi hazırla ve paylaş
+        run: |
+          mkdir -p girdi/usr/bin girdi/usr/share/applications
+          cp target/release/animecix girdi/usr/bin/
+          chmod +x girdi/usr/bin/animecix
+          cat > girdi/usr/share/applications/tr.com.animecix.desktop <<EOF
+          [Desktop Entry]
+          Type=Application
+          Name=AnimeciX
+          Comment=Anime, dizi ve film izleme istemcisi
+          Exec=animecix
+          Icon=tr.com.animecix
+          Terminal=false
+          Categories=AudioVideo;Player;Video;
+          EOF
+          for s in 64 128 256 512; do
+            mkdir -p "girdi/usr/share/icons/hicolor/${s}x${s}/apps"
+            cp "assets/icon-${s}.png" "girdi/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
+          done
+          echo "$VER" > girdi/VER
+          find girdi -type f | sort
 
       - name: Girdiyi paylaş
         uses: actions/upload-artifact@v4
         with:
           name: paket-girdi
-          path: |
-            squashfs-root/usr/bin/animecix
-            squashfs-root/tr.com.animecix.desktop
-            VER
+          path: girdi/
 
   deb:
-    needs: hazirla
-    runs-on: ubuntu-22.04
+    needs: derle
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: paket-girdi
           path: girdi
 
-      - name: Checkout (ikonlar için)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
-          path: kaynak
-          sparse-checkout: |
-            assets/icon-64.png
-            assets/icon-128.png
-            assets/icon-256.png
-            assets/icon-512.png
-          sparse-checkout-cone-mode: false
-
       - name: Paket iskeleti
         run: |
           VER=$(cat girdi/VER)
           echo "VER=$VER" >> "$GITHUB_ENV"
           P=pkg
-          mkdir -p "$P/DEBIAN" "$P/usr/bin" "$P/usr/share/applications"
-          for s in 64 128 256 512; do
-            mkdir -p "$P/usr/share/icons/hicolor/${s}x${s}/apps"
-            cp "kaynak/assets/icon-${s}.png" "$P/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
-          done
-          cp girdi/squashfs-root/usr/bin/animecix "$P/usr/bin/"
-          chmod +x "$P/usr/bin/animecix"
-          cp girdi/squashfs-root/tr.com.animecix.desktop "$P/usr/share/applications/"
+          mkdir -p "$P/DEBIAN"
+          cp -r girdi/usr "$P/"
           cat > "$P/DEBIAN/control" <<EOF
           Package: animecix
           Version: $VER
@@ -104,27 +138,28 @@ jobs:
           Section: video
           Priority: optional
           Description: Anime, dizi ve film izleme istemcisi (GTK4, thin: sistem mpv kullanır)
-           Harici mpv + sistem GTK ile çalışan ince paket.
+           Harici mpv + sistem GTK ile çalışan ince paket. Debian 12+ / Ubuntu 24.04+ gerekir.
           EOF
           dpkg-deb --build "$P" "animecix_${VER}_amd64.deb"
+          ls -la animecix_${VER}_amd64.deb
 
-      - name: Kurulum testi (temiz bağımlılık)
+      - name: Kurulum testi (temiz Debian 12)
         run: |
           VER=$(cat girdi/VER)
-          sudo apt-get update -qq
-          sudo apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb
+          apt-get update -qq
+          apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
+          rm -rf /var/lib/apt/lists/*
 
       - name: Release'e yükle
         run: |
           VER=$(cat girdi/VER)
           TAG="v$VER"
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "animecix_${VER}_amd64.deb" --clobber
-          ls -la "animecix_${VER}_amd64.deb"
 
   rpm:
-    needs: hazirla
+    needs: derle
     runs-on: ubuntu-22.04
     container:
       image: fedora:40
@@ -132,23 +167,12 @@ jobs:
     defaults:
       run:
         shell: bash
+    timeout-minutes: 20
     steps:
       - uses: actions/download-artifact@v4
         with:
           name: paket-girdi
           path: girdi
-
-      - name: Checkout (ikonlar için)
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.tag || github.ref_name }}
-          path: kaynak
-          sparse-checkout: |
-            assets/icon-64.png
-            assets/icon-128.png
-            assets/icon-256.png
-            assets/icon-512.png
-          sparse-checkout-cone-mode: false
 
       - name: Araçlar
         run: dnf install -y rpm-build gh desktop-file-utils xorg-x11-server-Xvfb gtk4 libadwaita aria2
@@ -157,15 +181,12 @@ jobs:
         run: |
           VER=$(cat girdi/VER)
           echo "VER=$VER" >> "$GITHUB_ENV"
-          TOP="$PWD/rpmbuild"
-          mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} iskele/usr/bin iskele/usr/share/applications
-          for s in 64 128 256 512; do
-            mkdir -p "iskele/usr/share/icons/hicolor/${s}x${s}/apps"
-            cp "kaynak/assets/icon-${s}.png" "iskele/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
-          done
-          cp girdi/squashfs-root/usr/bin/animecix iskele/usr/bin/
-          cp girdi/squashfs-root/tr.com.animecix.desktop iskele/usr/share/applications/
-          cat > "$TOP/SPECS/animecix.spec" <<EOF
+          # iskele dizini doğrudan buildroot olur: %files'taki mutlak yollar bunun altına çözülür.
+          mkdir -p "$PWD/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
+          mkdir -p iskele
+          cp -r girdi/usr/* iskele/
+          find iskele -type f | sort
+          cat > "$PWD/rpmbuild/SPECS/animecix.spec" <<EOF
           Name: animecix
           Version: $VER
           Release: 1%{?dist}
@@ -180,9 +201,8 @@ jobs:
           /usr/share/applications/tr.com.animecix.desktop
           /usr/share/icons/hicolor/*/apps/tr.com.animecix.png
           EOF
-          cp -r iskele/usr "$TOP/BUILD/"
-          rpmbuild -bb --define "_topdir $TOP" --buildroot "$TOP/BUILDROOT" "$TOP/SPECS/animecix.spec"
-          find "$TOP/RPMS" -name '*.rpm' -exec cp {} ./ \;
+          rpmbuild -bb --define "_topdir $PWD/rpmbuild" --buildroot "$PWD/iskele" "$PWD/rpmbuild/SPECS/animecix.spec"
+          find "$PWD/rpmbuild/RPMS" -name '*.rpm' -exec cp {} ./ \;
           ls -la ./animecix-*.x86_64.rpm
 
       - name: Kurulum testi (rpmfusion + mpv)
@@ -203,9 +223,10 @@ jobs:
           ls -lh ./animecix-*.x86_64.rpm
 
   ekran:
-    needs: hazirla
+    needs: derle
     runs-on: ubuntu-24.04
     continue-on-error: true
+    timeout-minutes: 20
     steps:
       - name: Etiketi çöz
         run: |
