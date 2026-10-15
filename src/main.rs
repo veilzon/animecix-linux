@@ -114,6 +114,9 @@ fn main() {
                     base.join("usr/share/animecix/assets"),
                     base.join("assets/hicolor"),
                     base.join("assets"),
+                    // FHS kurulumu (/usr/bin/animecix): gömülü set /usr/share/animecix altında.
+                    std::path::PathBuf::from("/usr/share/animecix/assets/hicolor"),
+                    std::path::PathBuf::from("/usr/share/animecix/assets"),
                 ];
                 // `cargo run`: exe `target/debug/` altında, assetler repo kökünde.
                 if let Some(root) = base.ancestors().nth(2) {
@@ -1040,6 +1043,9 @@ fn cmd_check_icons() {
             base.join("usr/share/animecix/assets"),
             base.join("assets/hicolor"),
             base.join("assets"),
+            // FHS kurulumu (/usr/bin/animecix): gömülü set /usr/share/animecix altında.
+            std::path::PathBuf::from("/usr/share/animecix/assets/hicolor"),
+            std::path::PathBuf::from("/usr/share/animecix/assets"),
         ];
         if let Some(root) = base.ancestors().nth(2) {
             ours.push(root.join("assets/hicolor"));

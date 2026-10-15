@@ -42,10 +42,12 @@ jobs:
           echo "VER=${TAG#v}" >> "$GITHUB_ENV"
           echo "Çözülen etiket: $TAG"
 
+      # Kod: tetiklenen ref (dispatch→main ucu, release olayı→etiket).
+      # TAG (sürüm adı) ayrı çözülür; sürüm kontrolü aşağıda tag==Cargo.toml yapar.
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ env.TAG }}
+          ref: ${{ github.ref }}
 
       - name: Sistem bağımlılıkları
         run: |
