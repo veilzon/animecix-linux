@@ -26,18 +26,23 @@ jobs:
     steps:
       - name: Etiketi çöz
         run: |
-          if [ -n "${{ inputs.tag }}" ]; then TAG="${{ inputs.tag }}"; else TAG="${{ github.ref_name }}"; fi
+          TAG="${{ inputs.tag }}"
+          [ -z "$TAG" ] && TAG="${{ github.event.release.tag_name }}"
+          [ -z "$TAG" ] && TAG="${{ github.ref_name }}"
+          [ -z "$TAG" ] && { echo "TAG çözülemedi"; exit 1; }
           echo "TAG=$TAG" >> "$GITHUB_ENV"
           echo "VER=${TAG#v}" >> "$GITHUB_ENV"
+          echo "Çözülen etiket: $TAG"
 
       - name: AppImage'ı release'den indir (beklemeli)
         run: |
-          for i in $(seq 1 20); do
+          for i in $(seq 1 10); do
             gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p 'AnimeciX-x86_64.AppImage' --clobber && break
-            echo "AppImage yok, 30sn bekleniyor ($i/20)"
+            echo "AppImage henüz release'e eklenmemiş, 30sn bekleniyor ($i/10) TAG=$TAG"
             sleep 30
           done
           test -f AnimeciX-x86_64.AppImage
+          ls -lh AnimeciX-x86_64.AppImage
 
       - name: Çıkar ve doğrula
         run: |
@@ -70,7 +75,11 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref_name }}
           path: kaynak
-          sparse-checkout: assets/icon-64.png,assets/icon-128.png,assets/icon-256.png,assets/icon-512.png
+          sparse-checkout: |
+            assets/icon-64.png
+            assets/icon-128.png
+            assets/icon-256.png
+            assets/icon-512.png
           sparse-checkout-cone-mode: false
 
       - name: Paket iskeleti
@@ -84,6 +93,7 @@ jobs:
             cp "kaynak/assets/icon-${s}.png" "$P/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
           done
           cp girdi/squashfs-root/usr/bin/animecix "$P/usr/bin/"
+          chmod +x "$P/usr/bin/animecix"
           cp girdi/squashfs-root/tr.com.animecix.desktop "$P/usr/share/applications/"
           cat > "$P/DEBIAN/control" <<EOF
           Package: animecix
@@ -100,6 +110,7 @@ jobs:
 
       - name: Kurulum testi (temiz bağımlılık)
         run: |
+          VER=$(cat girdi/VER)
           sudo apt-get update -qq
           sudo apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
@@ -110,7 +121,7 @@ jobs:
           VER=$(cat girdi/VER)
           TAG="v$VER"
           gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "animecix_${VER}_amd64.deb" --clobber
-          ls -la animecix_${VER}_amd64.deb
+          ls -la "animecix_${VER}_amd64.deb"
 
   rpm:
     needs: hazirla
@@ -125,31 +136,35 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           name: paket-girdi
-          path: /girdi
+          path: girdi
 
       - name: Checkout (ikonlar için)
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.tag || github.ref_name }}
-          path: /kaynak
-          sparse-checkout: assets/icon-64.png,assets/icon-128.png,assets/icon-256.png,assets/icon-512.png
+          path: kaynak
+          sparse-checkout: |
+            assets/icon-64.png
+            assets/icon-128.png
+            assets/icon-256.png
+            assets/icon-512.png
           sparse-checkout-cone-mode: false
 
       - name: Araçlar
-        run: dnf install -y rpm-build gh desktop-file-utils xorg-x11-server-Xvfb gtk4 libadwaita aria2 mpv 2>/dev/null || dnf install -y rpm-build gh desktop-file-utils xorg-x11-server-Xvfb gtk4 libadwaita aria2
+        run: dnf install -y rpm-build gh desktop-file-utils xorg-x11-server-Xvfb gtk4 libadwaita aria2
 
-      - name: RPM derle
+      - name: RPM derle (thin)
         run: |
-          VER=$(cat /girdi/VER)
+          VER=$(cat girdi/VER)
           echo "VER=$VER" >> "$GITHUB_ENV"
-          TOP=/rpmbuild
-          mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} /iskele/usr/bin /iskele/usr/share/applications
+          TOP="$PWD/rpmbuild"
+          mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} iskele/usr/bin iskele/usr/share/applications
           for s in 64 128 256 512; do
-            mkdir -p "/iskele/usr/share/icons/hicolor/${s}x${s}/apps"
-            cp "/kaynak/assets/icon-${s}.png" "/iskele/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
+            mkdir -p "iskele/usr/share/icons/hicolor/${s}x${s}/apps"
+            cp "kaynak/assets/icon-${s}.png" "iskele/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
           done
-          cp /girdi/squashfs-root/usr/bin/animecix /iskele/usr/bin/
-          cp /girdi/squashfs-root/tr.com.animecix.desktop /iskele/usr/share/applications/
+          cp girdi/squashfs-root/usr/bin/animecix iskele/usr/bin/
+          cp girdi/squashfs-root/tr.com.animecix.desktop iskele/usr/share/applications/
           cat > "$TOP/SPECS/animecix.spec" <<EOF
           Name: animecix
           Version: $VER
@@ -157,21 +172,22 @@ jobs:
           Summary: Anime, dizi ve film izleme istemcisi (GTK4, thin)
           License: MIT
           Requires: mpv, gtk4, libadwaita, aria2
+          %define debug_package %{nil}
           %description
-          Harici mpv + sistem GTK ile çalışan ince paket.
+          Harici mpv + sistem GTK ile calisan ince paket.
           %files
           /usr/bin/animecix
           /usr/share/applications/tr.com.animecix.desktop
           /usr/share/icons/hicolor/*/apps/tr.com.animecix.png
           EOF
-          cp -r /iskele/usr "$TOP/BUILD/"
-          rpmbuild -bb --define "_topdir $TOP" --buildroot "$TOP/BUILDROOT" "$TOP/SPECS/animecix.spec" --define "debug_package %{nil}"
+          cp -r iskele/usr "$TOP/BUILD/"
+          rpmbuild -bb --define "_topdir $TOP" --buildroot "$TOP/BUILDROOT" "$TOP/SPECS/animecix.spec"
           find "$TOP/RPMS" -name '*.rpm' -exec cp {} ./ \;
-          ls -la ./*.rpm
+          ls -la ./animecix-*.x86_64.rpm
 
       - name: Kurulum testi (rpmfusion + mpv)
         run: |
-          RPM=$(ls ./animecix-*.x86_64.rpm | head -1)
+          RPM=$(ls ./animecix-*.x86_64.rpm | head -n 1)
           echo "RPM=$RPM"
           dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
           dnf install -y "./$RPM"
@@ -180,9 +196,11 @@ jobs:
 
       - name: Release'e yükle
         run: |
-          VER=$(cat /girdi/VER)
+          VER=$(cat girdi/VER)
           TAG="v$VER"
-          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" ./animecix-*.x86_64.rpm --clobber
+          RPM=$(ls ./animecix-*.x86_64.rpm | head -n 1)
+          gh release upload "$TAG" -R "$GITHUB_REPOSITORY" "$RPM" --clobber
+          ls -lh ./animecix-*.x86_64.rpm
 
   ekran:
     needs: hazirla
@@ -207,10 +225,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y libgtk-4-1 libadwaita-1-0 mpv aria2 xvfb scrot
 
-      - name: Sayfaları çek (home, ayarlar, indirilenler)
+      - name: Sayfaları çek (home, settings, downloads)
         run: |
-          # Tek X sunucusu: xvfb-run -a ile arka-plana atmak DISPLAY'i
-          # scrot'tan koparır, o yüzden Xvfb'yi elle yönetiyoruz.
+          # Tek Xvfb elle yönetilir; xvfb-run -a ... & + ayrı scrot DISPLAY kopukluğu yapar.
           Xvfb :99 -screen 0 1280x800x24 &
           XVFB_PID=$!
           export DISPLAY=:99
