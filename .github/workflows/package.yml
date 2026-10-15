@@ -195,7 +195,7 @@ jobs:
           [ -z "$TAG" ] && TAG="${{ github.event.release.tag_name }}"
           [ -z "$TAG" ] && TAG="${{ github.ref_name }}"
           echo "TAG=$TAG" >> "$GITHUB_ENV"
-    steps:
+
       - name: AppImage'ı release'den indir
         run: |
           gh release download "$TAG" -p 'AnimeciX-x86_64.AppImage' --clobber
