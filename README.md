@@ -42,15 +42,12 @@ kontrol eder ve kendini otomatik güncelleyebilir.
 _ekran görüntüleri her zaman güncel olmayabilir._
 
 <p align="center">
-  <img src="screenshots/temalar.png" width="100%">
-  <b>5 koyu tema: Koyu, Bordo, Orman, Lacivert, Mor</b>
-</p>
 
 <div align="center">
 
 | | |
 |:---:|:---:|
-| <img src="screenshots/anasayfa.png" width="100%" alt="Ana Sayfa"> | <img src="screenshots/episodes.png" width="100%" alt="Bölümler"> |
+| <img src="screenshots/anasayfa.png" width="100%" alt="Ana Sayfa"> | <img src="screenshots/bölümler.png" width="100%" alt="Bölümler"> |
 | **Ana Sayfa** | **Bölümler** |
 | <img src="screenshots/keşfet.png" width="100%" alt="Keşfet"> | <img src="screenshots/film.png" width="100%" alt="Film"> |
 | **Keşfet** | **Film** |
@@ -64,11 +61,6 @@ _ekran görüntüleri her zaman güncel olmayabilir._
 | **Ayarlar** | **Kısayollar (F1)** |
 
 </div>
-
-<p align="center">
-  <img src="screenshots/welcome.png" width="100%" alt="Karşılama">
-  <b>Karşılama</b>
-</p>
 
 ---
 

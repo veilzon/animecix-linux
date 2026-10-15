@@ -8,6 +8,7 @@ favoriler_kapak_gecmisi.md
 *.png
 !docs/**/*.png
 !assets/**/*.png
+!screenshots/*.png
 
 # === Build artefaktları (GitHub'a gönderilmez) ===
 *.AppImage
