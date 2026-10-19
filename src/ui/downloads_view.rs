@@ -7,15 +7,13 @@ use std::rc::Rc;
 
 use crate::download::{DownloadManager, DownloadRecord, DownloadStatus};
 
-/// Satır tutamacı: yerinde güncelleme (bar/etiket/buton) + canlı filtre için.
+/// Satır tutamacı: yerinde güncelleme (bar/etiket/buton).
 #[derive(Clone)]
 pub struct DlRow {
-    pub card: gtk::Widget,
     pub title: gtk::Label,
     pub bar: gtk::ProgressBar,
     pub status: gtk::Label,
     pub foot: gtk::Box,
-    pub filter: String,
 }
 
 pub struct DownloadsView;
@@ -57,11 +55,9 @@ impl DownloadsView {
                     ),
                 )
             }
-            DownloadStatus::Queued if rec.have == 0 => (
-                0.0,
-                "Bekleniyor".to_string(),
-                "Sırada".to_string(),
-            ),
+            DownloadStatus::Queued if rec.have == 0 => {
+                (0.0, "Bekleniyor".to_string(), "Sırada".to_string())
+            }
             DownloadStatus::Queued => {
                 let p = pct(rec.have, rec.total);
                 (
@@ -118,7 +114,11 @@ impl DownloadsView {
 
     /// Filtre havuzu (küçük harf): başlık + bölüm adı + fansub + kalite.
     fn filter_text(rec: &DownloadRecord) -> String {
-        format!("{} {} {} {}", rec.title, rec.ep_name, rec.fansub, rec.quality).to_lowercase()
+        format!(
+            "{} {} {} {}",
+            rec.title, rec.ep_name, rec.fansub, rec.quality
+        )
+        .to_lowercase()
     }
 
     fn icon_btn(icon: &str, tooltip: &str) -> gtk::Button {
@@ -229,7 +229,9 @@ impl DownloadsView {
             open_btn.set_halign(gtk::Align::Center);
             let open_dir_c = open_dir.clone();
             open_btn.connect_clicked(move |_| {
-                let _ = std::process::Command::new("xdg-open").arg(&open_dir_c).spawn();
+                let _ = std::process::Command::new("xdg-open")
+                    .arg(&open_dir_c)
+                    .spawn();
             });
             sp.set_child(Some(&open_btn));
             scroll.set_child(Some(&sp));
@@ -262,7 +264,9 @@ impl DownloadsView {
         open_btn.set_child(Some(&open_box));
         open_btn.set_valign(gtk::Align::Center);
         open_btn.connect_clicked(move |_| {
-            let _ = std::process::Command::new("xdg-open").arg(&open_dir).spawn();
+            let _ = std::process::Command::new("xdg-open")
+                .arg(&open_dir)
+                .spawn();
         });
         head.append(&open_btn);
         root.append(&head);
@@ -313,12 +317,10 @@ impl DownloadsView {
             rows.insert(
                 rec.id.clone(),
                 DlRow {
-                    card: card.clone().upcast(),
                     title: title.clone(),
                     bar: bar.clone(),
                     status: status.clone(),
                     foot: foot.clone(),
-                    filter,
                 },
             );
             root.append(&card);
@@ -393,7 +395,10 @@ mod tests {
     fn title_format_drops_empty_parts() {
         // Bölüm adı boşsa `· …` düşer.
         let r = rec(DownloadStatus::Queued, 0, 0, "", "Raion", "1080p");
-        assert_eq!(DownloadsView::row_title(&r), "Frieren — S01E07 [Raion] [1080p]");
+        assert_eq!(
+            DownloadsView::row_title(&r),
+            "Frieren — S01E07 [Raion] [1080p]"
+        );
         // Fansub boşsa `[]` basılmaz.
         let r = rec(DownloadStatus::Queued, 0, 0, "Gün Batımı", "", "1080p");
         assert_eq!(
@@ -401,7 +406,14 @@ mod tests {
             "Frieren — S01E07 · Gün Batımı [1080p]"
         );
         // Kalite boş/`en iyi` ise etiket düşer.
-        let r = rec(DownloadStatus::Queued, 0, 0, "Gün Batımı", "Raion", "en iyi");
+        let r = rec(
+            DownloadStatus::Queued,
+            0,
+            0,
+            "Gün Batımı",
+            "Raion",
+            "en iyi",
+        );
         assert_eq!(
             DownloadsView::row_title(&r),
             "Frieren — S01E07 · Gün Batımı [Raion]"
@@ -412,12 +424,22 @@ mod tests {
 
     #[test]
     fn row_state_strings() {
-        let (f, bar, st) = DownloadsView::row_state(&rec(DownloadStatus::Done, 100, 100, "", "", ""));
-        assert_eq!((bar.as_str(), st.as_str()), ("Tamamlandı", "Tamamlandı · 100 B"));
+        let (f, bar, st) =
+            DownloadsView::row_state(&rec(DownloadStatus::Done, 100, 100, "", "", ""));
+        assert_eq!(
+            (bar.as_str(), st.as_str()),
+            ("Tamamlandı", "Tamamlandı · 100 B")
+        );
         assert_eq!(f, 1.0);
 
-        let (_, bar, st) =
-            DownloadsView::row_state(&rec(DownloadStatus::Error("ağ koptu".into()), 0, 0, "", "", ""));
+        let (_, bar, st) = DownloadsView::row_state(&rec(
+            DownloadStatus::Error("ağ koptu".into()),
+            0,
+            0,
+            "",
+            "",
+            "",
+        ));
         assert_eq!((bar.as_str(), st.as_str()), ("Hata", "Hata: ağ koptu"));
 
         let (f, bar, st) =
@@ -431,7 +453,8 @@ mod tests {
         assert_eq!(bar, "Bekleniyor");
         assert_eq!(st, "Sırada");
 
-        let (_, bar, st) = DownloadsView::row_state(&rec(DownloadStatus::Queued, 30, 100, "", "", ""));
+        let (_, bar, st) =
+            DownloadsView::row_state(&rec(DownloadStatus::Queued, 30, 100, "", "", ""));
         assert_eq!(bar, "%30");
         assert_eq!(st, "Sırada — %30 · 30 B / 100 B");
 
@@ -441,7 +464,10 @@ mod tests {
 
         let (_, bar, st) =
             DownloadsView::row_state(&rec(DownloadStatus::Downloading, 1536, 0, "", "", ""));
-        assert_eq!((bar.as_str(), st.as_str()), ("%?", "İndiriliyor — 1.5 KB / ?"));
+        assert_eq!(
+            (bar.as_str(), st.as_str()),
+            ("%?", "İndiriliyor — 1.5 KB / ?")
+        );
 
         let (f, bar, st) =
             DownloadsView::row_state(&rec(DownloadStatus::Downloading, 1536, 3072, "", "", ""));
@@ -464,7 +490,8 @@ mod tests {
             let (_, bar, st) = DownloadsView::row_state(&rec(status, have, total, "", "", ""));
             for s in [&bar, &st] {
                 assert!(
-                    !s.chars().any(|c| c as u32 > 0x2500 && !matches!(c, '—' | '·' | '…')),
+                    !s.chars()
+                        .any(|c| c as u32 > 0x2500 && !matches!(c, '—' | '·' | '…')),
                     "emoji/simge olmamalı: {s}"
                 );
             }

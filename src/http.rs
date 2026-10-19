@@ -1,9 +1,11 @@
-use std::sync::{Arc, mpsc, Mutex, atomic::{AtomicU8, Ordering}};
+use std::sync::{
+    atomic::{AtomicU8, Ordering},
+    mpsc, Arc, Mutex,
+};
 use std::time::Duration;
 
 enum Method {
     Get,
-    Post,
     Head,
 }
 
@@ -12,7 +14,6 @@ struct Spec {
     url: String,
     headers: Vec<(String, String)>,
     query: Option<Vec<(String, String)>>,
-    json_body: Option<serde_json::Value>,
     timeout_secs: Option<u64>,
 }
 
@@ -47,10 +48,6 @@ pub(crate) struct Resp {
 impl Resp {
     pub fn url(&self) -> String {
         self.raw.url.clone()
-    }
-
-    pub fn status(&self) -> u16 {
-        self.raw.status
     }
 
     pub fn content_length(&self) -> Option<u64> {
@@ -98,11 +95,6 @@ impl ReqB<'_> {
         self
     }
 
-    pub fn json(mut self, v: &serde_json::Value) -> Self {
-        self.spec.json_body = Some(v.clone());
-        self
-    }
-
     pub fn timeout(mut self, secs: u64) -> Self {
         self.spec.timeout_secs = Some(secs);
         self
@@ -126,7 +118,12 @@ impl ReqB<'_> {
     }
 }
 
-fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, clearance: &str) -> Result<RawResp, String> {
+fn exec_on(
+    rt: &tokio::runtime::Runtime,
+    client: &wreq::Client,
+    spec: &Spec,
+    clearance: &str,
+) -> Result<RawResp, String> {
     let mut url = spec.url.clone();
     if let Some(q) = &spec.query {
         if !q.is_empty() {
@@ -145,7 +142,6 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     }
     let mut rb = match spec.method {
         Method::Get => client.get(&url),
-        Method::Post => client.post(&url),
         Method::Head => client.head(&url),
     };
     for (k, v) in &spec.headers {
@@ -154,11 +150,6 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     for (k, v) in &extra {
         rb = rb.header(k, v);
     }
-    if let Some(j) = &spec.json_body {
-        let body = serde_json::to_vec(j).map_err(|e| e.to_string())?;
-        rb = rb.header("content-type", "application/json");
-        rb = rb.body(body);
-    }
     if let Some(t) = spec.timeout_secs {
         rb = rb.timeout(Duration::from_secs(t));
     }
@@ -166,7 +157,10 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     let status = resp.status().as_u16();
     let final_url = resp.uri().to_string();
     let content_length = resp.content_length();
-    let body = rt.block_on(resp.bytes()).map_err(|e| e.to_string())?.to_vec();
+    let body = rt
+        .block_on(resp.bytes())
+        .map_err(|e| e.to_string())?
+        .to_vec();
     Ok(RawResp {
         status,
         url: final_url,
@@ -175,17 +169,32 @@ fn exec_on(rt: &tokio::runtime::Runtime, client: &wreq::Client, spec: &Spec, cle
     })
 }
 
-fn exec_cascade(rt: &tokio::runtime::Runtime, inner: &Inner, spec: &Spec) -> Result<RawResp, String> {
-    let order: [(u8, &wreq::Client); 2] = if inner.last_good.load(Ordering::Relaxed) == 1 && inner.fallback.is_some() {
-        [(1, inner.fallback.as_ref().unwrap()), (0, &inner.primary)]
-    } else {
-        [(0, &inner.primary), (1, inner.fallback.as_ref().unwrap_or(&inner.primary))]
-    };
+fn exec_cascade(
+    rt: &tokio::runtime::Runtime,
+    inner: &Inner,
+    spec: &Spec,
+) -> Result<RawResp, String> {
+    let order: [(u8, &wreq::Client); 2] =
+        if inner.last_good.load(Ordering::Relaxed) == 1 && inner.fallback.is_some() {
+            [(1, inner.fallback.as_ref().unwrap()), (0, &inner.primary)]
+        } else {
+            [
+                (0, &inner.primary),
+                (1, inner.fallback.as_ref().unwrap_or(&inner.primary)),
+            ]
+        };
 
     let mut last: Option<Result<RawResp, String>> = None;
-    for (idx, client) in order.iter().take(if inner.fallback.is_some() { 2 } else { 1 }) {
-        let clearance = inner.cf_clearance.lock().map(|g| g.clone()).unwrap_or_default();
-        let res = exec_on(rt, client, &spec, &clearance);
+    for (idx, client) in order
+        .iter()
+        .take(if inner.fallback.is_some() { 2 } else { 1 })
+    {
+        let clearance = inner
+            .cf_clearance
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_default();
+        let res = exec_on(rt, client, spec, &clearance);
         match &res {
             Ok(r) if r.status != 403 => {
                 inner.last_good.store(*idx, Ordering::Relaxed);
@@ -275,21 +284,6 @@ impl Http {
                 url: url.into(),
                 headers: Vec::new(),
                 query: None,
-                json_body: None,
-                timeout_secs: None,
-            },
-        }
-    }
-
-    pub fn post(&self, url: impl Into<String>) -> ReqB<'_> {
-        ReqB {
-            http: self,
-            spec: Spec {
-                method: Method::Post,
-                url: url.into(),
-                headers: Vec::new(),
-                query: None,
-                json_body: None,
                 timeout_secs: None,
             },
         }
@@ -303,7 +297,6 @@ impl Http {
                 url: url.into(),
                 headers: Vec::new(),
                 query: None,
-                json_body: None,
                 timeout_secs: None,
             },
         }
@@ -337,22 +330,14 @@ fn browser_headers_for(url: &str, existing: &[(String, String)]) -> Vec<(String,
     }
     DEFAULTS
         .iter()
-        .filter(|(k, _)| {
-            !existing
-                .iter()
-                .any(|(ek, _)| ek.eq_ignore_ascii_case(k))
-        })
+        .filter(|(k, _)| !existing.iter().any(|(ek, _)| ek.eq_ignore_ascii_case(k)))
         .map(|(k, v)| (k.to_string(), v.to_string()))
         .collect()
 }
 
 /// animecix.tv isteklerine takılacak Cookie başlığının değerini üretir.
 /// Boş bilet, video-host'ları ve çağrıda zaten Cookie varsa None döner.
-fn cookie_header_for(
-    url: &str,
-    existing: &[(String, String)],
-    clearance: &str,
-) -> Option<String> {
+fn cookie_header_for(url: &str, existing: &[(String, String)], clearance: &str) -> Option<String> {
     if clearance.is_empty() {
         return None;
     }
@@ -418,6 +403,11 @@ mod tests {
         assert!(cookie_header_for("https://video.sibnet.ru/v/1/2.mp4", &[], "BILET123").is_none());
         assert!(cookie_header_for("https://tau-video.xyz/api/video/a", &[], "BILET123").is_none());
         let with_cookie = vec![("Cookie".to_string(), "a=b".to_string())];
-        assert!(cookie_header_for("https://animecix.tv/secure/search/x", &with_cookie, "BILET123").is_none());
+        assert!(cookie_header_for(
+            "https://animecix.tv/secure/search/x",
+            &with_cookie,
+            "BILET123"
+        )
+        .is_none());
     }
 }

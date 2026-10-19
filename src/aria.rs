@@ -34,7 +34,9 @@ pub fn find_aria2c() -> Option<PathBuf> {
         }
     }
     std::env::var_os("PATH").and_then(|paths| {
-        std::env::split_paths(&paths).map(|d| d.join("aria2c")).find(|p| p.is_file())
+        std::env::split_paths(&paths)
+            .map(|d| d.join("aria2c"))
+            .find(|p| p.is_file())
     })
 }
 
@@ -97,7 +99,12 @@ pub fn rpc_body(method: &str, secret: &str, params: serde_json::Value) -> serde_
     })
 }
 
-fn rpc_call(port: u16, secret: &str, method: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+fn rpc_call(
+    port: u16,
+    secret: &str,
+    method: &str,
+    params: serde_json::Value,
+) -> Result<serde_json::Value, String> {
     let client = crate::api::shared_blocking_client();
     let body = rpc_body(method, secret, params);
     let resp = client
@@ -197,7 +204,9 @@ pub fn ensure_daemon() -> Result<(u16, String), String> {
             "--console-log-level=warn",
             "--quiet=true",
         ]);
-        cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null());
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
         let child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => return Err(format!("aria2c başlatılamadı: {e}")),
@@ -213,7 +222,11 @@ pub fn ensure_daemon() -> Result<(u16, String), String> {
         }
         if ready {
             if let Ok(mut g) = daemon_slot().lock() {
-                *g = Some(Daemon { child, port, secret: secret.clone() });
+                *g = Some(Daemon {
+                    child,
+                    port,
+                    secret: secret.clone(),
+                });
             }
             return Ok((port, secret));
         }
@@ -301,13 +314,12 @@ pub fn tell_status(port: u16, secret: &str, gid: &str) -> Result<AriaStatus, Str
         port,
         secret,
         "aria2.tellStatus",
-        serde_json::json!([gid, ["status", "completedLength", "totalLength", "errorMessage"]]),
+        serde_json::json!([
+            gid,
+            ["status", "completedLength", "totalLength", "errorMessage"]
+        ]),
     )?;
     parse_status(&res)
-}
-
-pub fn pause_gid(port: u16, secret: &str, gid: &str) -> Result<(), String> {
-    rpc_call(port, secret, "aria2.pause", serde_json::json!([gid])).map(|_| ())
 }
 
 pub fn remove_gid(port: u16, secret: &str, gid: &str) -> Result<(), String> {
@@ -355,7 +367,16 @@ pub fn start_download_aria(
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_else(|| "video.mp4".to_string());
-        let gid = match add_uri(port, &secret, &url, &dir, &out, UA, referer.as_deref(), split.max(1)) {
+        let gid = match add_uri(
+            port,
+            &secret,
+            &url,
+            &dir,
+            &out,
+            UA,
+            referer.as_deref(),
+            split.max(1),
+        ) {
             Ok(g) => g,
             Err(e) => {
                 let _ = tx.send(DownloadEvent::Error(format!("aria2 kuyruk: {e}")));
@@ -451,9 +472,18 @@ mod tests {
         use std::time::{Duration, Instant};
         let t0 = Instant::now();
         assert!(!aria_idle_expired(t0, t0), "sıfır geçen süre aşmamalı");
-        assert!(!aria_idle_expired(t0, t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS - 1)));
-        assert!(aria_idle_expired(t0, t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS)));
-        assert!(aria_idle_expired(t0, t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS + 30)));
+        assert!(!aria_idle_expired(
+            t0,
+            t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS - 1)
+        ));
+        assert!(aria_idle_expired(
+            t0,
+            t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS)
+        ));
+        assert!(aria_idle_expired(
+            t0,
+            t0 + Duration::from_secs(ARIA_IDLE_TIMEOUT_SECS + 30)
+        ));
     }
 
     #[test]
@@ -480,13 +510,21 @@ mod tests {
         let v = serde_json::json!({"status":"active","completedLength":"123","totalLength":"456"});
         assert_eq!(
             parse_status(&v).unwrap(),
-            AriaStatus { status: "active".into(), completed: 123, total: 456, error_msg: None }
+            AriaStatus {
+                status: "active".into(),
+                completed: 123,
+                total: 456,
+                error_msg: None
+            }
         );
         let e = serde_json::json!({"status":"error","completedLength":"0","totalLength":"0","errorMessage":"CUID#1 - Download aborted. URI=http://x"});
         let st = parse_status(&e).unwrap();
         assert_eq!(st.status, "error");
         assert!(st.error_msg.unwrap().contains("aborted"));
-        assert!(parse_status(&serde_json::json!({"completedLength":"1"})).is_err(), "status şart");
+        assert!(
+            parse_status(&serde_json::json!({"completedLength":"1"})).is_err(),
+            "status şart"
+        );
     }
 
     #[test]
@@ -515,13 +553,19 @@ mod tests {
                 let req = String::from_utf8_lossy(&buf[..n]).into_owned();
                 if req.starts_with("HEAD ") {
                     let _ = s.write_all(
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n").as_bytes(),
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
                     );
                     continue;
                 }
                 let body: Vec<u8> = (0..LEN).map(|i| (i % 251) as u8).collect();
                 let _ = s.write_all(
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n").as_bytes(),
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n"
+                    )
+                    .as_bytes(),
                 );
                 let _ = s.write_all(&body);
             }
@@ -536,7 +580,10 @@ mod tests {
         let mut done = false;
         for ev in rx.iter() {
             match ev {
-                DownloadEvent::Done => { done = true; break; }
+                DownloadEvent::Done => {
+                    done = true;
+                    break;
+                }
                 DownloadEvent::Error(e) => panic!("aria hatası: {e}"),
                 DownloadEvent::Cancelled => panic!("beklenmedik iptal"),
                 DownloadEvent::Progress(_, _) => {}

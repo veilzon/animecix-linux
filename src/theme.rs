@@ -168,8 +168,14 @@ mod tests {
             assert!(!css.is_empty(), "{id}: css boş olamaz");
             assert!(css.contains("background-color: #"), "{id}: baz yok");
             assert!(css.contains("linear-gradient"), "{id}: gradyan yok");
-            assert!(css.contains("@define-color accent_bg_color"), "{id}: vurgu yok");
-            assert!(css.contains("@define-color row_tint"), "{id}: satır boyası yok");
+            assert!(
+                css.contains("@define-color accent_bg_color"),
+                "{id}: vurgu yok"
+            );
+            assert!(
+                css.contains("@define-color row_tint"),
+                "{id}: satır boyası yok"
+            );
         }
     }
 
@@ -191,23 +197,38 @@ mod tests {
         let mut seen = HashSet::new();
         for (id, _) in THEMES {
             let css = theme_css(id);
-            assert!(css.contains("@define-color headerbar_bg_color #"), "{id}: başlık rengi yok");
+            assert!(
+                css.contains("@define-color headerbar_bg_color #"),
+                "{id}: başlık rengi yok"
+            );
             assert!(css.contains("headerbar {"), "{id}: headerbar kuralı yok");
-            assert!(css.contains("headerbar button.flat"), "{id}: başlık buton rengi yok");
+            assert!(
+                css.contains("headerbar button.flat"),
+                "{id}: başlık buton rengi yok"
+            );
             let hb = css
                 .lines()
                 .find(|l| l.starts_with("@define-color headerbar_bg_color"))
                 .unwrap()
                 .to_string();
-            assert!(seen.insert(hb.clone()), "iki tema aynı başlık rengini kullanmamalı: {hb}");
+            assert!(
+                seen.insert(hb.clone()),
+                "iki tema aynı başlık rengini kullanmamalı: {hb}"
+            );
         }
     }
 
     #[test]
     fn koyu_rows_are_neutral() {
         let css = theme_css("koyu");
-        assert!(css.contains("@define-color row_tint #FFFFFF"), "koyu satırlar nötr olmalı");
-        assert!(!css.contains("98,160,234"), "koyu zeminde mavi ışıltı kalmamalı");
+        assert!(
+            css.contains("@define-color row_tint #FFFFFF"),
+            "koyu satırlar nötr olmalı"
+        );
+        assert!(
+            !css.contains("98,160,234"),
+            "koyu zeminde mavi ışıltı kalmamalı"
+        );
     }
 
     #[test]
@@ -215,6 +236,9 @@ mod tests {
         assert_eq!(THEMES.len(), 5);
         assert_eq!(THEMES[0].0, "koyu");
         assert!(THEMES.iter().any(|(i, _)| *i == "mor"));
-        assert!(!THEMES.iter().any(|(i, _)| *i == "acik"), "açık tema kaldırıldı");
+        assert!(
+            !THEMES.iter().any(|(i, _)| *i == "acik"),
+            "açık tema kaldırıldı"
+        );
     }
 }

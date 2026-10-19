@@ -1,6 +1,6 @@
-use std::rc::Rc;
-use gtk::prelude::*;
 use crate::api::FansubInfo;
+use gtk::prelude::*;
+use std::rc::Rc;
 
 pub fn show_fansub_dialog(
     parent: &impl IsA<gtk::Window>,

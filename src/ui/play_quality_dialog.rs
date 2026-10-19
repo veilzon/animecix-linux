@@ -1,8 +1,8 @@
 //! Oynatma kalite seçici: MessageDialog ile etiket seçimi.
 //! Ağ/çözümleme yok; yalnızca UI (fansub_dialog.rs + ask_download_quality deseni).
 
-use gtk::prelude::*;
 use adw::prelude::*;
+use gtk::prelude::*;
 
 /// Dialog sonucu: seçili kalite, en-iyi (bugünkü yol), vazgeçme (oynatma durur).
 pub enum PlayChoice {

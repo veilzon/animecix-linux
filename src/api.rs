@@ -4,7 +4,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 
-const BASE: &str = "https://animecix.tv";
+pub(crate) const BASE: &str = "https://animecix.tv";
 const TAU: &str = "https://tau-video.xyz";
 const API_TTL_SECS: u64 = 3 * 3600;
 const IMG_TTL_SECS: u64 = 7 * 24 * 3600;
@@ -33,19 +33,26 @@ fn mem_cache_insert(
         map.remove(&k);
     }
 }
+// NOT: yalnız `#[cfg(not(test))]` kod yolunda kullanılır; test derlemesinde
+// ölü-kod kapısına takılmaması için muaf.
+#[allow(dead_code)]
 const CACHE_VERSION: &str = "3";
 
 pub struct Client {
-    http: crate::http::Http,
+    pub(crate) http: crate::http::Http,
     cache: std::sync::Mutex<HashMap<String, (u64, serde_json::Value)>>,
     /// Kapak kalitesinin bellek kopyası (covers hot-path disk okumasın diye).
     /// save_settings + Client::new ile ayarlarla eşlenir.
     cover_quality_mem: std::sync::Mutex<String>,
-    cache_dir: PathBuf,    translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
+    cache_dir: PathBuf,
+    translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
     /// slug → (zaman, plan verisi). Bellek-içi, TTL 6sa.
     skip_plans: std::sync::Mutex<HashMap<String, (u64, CachedSkip)>>,
     /// Kasa sırrı önbelleği (zaman, sır). TTL 1sa; el girdisi bypass eder.
     vault: std::sync::Mutex<(u64, String)>,
+    /// Cookie oturumu (yerel modda okunmaz; tip korunur).
+    #[allow(dead_code)]
+    pub(crate) session: std::sync::Mutex<crate::auth::Session>,
     /// Bu açılışta kapak wipe'ı yapıldı mı (popup kararı).
     pub covers_wiped_this_boot: bool,
 }
@@ -67,6 +74,15 @@ pub(crate) fn consume_wipe_flag(cache_dir: &std::path::Path) -> bool {
     true
 }
 
+/// Sunucu geçmiş kaydı (başlık + tarih + son bölüm).
+#[derive(Clone, Debug)]
+pub struct ServerEntry {
+    pub title: Title,
+    pub date: u64,
+    pub season: u64,
+    pub episode: u64,
+}
+
 /// Önbelleğe giren plan verisi (ömür bağımsız, serileşebilir şekil).
 #[derive(Clone, Debug, Default)]
 pub struct CachedSkip {
@@ -77,23 +93,22 @@ pub struct CachedSkip {
 }
 
 fn now_secs() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 /// most-sought hata türü: ağ-hatası ile boş-DB'yi çağıran ayırt eder.
 #[derive(Clone, Debug, PartialEq)]
 pub enum FetchSkipError {
-    NoSecret,
     NoMeta,
     Network(String),
 }
 
 #[derive(Clone, Debug)]
 pub struct TranslatorMeta {
-    pub id: i64,
     pub name: String,
-    pub long_name: String,
-    pub url: Option<String>,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
@@ -127,7 +142,7 @@ pub struct FansubMirror {
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
- pub struct Title {
+pub struct Title {
     #[serde(default)]
     pub id: u64,
     #[serde(default)]
@@ -287,7 +302,11 @@ impl Title {
     fn fmt_release_date(s: &str) -> Option<String> {
         let p: Vec<&str> = s.split('-').collect();
         if p.len() == 3 {
-            if let (Ok(y), Ok(m), Ok(d)) = (p[0].parse::<i64>(), p[1].parse::<i64>(), p[2].parse::<i64>()) {
+            if let (Ok(y), Ok(m), Ok(d)) = (
+                p[0].parse::<i64>(),
+                p[1].parse::<i64>(),
+                p[2].parse::<i64>(),
+            ) {
                 return Some(format!("{}/{}/{}", d, m, y));
             }
         }
@@ -317,11 +336,14 @@ impl Title {
     pub fn meta_line(&self) -> String {
         let parts: Vec<String> = [
             self.year.map(|y| y.to_string()),
-            self.title_type.as_deref().map(|t| match t {
-                "anime" => "Anime Serisi",
-                "movie" => "Film",
-                _ => "Dizi",
-            }.to_string()),
+            self.title_type.as_deref().map(|t| {
+                match t {
+                    "anime" => "Anime Serisi",
+                    "movie" => "Film",
+                    _ => "Dizi",
+                }
+                .to_string()
+            }),
             self.season_count.map(|s| format!("{s} Sezon")),
         ]
         .into_iter()
@@ -340,6 +362,8 @@ pub struct Category {
 // ---- Keşfet / Haber / Takvim / Son bölümler (Lowell uyarlaması) ----
 
 /// Başlık incelemesi (reviews?titleId=). Giriş ister (UI'da auth sonrası).
+/// NOT: Faz 2 (İncelemeler sekmesi) şeması; o zamana dek ölü-kod kapısından muaf.
+#[allow(dead_code)]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct Review {
     #[serde(default)]
@@ -466,42 +490,6 @@ pub const DISCOVER_ORDERS: &[(&str, Option<&str>)] = &[
     ("Kullanıcı Puanı", Some("user_score:desc")),
 ];
 
-/// Keşfet anahtar sözcükleri (Türkçe etiket → site slugu).
-pub const DISCOVER_KEYWORDS: &[(&str, &str)] = &[
-    ("Tarihi", "history"),
-    ("Büyü", "magic"),
-    ("Spor", "sport"),
-    ("İsekai", "isekai"),
-    ("Askeri", "military"),
-    ("Dedektif", "detective"),
-    ("Ölüm", "death"),
-    ("Gizli Organizasyon", "secret%20organization"),
-    ("Ecchi", "ecchi"),
-    ("Harem", "harem"),
-    ("Ters Harem", "reverse%20harem"),
-    ("Vampir", "vampire"),
-    ("Kan, Vahşet", "blood"),
-    ("Shounen", "shounen"),
-    ("Shounen Ai", "shounen%20ai"),
-    ("Seinen", "seinen"),
-    ("Canavar", "monster"),
-    ("Doğaüstü", "supernatural"),
-    ("Şeytan", "demon"),
-    ("İntikam", "revenge"),
-    ("Zaman Yolculuğu", "time%20travel"),
-    ("Okul", "school"),
-    ("Uzay", "space"),
-    ("Shoujo", "shoujo"),
-    ("Oyun", "game"),
-    ("Samuray", "samurai"),
-    ("Ninja", "ninja"),
-    ("Yaşamdan Kesitler", "slice%20of%20life"),
-    ("İş Hayatı", "working%20life"),
-    ("Dövüş Sanatları", "martial%20arts"),
-    ("Yuri", "yuri"),
-    ("Yaoi", "yaoi"),
-];
-
 /// Keşfet filtresi (site `/browse` ile birebir).
 #[derive(Clone, Debug, Default)]
 pub struct DiscoverFilter {
@@ -525,6 +513,28 @@ pub struct HistoryEntry {
     pub title: Title,
     pub episode: Episode,
     pub ts: u64,
+}
+
+/// Sıralı bölüm listesinden komşu bölümü bulur (saf).
+/// `dir`: +1 sonraki, -1 önceki. Liste (sezon, bölüm) sırasına konur;
+/// film/tekil içerikte veya sınırda `None` (arayüz toast verir).
+pub fn neighbor_episode(eps: &[Episode], season: u64, episode: u64, dir: i8) -> Option<Episode> {
+    if eps.is_empty() || (dir != 1 && dir != -1) {
+        return None;
+    }
+    let mut sorted: Vec<&Episode> = eps.iter().collect();
+    sorted.sort_by_key(|e| (e.season, e.episode));
+    sorted.dedup_by_key(|e| (e.season, e.episode));
+    let pos = sorted
+        .iter()
+        .position(|e| e.season == season && e.episode == episode)?;
+    if dir > 0 {
+        sorted.get(pos + 1).cloned().cloned()
+    } else if pos > 0 {
+        sorted.get(pos - 1).cloned().cloned()
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
@@ -628,6 +638,10 @@ pub struct Settings {
     /// Oynatma öncesi kalite sorulsun (varsayılan kapalı; indirmeden bağımsız).
     #[serde(default)]
     pub play_ask_quality: bool,
+    /// Bölüm bitince sıradakine otomatik geç (varsayılan kapalı; manuel
+    /// `n`/`p` her zaman açık ve mpv içinden çalışır).
+    #[serde(default)]
+    pub auto_next: bool,
     /// İndirme klasörü (boşsa Videolar/Animecix).
     #[serde(default)]
     pub download_dir: Option<String>,
@@ -635,31 +649,49 @@ pub struct Settings {
     #[serde(default)]
     pub seen_changelog: String,
 }
-fn default_loading() -> String { "overlay".into() }
-fn default_quick_search() -> bool { true }
-fn default_shortcut() -> String { "/".into() }
-fn default_search_shortcut() -> String { "Ctrl+S".into() }
-fn default_true() -> bool { true }
-fn default_upscale() -> String { "hafif".into() }
-fn default_patience() -> u64 { 20 }
-fn default_max_parallel() -> u64 { 1 }
-fn default_ui_scale() -> f32 { 1.0 }
-fn default_news_font() -> String { "normal".into() }
-fn default_theme() -> String { "koyu".into() }
-fn default_cover_quality() -> String { "orta".into() }
+fn default_loading() -> String {
+    "overlay".into()
+}
+fn default_quick_search() -> bool {
+    true
+}
+fn default_shortcut() -> String {
+    "/".into()
+}
+fn default_search_shortcut() -> String {
+    "Ctrl+S".into()
+}
+fn default_true() -> bool {
+    true
+}
+fn default_upscale() -> String {
+    "hafif".into()
+}
+fn default_patience() -> u64 {
+    20
+}
+fn default_max_parallel() -> u64 {
+    1
+}
+fn default_ui_scale() -> f32 {
+    1.0
+}
+fn default_news_font() -> String {
+    "normal".into()
+}
+fn default_theme() -> String {
+    "koyu".into()
+}
+fn default_cover_quality() -> String {
+    "orta".into()
+}
 
 /// Haber yazı boyu seçenekleri (id, görünen ad). Sıra ComboRow ile eşleşir.
-pub const NEWS_FONT_OPTIONS: [(&str, &str); 3] = [
-    ("small", "Küçük"),
-    ("normal", "Normal"),
-    ("large", "Büyük"),
-];
+pub const NEWS_FONT_OPTIONS: [(&str, &str); 3] =
+    [("small", "Küçük"), ("normal", "Normal"), ("large", "Büyük")];
 /// Kapak kalite seçenekleri (id, görünen ad). Sıra ComboRow indeksleriyle eşleşir.
-pub const COVER_QUALITIES: [(&str, &str); 3] = [
-    ("yuksek", "Yüksek"),
-    ("orta", "Orta"),
-    ("dusuk", "Düşük"),
-];
+pub const COVER_QUALITIES: [(&str, &str); 3] =
+    [("yuksek", "Yüksek"), ("orta", "Orta"), ("dusuk", "Düşük")];
 pub const DEFAULT_COVER_QUALITY: &str = "orta";
 
 /// TMDB kapak URL'sini kaliteye göre boyutlandırır. TMDB dışı URL aynen geçer.
@@ -673,10 +705,22 @@ pub fn tmdb_sized_url(url: &str, quality: &str) -> String {
         "dusuk" => "w185",
         _ => "w342",
     };
-    url.replace("image.tmdb.org/t/p/original", &format!("image.tmdb.org/t/p/{t}"))
-        .replace("image.tmdb.org/t/p/w500", &format!("image.tmdb.org/t/p/{t}"))
-        .replace("image.tmdb.org/t/p/w342", &format!("image.tmdb.org/t/p/{t}"))
-        .replace("image.tmdb.org/t/p/w185", &format!("image.tmdb.org/t/p/{t}"))
+    url.replace(
+        "image.tmdb.org/t/p/original",
+        &format!("image.tmdb.org/t/p/{t}"),
+    )
+    .replace(
+        "image.tmdb.org/t/p/w500",
+        &format!("image.tmdb.org/t/p/{t}"),
+    )
+    .replace(
+        "image.tmdb.org/t/p/w342",
+        &format!("image.tmdb.org/t/p/{t}"),
+    )
+    .replace(
+        "image.tmdb.org/t/p/w185",
+        &format!("image.tmdb.org/t/p/{t}"),
+    )
 }
 
 /// Maraton özet kartı için (tamamlanan_sayısı, yüzde) hesaplar.
@@ -695,8 +739,12 @@ pub fn marathon_summary(fracs: &[f64]) -> (usize, u32) {
 
 /// Sunucu-koruması/kısıt hatası mı? (403/429/5xx → yeniden deneme + yedek yol adayı)
 pub fn is_server_error(e: &str) -> bool {
-    e.contains("HTTP 403") || e.contains("HTTP 429") || e.contains("HTTP 500")
-        || e.contains("HTTP 502") || e.contains("HTTP 503") || e.contains("HTTP 504")
+    e.contains("HTTP 403")
+        || e.contains("HTTP 429")
+        || e.contains("HTTP 500")
+        || e.contains("HTTP 502")
+        || e.contains("HTTP 503")
+        || e.contains("HTTP 504")
 }
 
 /// tau-video gömülü adresinden (embed_id, vid) çıkarır. tau dışı/kısa id'de None.
@@ -727,6 +775,8 @@ pub struct TauVideoMeta {
     pub episode_number: String,
     /// Çevirmen/şablon kimliği (örn. slug sonundaki `47`).
     pub translator: String,
+    /// NOT: yalnız `probe` okur; ana üründe ölü-kod kapısından muaf.
+    #[allow(dead_code)]
     pub duration: f64,
 }
 
@@ -744,9 +794,9 @@ impl TauVideoMeta {
 pub fn parse_tau_video_meta(v: &serde_json::Value) -> Option<TauVideoMeta> {
     let id = v["_id"].as_str().filter(|s| !s.is_empty())?.to_string();
     let str_field = |k: &str| -> String {
-        v[k].as_str().map(str::to_string).unwrap_or_else(|| {
-            v[k].as_u64().map(|n| n.to_string()).unwrap_or_default()
-        })
+        v[k].as_str()
+            .map(str::to_string)
+            .unwrap_or_else(|| v[k].as_u64().map(|n| n.to_string()).unwrap_or_default())
     };
     let title_id = str_field("title_id");
     let translator = str_field("translator");
@@ -788,6 +838,13 @@ pub fn sign_most_sought_slug(secret: &str, slug: &str) -> String {
 pub const SKIP_VAULT_URL: &str =
     "https://raw.githubusercontent.com/veilzon/animecix-linux/main/docs/skip-vault.json";
 
+/// Gömülü varsayılan oynatıcı sırrı: tau-video.xyz herkese açık oynatıcı
+/// paketindeki imza anahtarıyla birebir (`assets/index-*.js`, `const gj`;
+/// her tarayıcıya inen kod — gizli değil, sitenin kendi istemcisi).
+/// El girdisi ve derleme kasası bundan önceliklidir; hiçbiri yoksa imzalı
+/// istek (küratör satır + müzik alanları) bununla atılır.
+pub const DEFAULT_PLAYER_SECRET: &str = "t4u_pl4y3r_s3cr3t_k3y";
+
 /// Derleme anında gömülen kasa anahtarı (ANIMECIX_VAULT_KEY, 64 hex).
 /// Tanımlı değilse kasa kapalıdır; el girdisi yine çalışır.
 fn vault_key_hex() -> Option<String> {
@@ -800,7 +857,7 @@ fn vault_url() -> String {
 }
 
 fn hex_decode(s: &str) -> Option<Vec<u8>> {
-    if s.len() % 2 != 0 || s.is_empty() {
+    if !s.len().is_multiple_of(2) || s.is_empty() {
         return None;
     }
     (0..s.len())
@@ -812,8 +869,8 @@ fn hex_decode(s: &str) -> Option<Vec<u8>> {
 /// Kasa blob'unu çözer (AES-256-GCM). Bozuk girdi/yanlış anahtarda None;
 /// sır hiçbir koşulda log'a yazılmaz.
 pub fn decrypt_vault_secret(key_hex: &str, vault_json: &serde_json::Value) -> Option<String> {
-    use aes_gcm::{Aes256Gcm, Key, Nonce};
     use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
     let key_bytes = hex_decode(key_hex)?;
     if key_bytes.len() != 32 {
         return None;
@@ -907,15 +964,18 @@ impl SkipMeta {
     pub fn sanitized_times(&self) -> SkipTimes {
         let sane = |s: Option<&SkipSegment>| -> (Option<f64>, Option<f64>) {
             match s {
-                Some(seg) if sane_range(seg.from, seg.to) => {
-                    (Some(seg.from), Some(seg.to))
-                }
+                Some(seg) if sane_range(seg.from, seg.to) => (Some(seg.from), Some(seg.to)),
                 _ => (None, None),
             }
         };
         let (op_start, op_end) = sane(self.intro.as_ref());
         let (ed_start, ed_end) = sane(self.outro.as_ref());
-        SkipTimes { op_start, op_end, ed_start, ed_end }
+        SkipTimes {
+            op_start,
+            op_end,
+            ed_start,
+            ed_end,
+        }
     }
 
     /// Şarkı bilgi satırı (toast/OSD). Şarkı yoksa None döner.
@@ -947,7 +1007,8 @@ pub fn friendly_play_error(e: &str) -> String {
         return format!("Sunucu hatası ({e}). Birazdan tekrar dene.");
     }
     if e.contains("SendRequest") || e.contains("error sending request") {
-        return "Bağlantı kurulamadı (ağ veya koruma kesti). İnternetini kontrol edip tekrar dene.".to_string();
+        return "Bağlantı kurulamadı (ağ veya koruma kesti). İnternetini kontrol edip tekrar dene."
+            .to_string();
     }
     e.to_string()
 }
@@ -1043,6 +1104,7 @@ impl Default for Settings {
             show_music_hint: true,
             show_intro_hint: true,
             play_ask_quality: false,
+            auto_next: false,
             theme: default_theme(),
             cover_quality: default_cover_quality(),
             download_dir: None,
@@ -1087,28 +1149,28 @@ pub fn check_internet() -> InternetStatus {
             Ok(ip) => SocketAddr::new(ip, 80),
             Err(_) => continue,
         };
-        if let Ok(stream) =
-            std::net::TcpStream::connect_timeout(&target, timeout)
-        {
+        if let Ok(stream) = std::net::TcpStream::connect_timeout(&target, timeout) {
             drop(stream);
             return InternetStatus::Online;
         }
     }
 
     let client = shared_blocking_client();
-    match client.get(DEFAULT_PROBE_URL).timeout(Duration::from_secs(3)).send() {
+    match client
+        .get(DEFAULT_PROBE_URL)
+        .timeout(Duration::from_secs(3))
+        .send()
+    {
         Ok(r) if r.status().is_success() => return InternetStatus::Online,
         Ok(r) => {
             return InternetStatus::Offline {
                 reason: format!("HTTP {} alındı", r.status()),
             };
         }
-        Err(e) => {
-            return InternetStatus::Offline {
-                reason: format!("ağ erişilemez: {e}"),
-            };
-        }
-    };
+        Err(e) => InternetStatus::Offline {
+            reason: format!("ağ erişilemez: {e}"),
+        },
+    }
 }
 
 /// Diskteki kapak baytları ham tutulur (zstd kaldırıldı; eski zstd
@@ -1135,7 +1197,7 @@ impl Client {
         std::fs::create_dir_all(cache_dir.join("covers")).ok();
 
         #[cfg(not(test))]
-        let mut wiped_this_boot = false;
+        let wiped_this_boot: bool;
         #[cfg(not(test))]
         {
             let ver_path = cache_dir.join("api").join(".cache_version");
@@ -1160,6 +1222,7 @@ impl Client {
             translators: std::sync::Mutex::new(HashMap::new()),
             skip_plans: std::sync::Mutex::new(HashMap::new()),
             vault: std::sync::Mutex::new((0, String::new())),
+            session: std::sync::Mutex::new(crate::auth::Session::load()),
             cover_quality_mem: std::sync::Mutex::new(default_cover_quality()),
             #[cfg(not(test))]
             covers_wiped_this_boot: wiped_this_boot,
@@ -1199,21 +1262,12 @@ impl Client {
             }
             let name = t["name"].as_str().unwrap_or("").to_string();
             let long_name = t["translator"].as_str().unwrap_or("").to_string();
-            let url = t["translator_url"].as_str().filter(|s| !s.is_empty()).map(|s| s.to_string());
             let display = if !name.is_empty() {
                 name
             } else {
                 long_name.clone()
             };
-            map.insert(
-                id,
-                TranslatorMeta {
-                    id,
-                    name: display,
-                    long_name,
-                    url,
-                },
-            );
+            map.insert(id, TranslatorMeta { name: display });
         }
         eprintln!("[TRANSLATORS] {} çevirmen yüklendi", map.len());
         Ok(())
@@ -1228,7 +1282,16 @@ impl Client {
     }
 
     fn api_cache_path(&self, key: &str) -> PathBuf {
-        let safe: String = key.chars().map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' }).collect();
+        let safe: String = key
+            .chars()
+            .map(|c| {
+                if c.is_alphanumeric() || c == '-' || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
         self.cache_dir.join("api").join(format!("{safe}.json"))
     }
 
@@ -1238,7 +1301,12 @@ impl Client {
             h ^= b as u64;
             h = h.wrapping_mul(0x100000001b3);
         }
-        let ext = url.split('?').next().unwrap_or("").rsplit('.').next()
+        let ext = url
+            .split('?')
+            .next()
+            .unwrap_or("")
+            .rsplit('.')
+            .next()
             .filter(|e| e.len() <= 5 && e.chars().all(|c| c.is_alphanumeric()))
             .unwrap_or("bin");
         self.cache_dir.join("covers").join(format!("{h:x}.{ext}"))
@@ -1247,16 +1315,28 @@ impl Client {
     pub fn sweep_expired_covers(&self) {
         const COVER_DISK_MAX_BYTES: u64 = 500 * 1024 * 1024;
         let dir = self.cache_dir.join("covers");
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs();
-        let Ok(entries) = std::fs::read_dir(&dir) else { return; };
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return;
+        };
 
         let mut files: Vec<(u64, u64, PathBuf)> = Vec::new(); // (mtime, size, path)
         let mut removed_expired = 0u32;
         for entry in entries.flatten() {
             let path = entry.path();
-            if !path.is_file() { continue; }
-            let meta = match entry.metadata() { Ok(m) => m, Err(_) => continue };
-            let mtime = meta.modified().ok()
+            if !path.is_file() {
+                continue;
+            }
+            let meta = match entry.metadata() {
+                Ok(m) => m,
+                Err(_) => continue,
+            };
+            let mtime = meta
+                .modified()
+                .ok()
                 .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(now);
@@ -1274,7 +1354,9 @@ impl Client {
         if total > COVER_DISK_MAX_BYTES {
             files.sort_unstable_by_key(|f| f.0); // en eskiden
             for (_, size, path) in &files {
-                if total <= COVER_DISK_MAX_BYTES { break; }
+                if total <= COVER_DISK_MAX_BYTES {
+                    break;
+                }
                 if std::fs::remove_file(path).is_ok() {
                     total = total.saturating_sub(*size);
                     removed_overcap += 1;
@@ -1282,7 +1364,10 @@ impl Client {
             }
         }
         if removed_expired + removed_overcap > 0 {
-            eprintln!("[SWEEP] kapak önbelleği: {} süresi dolmuş, {} tavan fazlası silindi", removed_expired, removed_overcap);
+            eprintln!(
+                "[SWEEP] kapak önbelleği: {} süresi dolmuş, {} tavan fazlası silindi",
+                removed_expired, removed_overcap
+            );
         }
     }
 
@@ -1377,7 +1462,11 @@ impl Client {
                         if t != "anime" && t != "movie" && m != "title" {
                             continue;
                         }
-                        if it["id"].as_u64().or_else(|| it["title_id"].as_u64()).is_some() {
+                        if it["id"]
+                            .as_u64()
+                            .or_else(|| it["title_id"].as_u64())
+                            .is_some()
+                        {
                             if let Some(t) = Title::from_value(it) {
                                 items.push(t);
                             }
@@ -1426,7 +1515,11 @@ impl Client {
     }
 
     fn str_field(v: &serde_json::Value, key: &str) -> String {
-        v.get(key).and_then(|x| x.as_str()).unwrap_or("").trim().to_string()
+        v.get(key)
+            .and_then(|x| x.as_str())
+            .unwrap_or("")
+            .trim()
+            .to_string()
     }
 
     /// Site haberleri (1-indexli sayfa) → (öğeler, toplam, son_sayfa).
@@ -1519,78 +1612,38 @@ impl Client {
         Ok(days)
     }
 
-    /// Son eklenen bölümler (1-indexli sayfa) → (öğeler, toplam, son_sayfa).
-    /// Herkese açık. 15 dk önbellekli. (Lowell uyarlaması.)
-    pub fn last_episodes(&self, page: u32) -> Result<(Vec<LastEpisode>, usize, u32), String> {
-        let page = page.max(1);
-        let key = format!("lastep:{page}");
-        let d = self.cache_get(&key, 900, |http| {
-            http.get(format!("{BASE}/secure/last-episodes"))
-                .header("Accept", "application/json")
-                .query(&[("page", &page.to_string())])
-                .send()
-                .map_err(|e| e.to_string())?
-                .error_for_status()
-                .map_err(|e| e.to_string())?
-                .json()
-                .map_err(|e| e.to_string())
-        })?;
-        let total = d["total"].as_u64().unwrap_or(0) as usize;
-        let last = d["last_page"].as_u64().unwrap_or(1).max(1) as u32;
-        let mut out = Vec::new();
-        if let Some(arr) = d["data"].as_array() {
-            for e in arr {
-                out.push(LastEpisode {
-                    title_id: Self::u64_field(e, "title_id"),
-                    title_name: Self::str_field(e, "title_name"),
-                    title_poster: e["title_poster"]
-                        .as_str()
-                        .map(|s| s.trim().to_string())
-                        .filter(|s| !s.is_empty()),
-                    title_type: e["title_type"]
-                        .as_str()
-                        .map(|s| s.to_string()),
-                    season: Self::u64_field(e, "season_number"),
-                    episode: Self::u64_field(e, "episode_number"),
-                    release_date: Self::str_field(e, "release_date"),
-                });
-            }
-        }
-        Ok((out, total, last))
+    /// Site istek imzası (X-E-H): AES-256-GCM ile sorgu imzalama.
+    /// (Lowell137/animecix-linux, MIT lisanslı uyarlama.)
+    ///
+    /// Angular istemcinin birebir kopyasıdır:
+    /// - düz metin: `"{version}" + sorgu-dizesi`
+    /// - anahtar: 32 bayt ASCII birleşimi (AES-256)
+    /// - değer: `base64(sifreli).base64(iv)` (12 bayt rastgele IV)
+    /// - başlık adı: `X-E-H`
+    fn sign_query(query: &str) -> Result<String, String> {
+        use base64::Engine as _;
+        use ring::{aead, rand::SecureRandom};
+        const KEY: &[u8; 32] = b"i4C7R2fXGocdYgFLzCbDlsJjukf8G58b";
+        let rng = ring::rand::SystemRandom::new();
+        let mut iv = [0u8; 12];
+        rng.fill(&mut iv)
+            .map_err(|_| "rastgele IV üretilemedi".to_string())?;
+        let key = aead::LessSafeKey::new(
+            aead::UnboundKey::new(&aead::AES_256_GCM, KEY)
+                .map_err(|_| "imza anahtarı geçersiz".to_string())?,
+        );
+        let mut data = format!("{{version}}{query}").into_bytes();
+        key.seal_in_place_append_tag(
+            aead::Nonce::assume_unique_for_key(iv),
+            aead::Aad::empty(),
+            &mut data,
+        )
+        .map_err(|_| "istek imzalanamadı".to_string())?;
+        let eng = base64::engine::general_purpose::STANDARD;
+        Ok(format!("{}.{}", eng.encode(&data), eng.encode(iv)))
     }
 
-    /// Site istek imzası (X-E-H): AES-256-GCM ile sorgu imzalama.
-/// (Lowell137/animecix-linux, MIT lisanslı uyarlama.)
-///
-/// Angular istemcinin birebir kopyasıdır:
-/// - düz metin: `"{version}" + sorgu-dizesi`
-/// - anahtar: 32 bayt ASCII birleşimi (AES-256)
-/// - değer: `base64(sifreli).base64(iv)` (12 bayt rastgele IV)
-/// - başlık adı: `X-E-H`
-fn sign_query(query: &str) -> Result<String, String> {
-    use base64::Engine as _;
-    use ring::{aead, rand::SecureRandom};
-    const KEY: &[u8; 32] = b"i4C7R2fXGocdYgFLzCbDlsJjukf8G58b";
-    let rng = ring::rand::SystemRandom::new();
-    let mut iv = [0u8; 12];
-    rng.fill(&mut iv)
-        .map_err(|_| "rastgele IV üretilemedi".to_string())?;
-    let key = aead::LessSafeKey::new(
-        aead::UnboundKey::new(&aead::AES_256_GCM, KEY)
-            .map_err(|_| "imza anahtarı geçersiz".to_string())?,
-    );
-    let mut data = format!("{{version}}{query}").into_bytes();
-    key.seal_in_place_append_tag(
-        aead::Nonce::assume_unique_for_key(iv),
-        aead::Aad::empty(),
-        &mut data,
-    )
-    .map_err(|_| "istek imzalanamadı".to_string())?;
-    let eng = base64::engine::general_purpose::STANDARD;
-    Ok(format!("{}.{}", eng.encode(&data), eng.encode(iv)))
-}
-
-/// Keşfet kataloğu: `/secure/titles` + X-E-H imzası (siteyle aynı).
+    /// Keşfet kataloğu: `/secure/titles` + X-E-H imzası (siteyle aynı).
     /// Sayfa 1-indexli. 1 saat önbellekli. (Lowell uyarlaması.)
     pub fn discover(&self, f: &DiscoverFilter) -> Result<(Vec<Title>, usize, u32), String> {
         let page = f.page.max(1);
@@ -1726,7 +1779,10 @@ fn sign_query(query: &str) -> Result<String, String> {
                             if ep == 0 || sez != s {
                                 continue;
                             }
-                            if season_eps.iter().any(|x: &Episode| x.season == sez && x.episode == ep) {
+                            if season_eps
+                                .iter()
+                                .any(|x: &Episode| x.season == sez && x.episode == ep)
+                            {
                                 continue;
                             }
                             season_eps.push(Episode {
@@ -1746,10 +1802,8 @@ fn sign_query(query: &str) -> Result<String, String> {
         });
 
         let mut all: Vec<Episode> = Vec::new();
-        for r in results {
-            if let Ok(eps) = r {
-                all.extend(eps);
-            }
+        for eps in results.into_iter().flatten() {
+            all.extend(eps);
         }
         all.sort_by_key(|e| (e.season, e.episode));
         all.dedup_by_key(|e| (e.season, e.episode));
@@ -1818,7 +1872,8 @@ fn sign_query(query: &str) -> Result<String, String> {
         let d = self.movie_videos(title_id)?;
         let mut candidates: Vec<serde_json::Value> = Vec::new();
         if let Some(data) = d["data"].as_array() {
-            let mut full_videos: Vec<&serde_json::Value> = data.iter()
+            let mut full_videos: Vec<&serde_json::Value> = data
+                .iter()
                 .filter(|v| {
                     v["category"].as_str() == Some("full")
                         && !v["url"].as_str().unwrap_or("").is_empty()
@@ -1827,12 +1882,11 @@ fn sign_query(query: &str) -> Result<String, String> {
             full_videos.sort_by(|a, b| {
                 let a_tau = a["url"].as_str().unwrap_or("").contains("tau-video.xyz");
                 let b_tau = b["url"].as_str().unwrap_or("").contains("tau-video.xyz");
-                b_tau.cmp(&a_tau)
-                    .then_with(|| {
-                        let a_votes = a["positive_votes"].as_i64().unwrap_or(0);
-                        let b_votes = b["positive_votes"].as_i64().unwrap_or(0);
-                        b_votes.cmp(&a_votes)
-                    })
+                b_tau.cmp(&a_tau).then_with(|| {
+                    let a_votes = a["positive_votes"].as_i64().unwrap_or(0);
+                    let b_votes = b["positive_votes"].as_i64().unwrap_or(0);
+                    b_votes.cmp(&a_votes)
+                })
             });
             candidates = full_videos.into_iter().take(8).cloned().collect();
         }
@@ -1848,7 +1902,9 @@ fn sign_query(query: &str) -> Result<String, String> {
                 scope.spawn(move || {
                     let url = v["url"].as_str().unwrap_or("");
                     if let Ok(mp4) = self.resolve_embed(url) {
-                        let size = http.head(&mp4).send()
+                        let size = http
+                            .head(&mp4)
+                            .send()
                             .ok()
                             .and_then(|r| r.content_length())
                             .unwrap_or(0);
@@ -2022,10 +2078,7 @@ fn sign_query(query: &str) -> Result<String, String> {
 
     /// Katı seçim: istenen kalite listede yoksa None (sessiz üst-kaliteye düşmez).
     /// "best" her zaman serbesttir; "720p" 480p'ye inebilir; "480p" yalnızca 480p'dir.
-    pub fn pick_strict(
-        urls: &[(String, String)],
-        quality: &str,
-    ) -> Option<(String, String)> {
+    pub fn pick_strict(urls: &[(String, String)], quality: &str) -> Option<(String, String)> {
         match quality {
             "480p" => urls.iter().find(|(l, _)| l == "480p").cloned(),
             "720p" => urls
@@ -2123,9 +2176,11 @@ fn sign_query(query: &str) -> Result<String, String> {
     }
 
     /// Kullanılabilir intro sırrını çözer: önce Ayarlar'daki el girdisi,
-    /// yoksa derleme anahtarıyla sunucudaki şifreli kasa (1sa önbellekli).
-    /// Kaynağıyla döner ("manuel"/"kasa"); hiçbiri yoksa None.
-    /// Değer log'a yazılmaz.
+    /// sonra derleme anahtarıyla sunucudaki şifreli kasa (1sa önbellekli),
+    /// en son gömülü varsayılan oynatıcı sırrı. Kaynağıyla döner
+    /// ("manuel"/"kasa"/"varsayılan"); değer log'a yazılmaz.
+    /// Varsayılan sayesinde kullanıcı hiçbir şey girmeden imzalı istek
+    /// atılır (küratör satır + müzik alanları gelir).
     pub fn resolve_skip_secret(&self, manual: &str) -> Option<(String, &'static str)> {
         let m = manual.trim();
         if !m.is_empty() {
@@ -2136,23 +2191,31 @@ fn sign_query(query: &str) -> Result<String, String> {
                 return Some((g.1.clone(), "kasa"));
             }
         }
-        let key = vault_key_hex()?;
-        let body: serde_json::Value = self
-            .http
-            .get(vault_url())
-            .header("Accept", "application/json")
-            .timeout(5)
-            .send()
-            .ok()?
-            .error_for_status()
-            .ok()?
-            .json()
-            .ok()?;
-        let s = decrypt_vault_secret(&key, &body)?;
-        if let Ok(mut g) = self.vault.lock() {
-            *g = (now_secs(), s.clone());
+        if vault_key_hex().is_some() {
+            let res: Option<String> = (|| {
+                let key = vault_key_hex()?;
+                let body: serde_json::Value = self
+                    .http
+                    .get(vault_url())
+                    .header("Accept", "application/json")
+                    .timeout(5)
+                    .send()
+                    .ok()?
+                    .error_for_status()
+                    .ok()?
+                    .json()
+                    .ok()?;
+                decrypt_vault_secret(&key, &body)
+            })();
+            if let Some(s) = res {
+                if let Ok(mut g) = self.vault.lock() {
+                    *g = (now_secs(), s.clone());
+                }
+                return Some((s, "kasa"));
+            }
+            eprintln!("[SKIP-RESMI] kasa çözülemedi, varsayılan sırra düşülüyor");
         }
-        Some((s, "kasa"))
+        Some((DEFAULT_PLAYER_SECRET.to_string(), "varsayılan"))
     }
 
     /// slug → önbellek planı (6sa). Dalgalarda tekrar izleme anında açılır.
@@ -2177,34 +2240,49 @@ fn sign_query(query: &str) -> Result<String, String> {
 
     /// Resmi intro/outro + müzik bilgisini çeker (most-sought), 3 denemeli.
     /// Ok(içi boş) = DB'de yok; Err = ağ-hatası (çağıran ayırt eder).
+    /// Sır opsiyonel: varsa imzalı denenir (müzik alanları imzada
+    /// gelebilir), yoksa imzasız devam edilir (intro/outro herkese açık).
     pub fn fetch_official_skip(
         &self,
         meta: &TauVideoMeta,
-        secret: &str,
+        secret: Option<&str>,
     ) -> Result<SkipMeta, FetchSkipError> {
-        if secret.is_empty() {
-            return Err(FetchSkipError::NoSecret);
-        }
         if meta.id.is_empty() {
             return Err(FetchSkipError::NoMeta);
         }
         let slug = meta.most_sought_slug();
-        let sig = sign_most_sought_slug(secret, &slug);
+        let sig = secret
+            .filter(|s| !s.is_empty())
+            .map(|s| sign_most_sought_slug(s, &slug));
+        if sig.is_none() {
+            eprintln!("[SKIP-RESMI] sır yok, imzasız deneniyor (slug={slug})");
+        }
         let url = most_sought_url(&slug, &meta.id);
         let mut last_err = String::new();
         for attempt in 0..3 {
-            let r: Result<serde_json::Value, String> = self
+            let mut req = self
                 .http
                 .get(&url)
                 .header("Accept", "application/json")
-                .header("x-player-sig", &sig)
-                .timeout(5)
+                .timeout(5);
+            if let Some(s) = &sig {
+                req = req.header("x-player-sig", s);
+            }
+            let r: Result<serde_json::Value, String> = req
                 .send()
                 .map_err(|e| e.to_string())
                 .and_then(|r| r.error_for_status().map_err(|e| e.to_string()))
                 .and_then(|r| r.json().map_err(|e| e.to_string()));
             match r {
-                Ok(v) => return Ok(parse_skip_meta(&v)),
+                Ok(v) => {
+                    // Müzik teşhisi: sunucunun döndüğü ham anahtarlar loglanır
+                    // (müzik gelirse parser zaten akıtır).
+                    if let Some(o) = v.as_object() {
+                        let keys: Vec<&str> = o.keys().map(String::as_str).collect();
+                        eprintln!("[SKIP-RESMI] slug={slug} anahtarlar={keys:?}");
+                    }
+                    return Ok(parse_skip_meta(&v));
+                }
                 Err(e) => {
                     last_err = e;
                     if attempt + 1 < 3 {
@@ -2217,8 +2295,15 @@ fn sign_query(query: &str) -> Result<String, String> {
         Err(FetchSkipError::Network(last_err))
     }
 
-    fn find_embed(&self, title_id: u64, episode: u64, season: u64) -> Result<(String, String), String> {
-        let url = format!("{BASE}/secure/best-video?titleId={title_id}&episode={episode}&season={season}");
+    fn find_embed(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<(String, String), String> {
+        let url = format!(
+            "{BASE}/secure/best-video?titleId={title_id}&episode={episode}&season={season}"
+        );
         let resp = self
             .http
             .get(&url)
@@ -2247,9 +2332,16 @@ fn sign_query(query: &str) -> Result<String, String> {
         Err(format!("embed bulunamadı: {final_url}"))
     }
 
-    pub fn episode_candidates(&self, title_id: u64, episode: u64, season: u64) -> Result<Vec<String>, String> {
+    /// Bölüm puan ham verisi (aynı `evp:` önbelleği; ek istek atmaz).
+    /// `put-title` ilk videosu buradan alınır.
+    pub fn episode_points_raw(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<serde_json::Value, String> {
         let key = format!("evp:{title_id}:{season}:{episode}");
-        let d = self.cache_get(&key, 1800, |http| {
+        self.cache_get(&key, 1800, |http| {
             http.get(format!("{BASE}/secure/episode-videos-points"))
                 .header("Accept", "application/json")
                 .query(&[
@@ -2263,7 +2355,16 @@ fn sign_query(query: &str) -> Result<String, String> {
                 .map_err(|e| e.to_string())?
                 .json()
                 .map_err(|e| e.to_string())
-        })?;
+        })
+    }
+
+    pub fn episode_candidates(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<Vec<String>, String> {
+        let d = self.episode_points_raw(title_id, episode, season)?;
         let videos = d["videos"].as_array().cloned().unwrap_or_default();
         if videos.is_empty() {
             return Ok(Vec::new());
@@ -2305,14 +2406,23 @@ fn sign_query(query: &str) -> Result<String, String> {
                 if !u.is_empty() && !candidates.contains(&u) {
                     candidates.push(u);
                 }
-                if candidates.len() >= 8 { break; }
+                if candidates.len() >= 8 {
+                    break;
+                }
             }
-            if candidates.len() >= 8 { break; }
+            if candidates.len() >= 8 {
+                break;
+            }
         }
         Ok(candidates)
     }
 
-    pub fn list_fansubs(&self, title_id: u64, episode: u64, season: u64) -> Result<Vec<FansubInfo>, String> {
+    pub fn list_fansubs(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<Vec<FansubInfo>, String> {
         let _ = self.load_translators();
         let key = format!("evp:fansubs:{title_id}:{season}:{episode}");
         let d = self.cache_get(&key, 1800, |http| {
@@ -2333,8 +2443,10 @@ fn sign_query(query: &str) -> Result<String, String> {
         let videos = d["videos"].as_array().cloned().unwrap_or_default();
         let points = &d["translatorPoints"];
 
-        let mut groups: std::collections::BTreeMap<i64, (String, f64, i64, bool, Vec<serde_json::Value>)> =
-            std::collections::BTreeMap::new();
+        let mut groups: std::collections::BTreeMap<
+            i64,
+            (String, f64, i64, bool, Vec<serde_json::Value>),
+        > = std::collections::BTreeMap::new();
         for v in &videos {
             let tpl = v["template"].as_i64().unwrap_or(0);
             let translator_name = self
@@ -2358,59 +2470,65 @@ fn sign_query(query: &str) -> Result<String, String> {
 
         let mut out: Vec<FansubInfo> = groups
             .into_iter()
-            .map(|(tpl, (name, rating, total_votes, approved_only, mut vids))| {
-                vids.sort_by(|a, b| {
-                    let aa = a["approved"].as_bool().unwrap_or(false);
-                    let ab = b["approved"].as_bool().unwrap_or(false);
-                    ab.cmp(&aa)
-                        .then_with(|| {
-                            let ta = a["url"].as_str().unwrap_or("").contains("tau-video.xyz");
-                            let tb = b["url"].as_str().unwrap_or("").contains("tau-video.xyz");
-                            tb.cmp(&ta)
+            .map(
+                |(tpl, (name, rating, total_votes, approved_only, mut vids))| {
+                    vids.sort_by(|a, b| {
+                        let aa = a["approved"].as_bool().unwrap_or(false);
+                        let ab = b["approved"].as_bool().unwrap_or(false);
+                        ab.cmp(&aa)
+                            .then_with(|| {
+                                let ta = a["url"].as_str().unwrap_or("").contains("tau-video.xyz");
+                                let tb = b["url"].as_str().unwrap_or("").contains("tau-video.xyz");
+                                tb.cmp(&ta)
+                            })
+                            .then_with(|| {
+                                let va = a["positive_votes"].as_i64().unwrap_or(0);
+                                let vb = b["positive_votes"].as_i64().unwrap_or(0);
+                                vb.cmp(&va)
+                            })
+                    });
+                    let language = vids
+                        .first()
+                        .and_then(|v| v["language"].as_str())
+                        .unwrap_or("tr")
+                        .to_string();
+                    let mirrors: Vec<FansubMirror> = vids
+                        .iter()
+                        .map(|v| {
+                            let url = v["url"].as_str().unwrap_or("").to_string();
+                            FansubMirror {
+                                id: v["id"].as_u64().unwrap_or(0),
+                                host: Self::source_host_hint(&url).to_string(),
+                                url,
+                                quality: v["quality"].as_str().map(|s| s.to_string()),
+                                approved: v["approved"].as_bool().unwrap_or(false),
+                            }
                         })
-                        .then_with(|| {
-                            let va = a["positive_votes"].as_i64().unwrap_or(0);
-                            let vb = b["positive_votes"].as_i64().unwrap_or(0);
-                            vb.cmp(&va)
-                        })
-                });
-                let language = vids
-                    .first()
-                    .and_then(|v| v["language"].as_str())
-                    .unwrap_or("tr")
-                    .to_string();
-                let mirrors: Vec<FansubMirror> = vids
-                    .iter()
-                    .map(|v| {
-                        let url = v["url"].as_str().unwrap_or("").to_string();
-                        FansubMirror {
-                            id: v["id"].as_u64().unwrap_or(0),
-                            host: Self::source_host_hint(&url).to_string(),
-                            url,
-                            quality: v["quality"].as_str().map(|s| s.to_string()),
-                            approved: v["approved"].as_bool().unwrap_or(false),
-                        }
-                    })
-                    .collect();
-                let hosts: Vec<String> = mirrors.iter().map(|m| m.host.clone()).collect();
-                FansubInfo {
-                    template_id: tpl,
-                    name,
-                    rating,
-                    total_votes,
-                    language,
-                    approved_only,
-                    mirror_count: mirrors.len(),
-                    hosts,
-                    mirrors,
-                }
-            })
+                        .collect();
+                    let hosts: Vec<String> = mirrors.iter().map(|m| m.host.clone()).collect();
+                    FansubInfo {
+                        template_id: tpl,
+                        name,
+                        rating,
+                        total_votes,
+                        language,
+                        approved_only,
+                        mirror_count: mirrors.len(),
+                        hosts,
+                        mirrors,
+                    }
+                },
+            )
             .collect();
 
         out.sort_by(|a, b| {
             b.approved_only
                 .cmp(&a.approved_only)
-                .then_with(|| b.rating.partial_cmp(&a.rating).unwrap_or(std::cmp::Ordering::Equal))
+                .then_with(|| {
+                    b.rating
+                        .partial_cmp(&a.rating)
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
                 .then_with(|| b.total_votes.cmp(&a.total_votes))
                 .then_with(|| a.name.cmp(&b.name))
         });
@@ -2449,7 +2567,13 @@ fn sign_query(query: &str) -> Result<String, String> {
     ) -> Result<Vec<(String, String)>, String> {
         let t0 = std::time::Instant::now();
         if let Some(pref) = preferred_host.filter(|p| !p.is_empty()) {
-            candidates.sort_by_key(|u| if Self::source_host_hint(u) == pref { 0u8 } else { 1u8 });
+            candidates.sort_by_key(|u| {
+                if Self::source_host_hint(u) == pref {
+                    0u8
+                } else {
+                    1u8
+                }
+            });
         }
         let tier: Vec<String> = candidates.into_iter().take(k.max(1)).collect();
 
@@ -2464,7 +2588,9 @@ fn sign_query(query: &str) -> Result<String, String> {
                         let size = if mp4.contains("video.sibnet.ru") {
                             0
                         } else {
-                            http.head(&mp4).timeout(3).send()
+                            http.head(&mp4)
+                                .timeout(3)
+                                .send()
                                 .ok()
                                 .and_then(|r| r.content_length())
                                 .unwrap_or(0)
@@ -2484,18 +2610,31 @@ fn sign_query(query: &str) -> Result<String, String> {
         found.sort_by(|a, b| b.0.cmp(&a.0));
         if let Some(pref) = preferred_host.filter(|p| !p.is_empty()) {
             found.sort_by_key(|(_, _, emb)| {
-                if Self::source_host_hint(emb) == pref { 0u8 } else { 1u8 }
+                if Self::source_host_hint(emb) == pref {
+                    0u8
+                } else {
+                    1u8
+                }
             });
         }
         eprintln!(
             "[RESOLVE] hızlı kademe: {} aday / {} hazır, {:.2}s{}",
-            tier.len(), found.len(), t0.elapsed().as_secs_f64(),
-            preferred_host.map(|p| format!(" (tercih: {})", p)).unwrap_or_default()
+            tier.len(),
+            found.len(),
+            t0.elapsed().as_secs_f64(),
+            preferred_host
+                .map(|p| format!(" (tercih: {})", p))
+                .unwrap_or_default()
         );
         Ok(found.into_iter().map(|(_, mp4, emb)| (mp4, emb)).collect())
     }
 
-    fn resolve_ranked(&self, title_id: u64, episode: u64, season: u64) -> Result<Vec<(u64, String)>, String> {
+    fn resolve_ranked(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<Vec<(u64, String)>, String> {
         let key = format!("evp:{title_id}:{season}:{episode}");
         let d = self.cache_get(&key, 1800, |http| {
             http.get(format!("{BASE}/secure/episode-videos-points"))
@@ -2555,9 +2694,13 @@ fn sign_query(query: &str) -> Result<String, String> {
                 if !u.is_empty() && !candidates.contains(&u) {
                     candidates.push(u);
                 }
-                if candidates.len() >= 8 { break; }
+                if candidates.len() >= 8 {
+                    break;
+                }
             }
-            if candidates.len() >= 8 { break; }
+            if candidates.len() >= 8 {
+                break;
+            }
         }
 
         let found: Vec<(u64, String)> = std::thread::scope(|scope| {
@@ -2570,7 +2713,8 @@ fn sign_query(query: &str) -> Result<String, String> {
                         let size = if mp4.contains("video.sibnet.ru") {
                             0
                         } else {
-                            http.head(&mp4).send()
+                            http.head(&mp4)
+                                .send()
                                 .ok()
                                 .and_then(|r| r.content_length())
                                 .unwrap_or(0)
@@ -2590,13 +2734,25 @@ fn sign_query(query: &str) -> Result<String, String> {
         }
     }
 
+    // NOT: ana ürün aday-akışa geçti; yalnız `probe` kullanır.
+    // Ölü-kod kapısından muaf (kaldırma: probe ile birlikte).
+    #[allow(dead_code)]
     pub fn resolve(&self, title_id: u64, episode: u64, season: u64) -> Result<String, String> {
         let mut found = self.resolve_ranked(title_id, episode, season)?;
         found.sort_by(|a, b| b.0.cmp(&a.0));
-        found.into_iter().next().map(|(_, url)| url).ok_or_else(|| "Bölüm videosu çözülemedi".to_string())
+        found
+            .into_iter()
+            .next()
+            .map(|(_, url)| url)
+            .ok_or_else(|| "Bölüm videosu çözülemedi".to_string())
     }
 
-    pub fn resolve_all(&self, title_id: u64, episode: u64, season: u64) -> Result<Vec<String>, String> {
+    pub fn resolve_all(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<Vec<String>, String> {
         let mut found = self.resolve_ranked(title_id, episode, season)?;
         found.sort_by(|a, b| b.0.cmp(&a.0));
         Ok(found.into_iter().map(|(_, url)| url).collect())
@@ -2608,8 +2764,14 @@ fn sign_query(query: &str) -> Result<String, String> {
 
     /// Çeviri listesi alınamadığında yedek: best-video ucundan tek mp4 çözer.
     /// Bulunamazsa/çözülemezse Err döner (çağıran dürüst hataya çevirir).
-    pub fn resolve_best_video(&self, title_id: u64, episode: u64, season: u64) -> Result<String, String> {
-        self.resolve_best_video_full(title_id, episode, season).map(|(u, _)| u)
+    pub fn resolve_best_video(
+        &self,
+        title_id: u64,
+        episode: u64,
+        season: u64,
+    ) -> Result<String, String> {
+        self.resolve_best_video_full(title_id, episode, season)
+            .map(|(u, _)| u)
     }
 
     /// best-video + tau meta (most-sought slug malzemesi). Canlı provada kullanılır.
@@ -2633,7 +2795,9 @@ fn sign_query(query: &str) -> Result<String, String> {
 
         let disk_path = self.img_cache_path(url);
         if let Ok(meta) = std::fs::metadata(&disk_path) {
-            let disk_ts = meta.modified().ok()
+            let disk_ts = meta
+                .modified()
+                .ok()
                 .and_then(|m| m.duration_since(UNIX_EPOCH).ok())
                 .map(|d| d.as_secs())
                 .unwrap_or(0);
@@ -2651,9 +2815,15 @@ fn sign_query(query: &str) -> Result<String, String> {
         }
 
         let t0 = std::time::Instant::now();
-        let out = self.http.get(url)
+        let out = self
+            .http
+            .get(url)
             .timeout(12)
-            .send().ok()?.bytes().ok().map(|b| b.to_vec());
+            .send()
+            .ok()?
+            .bytes()
+            .ok()
+            .map(|b| b.to_vec());
         if std::env::var_os("ANIMECIX_BENCH").is_some() {
             let host = url.split('/').nth(2).unwrap_or(url);
             eprintln!("[bench] img {} -> {:.1?}ms", host, t0.elapsed());
@@ -2665,11 +2835,15 @@ fn sign_query(query: &str) -> Result<String, String> {
     }
 
     pub fn warmup(&self) {
-        let _ = self.http.get(BASE)
+        let _ = self
+            .http
+            .get(BASE)
             .header("Accept", "application/json")
             .timeout(5)
             .send();
-        let _ = self.http.get("https://image.tmdb.org/t/p/w185/")
+        let _ = self
+            .http
+            .get("https://image.tmdb.org/t/p/w185/")
             .timeout(5)
             .send();
     }
@@ -2690,7 +2864,10 @@ fn sign_query(query: &str) -> Result<String, String> {
         let data: &[u8] = px.as_ref();
         let ch = small.n_channels().max(3) as usize;
         let rs = small.rowstride().max(1) as usize;
-        let (w, h) = (small.width().max(1) as usize, small.height().max(1) as usize);
+        let (w, h) = (
+            small.width().max(1) as usize,
+            small.height().max(1) as usize,
+        );
         // 5 bit/kanal kuantalama ile histogram; saf siyah/beyaz (bant/yazı) hariç.
         let mut hist: HashMap<u32, (u64, u64, u64, u64)> = HashMap::new();
         for y in 0..h {
@@ -2748,7 +2925,6 @@ fn sign_query(query: &str) -> Result<String, String> {
         }
         Some([picks[0], picks[1], picks[2]])
     }
-
 
     pub fn state_path() -> PathBuf {
         let mut p = if let Ok(d) = std::env::var("ANIMECIX_STATE_DIR") {
@@ -2875,9 +3051,9 @@ fn sign_query(query: &str) -> Result<String, String> {
             if let Some(arr) = h.as_array() {
                 for it in arr {
                     let title = it.get("title").and_then(Self::val_to_title);
-                    let episode =
-                        it.get("episode")
-                            .and_then(|x| serde_json::from_value::<Episode>(x.clone()).ok());
+                    let episode = it
+                        .get("episode")
+                        .and_then(|x| serde_json::from_value::<Episode>(x.clone()).ok());
                     let ts = it.get("ts").and_then(|x| x.as_u64()).unwrap_or(0);
                     if let (Some(title), Some(episode)) = (title, episode) {
                         st.history.push(HistoryEntry { title, episode, ts });
@@ -2889,10 +3065,11 @@ fn sign_query(query: &str) -> Result<String, String> {
             if let Some(arr) = m.as_array() {
                 for it in arr {
                     let title = it.get("title").and_then(Self::val_to_title);
-                    let completed =
-                        it.get("completed").and_then(|x| x.as_bool()).unwrap_or(false);
-                    let added_at =
-                        it.get("added_at").and_then(|x| x.as_u64()).unwrap_or(0);
+                    let completed = it
+                        .get("completed")
+                        .and_then(|x| x.as_bool())
+                        .unwrap_or(false);
+                    let added_at = it.get("added_at").and_then(|x| x.as_u64()).unwrap_or(0);
                     if let Some(title) = title {
                         st.marathon.push(MarathonItem {
                             title,
@@ -2903,7 +3080,10 @@ fn sign_query(query: &str) -> Result<String, String> {
                 }
             }
         }
-        st.welcome_seen = obj.get("welcome_seen").and_then(|x| x.as_bool()).unwrap_or(false);
+        st.welcome_seen = obj
+            .get("welcome_seen")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         if let Some(m) = obj.get("preferred_source") {
             if let Some(o) = m.as_object() {
                 for (k, v) in o {
@@ -2922,12 +3102,18 @@ fn sign_query(query: &str) -> Result<String, String> {
             .get("quick_search_tip_seen")
             .and_then(|x| x.as_bool())
             .unwrap_or(false);
-        st.search_tip_seen = obj.get("search_tip_seen").and_then(|x| x.as_bool()).unwrap_or(false);
+        st.search_tip_seen = obj
+            .get("search_tip_seen")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         st.right_click_tip_seen = obj
             .get("right_click_tip_seen")
             .and_then(|x| x.as_bool())
             .unwrap_or(false);
-        st.tools_tip_seen = obj.get("tools_tip_seen").and_then(|x| x.as_bool()).unwrap_or(false);
+        st.tools_tip_seen = obj
+            .get("tools_tip_seen")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         st
     }
 
@@ -3051,10 +3237,16 @@ fn sign_query(query: &str) -> Result<String, String> {
         });
         let key = w.title_id.to_string();
         let list = st.watched.entry(key).or_default();
-        if !list.iter().any(|x| x.episode == w.episode && x.season == w.season) {
+        if !list
+            .iter()
+            .any(|x| x.episode == w.episode && x.season == w.season)
+        {
             list.push(w.clone());
         }
-        st.watched.get_mut(&w.title_id.to_string()).unwrap().sort_by_key(|x| x.season * 10000 + x.episode);
+        st.watched
+            .get_mut(&w.title_id.to_string())
+            .unwrap()
+            .sort_by_key(|x| x.season * 10000 + x.episode);
         let p = Self::state_path();
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).ok();
@@ -3101,7 +3293,8 @@ fn sign_query(query: &str) -> Result<String, String> {
         if let Some(list) = st.watched.get_mut(&key) {
             list.retain(|x| !(x.episode == episode && x.season == season));
         }
-        st.progress.remove(&format!("{title_id}:{season}:{episode}"));
+        st.progress
+            .remove(&format!("{title_id}:{season}:{episode}"));
         self.save_state(&st);
     }
 
@@ -3159,17 +3352,6 @@ fn sign_query(query: &str) -> Result<String, String> {
         }
     }
 
-    pub fn toggle_marathon_completed(&self, id: u64) -> bool {
-        let mut st = self.load_state();
-        let mut new_state = false;
-        if let Some(item) = st.marathon.iter_mut().find(|m| m.title.id == id) {
-            item.completed = !item.completed;
-            new_state = item.completed;
-        }
-        self.save_state(&st);
-        new_state
-    }
-
     pub fn set_marathon_completed(&self, id: u64, done: bool) {
         let mut st = self.load_state();
         if let Some(item) = st.marathon.iter_mut().find(|m| m.title.id == id) {
@@ -3182,8 +3364,15 @@ fn sign_query(query: &str) -> Result<String, String> {
         let mut st = self.load_state();
         let list = st.watched.entry(tid.to_string()).or_default();
         for e in eps {
-            if !list.iter().any(|x| x.episode == e.episode && x.season == e.season) {
-                list.push(Watched { title_id: tid, episode: e.episode, season: e.season });
+            if !list
+                .iter()
+                .any(|x| x.episode == e.episode && x.season == e.season)
+            {
+                list.push(Watched {
+                    title_id: tid,
+                    episode: e.episode,
+                    season: e.season,
+                });
             }
         }
         list.sort_by_key(|x| x.season * 10000 + x.episode);
@@ -3313,7 +3502,6 @@ fn sign_query(query: &str) -> Result<String, String> {
         self.save_state(&st);
     }
 
-
     pub fn settings_path() -> PathBuf {
         let mut p = dirs_cache_or_home();
         p.push(".local/share/animecix/settings.json");
@@ -3321,15 +3509,25 @@ fn sign_query(query: &str) -> Result<String, String> {
     }
 
     pub fn source_host_hint(url: &str) -> &'static str {
-        if url.contains("tau-video") { "tau-video" }
-        else if url.contains("sibnet.ru") { "sibnet.ru" }
-        else if url.contains("streamtape") { "streamtape" }
-        else if url.contains("vudeo") { "vudeo" }
-        else if url.contains("streamsb") || url.contains("sbplay") { "streamsb" }
-        else if url.contains("dood") { "dood" }
-        else if url.contains("ok.ru") || url.contains("odnoklassniki") { "ok.ru" }
-        else if url.contains("drive.google") { "gdrive" }
-        else { "" }
+        if url.contains("tau-video") {
+            "tau-video"
+        } else if url.contains("sibnet.ru") {
+            "sibnet.ru"
+        } else if url.contains("streamtape") {
+            "streamtape"
+        } else if url.contains("vudeo") {
+            "vudeo"
+        } else if url.contains("streamsb") || url.contains("sbplay") {
+            "streamsb"
+        } else if url.contains("dood") {
+            "dood"
+        } else if url.contains("ok.ru") || url.contains("odnoklassniki") {
+            "ok.ru"
+        } else if url.contains("drive.google") {
+            "gdrive"
+        } else {
+            ""
+        }
     }
 
     pub fn get_preferred_host(&self, title_id: u64) -> Option<String> {
@@ -3338,11 +3536,17 @@ fn sign_query(query: &str) -> Result<String, String> {
     }
 
     pub fn set_preferred_host(&self, title_id: u64, host_hint: &str) {
-        if host_hint.is_empty() { return; }
+        if host_hint.is_empty() {
+            return;
+        }
         let mut st = self.load_state();
-        st.preferred_source.insert(title_id.to_string(), host_hint.to_string());
+        st.preferred_source
+            .insert(title_id.to_string(), host_hint.to_string());
         self.save_state(&st);
-        eprintln!("[PREF] tid={} tercih edilen kaynak kaydedildi: {}", title_id, host_hint);
+        eprintln!(
+            "[PREF] tid={} tercih edilen kaynak kaydedildi: {}",
+            title_id, host_hint
+        );
     }
 
     pub fn load_settings(&self) -> Settings {
@@ -3386,15 +3590,10 @@ fn sign_query(query: &str) -> Result<String, String> {
 
     /// Kapak indiricilerin o anki kalite ayarı (hot-path; disk okumaz).
     pub fn current_cover_quality(&self) -> String {
-        self.cover_quality_mem.lock().map(|g| g.clone()).unwrap_or_else(|_| DEFAULT_COVER_QUALITY.to_string())
-    }
-
-    /// Yalnızca kapak disk önbelleğini siler (covers/). Ayarlara, API
-    /// önbelleğine ve indirmelere dokunmaz. Kalite değişiminde kullanılır.
-    pub fn wipe_covers_dir(&self) {
-        let dir = self.cache_dir.join("covers");
-        let _ = std::fs::remove_dir_all(&dir);
-        let _ = std::fs::create_dir_all(&dir);
+        self.cover_quality_mem
+            .lock()
+            .map(|g| g.clone())
+            .unwrap_or_else(|_| DEFAULT_COVER_QUALITY.to_string())
     }
 
     /// Kapak wipe'ı ister: bayrak dosyası yazar, silme işini yeni proses
@@ -3403,7 +3602,10 @@ fn sign_query(query: &str) -> Result<String, String> {
         let _ = std::fs::write(self.cache_dir.join(WIPE_FLAG_FILE), "");
     }
 
-    pub fn wipe_all_data(&self) {        if let Ok(mut c) = self.cache.lock() { c.clear(); }
+    pub fn wipe_all_data(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            c.clear();
+        }
 
         let st = State::default();
         self.save_state(&st);
@@ -3424,10 +3626,6 @@ fn sign_query(query: &str) -> Result<String, String> {
         }
     }
 
-    pub fn is_welcome_seen(&self) -> bool {
-        self.load_state().welcome_seen
-    }
-
     pub fn set_welcome_seen(&self, seen: bool) {
         let mut st = self.load_state();
         st.welcome_seen = seen;
@@ -3441,16 +3639,6 @@ fn sign_query(query: &str) -> Result<String, String> {
     pub fn set_quick_search_tip_seen(&self, seen: bool) {
         let mut st = self.load_state();
         st.quick_search_tip_seen = seen;
-        self.save_state(&st);
-    }
-
-    pub fn is_search_tip_seen(&self) -> bool {
-        self.load_state().search_tip_seen
-    }
-
-    pub fn set_search_tip_seen(&self, seen: bool) {
-        let mut st = self.load_state();
-        st.search_tip_seen = seen;
         self.save_state(&st);
     }
 
@@ -3535,8 +3723,14 @@ mod tests {
         static N: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
         let key = format!("test:cache_reuse:{}:{}", std::process::id(), n);
-        let v1 = c.cache_get(&key, 60, |_h| Ok(serde_json::json!({"n": n}))).unwrap();
-        let v2 = c.cache_get(&key, 60, |_h| panic!("loader tekrar çağrılmamalı (cache miss)")).unwrap();
+        let v1 = c
+            .cache_get(&key, 60, |_h| Ok(serde_json::json!({"n": n})))
+            .unwrap();
+        let v2 = c
+            .cache_get(&key, 60, |_h| {
+                panic!("loader tekrar çağrılmamalı (cache miss)")
+            })
+            .unwrap();
         assert_eq!(v1, v2);
     }
 
@@ -3575,8 +3769,15 @@ mod tests {
         // hafif_keskin: shader atlanır AMA unsharp korunur
         let r = super::upscale_mpv_args("hafif_keskin", Some("/p/A4K.glsl"), Some(h));
         assert_eq!(r.len(), 1, "1080p hafif_keskin sadece unsharp üretmeli");
-        assert!(r[0].starts_with("--vf=unsharp="), "beklenen unsharp: {}", r[0]);
-        assert!(!r.iter().any(|a| a.contains("glsl-shaders")), "shader 1080p'te atlanmalı");
+        assert!(
+            r[0].starts_with("--vf=unsharp="),
+            "beklenen unsharp: {}",
+            r[0]
+        );
+        assert!(
+            !r.iter().any(|a| a.contains("glsl-shaders")),
+            "shader 1080p'te atlanmalı"
+        );
         // sharp: çözünürlükten bağımsız, ewa_lanczossharp uygulanır (zaten upscale değil, scale algoritması)
         let r = super::upscale_mpv_args("sharp", None, Some(h));
         assert!(r.iter().any(|a| a == "--scale=ewa_lanczossharp"));
@@ -3680,7 +3881,10 @@ mod tests {
         assert!(!super::consume_wipe_flag(&dir), "bayrak yoksa false");
         std::fs::write(dir.join("covers_wipe_pending"), b"").unwrap();
         assert!(super::consume_wipe_flag(&dir), "bayrak varsa true");
-        assert!(!dir.join("covers").join("eski.bin").exists(), "eski dosya gitmeli");
+        assert!(
+            !dir.join("covers").join("eski.bin").exists(),
+            "eski dosya gitmeli"
+        );
         assert!(dir.join("covers").is_dir(), "dizin yeniden açılmalı");
         assert!(!dir.join("covers_wipe_pending").exists(), "bayrak kalkmalı");
         assert!(!super::consume_wipe_flag(&dir), "ikinci çağrı false");
@@ -3697,13 +3901,13 @@ mod tests {
         let iv_b64 = it.next().unwrap();
         assert!(it.next().is_none(), "iki parçalı olmalı");
         let eng = base64::engine::general_purpose::STANDARD;
-        let iv: [u8; 12] = eng
-            .decode(iv_b64)
-            .unwrap()
-            .try_into()
-            .expect("12 bayt IV");
+        let iv: [u8; 12] = eng.decode(iv_b64).unwrap().try_into().expect("12 bayt IV");
         let key = ring::aead::LessSafeKey::new(
-            ring::aead::UnboundKey::new(&ring::aead::AES_256_GCM, b"i4C7R2fXGocdYgFLzCbDlsJjukf8G58b").unwrap(),
+            ring::aead::UnboundKey::new(
+                &ring::aead::AES_256_GCM,
+                b"i4C7R2fXGocdYgFLzCbDlsJjukf8G58b",
+            )
+            .unwrap(),
         );
         let mut data = eng.decode(ct_b64).unwrap();
         let pt = key
@@ -3763,7 +3967,10 @@ mod tests {
         );
         assert_eq!(t(&["animation"]).display_genre(), None);
         assert_eq!(t(&[]).display_genre(), None);
-        let none = Title { genres: None, ..Default::default() };
+        let none = Title {
+            genres: None,
+            ..Default::default()
+        };
         assert_eq!(none.display_genre(), None);
     }
 
@@ -3808,7 +4015,8 @@ mod tests {
     }
 
     #[test]
-    fn enrich_title_short_circuits_when_populated() {        let c = Client::new();
+    fn enrich_title_short_circuits_when_populated() {
+        let c = Client::new();
         let mut t = sample("anime", Some(2021), Some(2));
         t.genres = Some(vec!["Dram".to_string()]);
         let e = c.enrich_title(&t);
@@ -3901,22 +4109,85 @@ mod tests {
     fn settings_source_patience_roundtrips() {
         let mut s = Settings::default();
         assert_eq!(s.source_patience_secs, 20);
+        assert!(!s.auto_next, "otomatik geçiş varsayılan kapalı");
         s.source_patience_secs = 40;
+        s.auto_next = true;
         let json = serde_json::to_string_pretty(&s).expect("serialize");
         assert!(json.contains("source_patience_secs"), "alan JSON'da olmalı");
+        assert!(json.contains("auto_next"), "alan JSON'da olmalı");
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.source_patience_secs, 40, "sabır korunmalı");
+        assert!(back.auto_next, "otomatik geçiş korunmalı");
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!old.auto_next, "eski ayar dosyası kapalıya düşmeli");
+    }
+
+    #[test]
+    fn neighbor_episode_finds_sorted_neighbors() {
+        let eps = vec![
+            Episode {
+                episode: 3,
+                season: 1,
+                name: "c".into(),
+            },
+            Episode {
+                episode: 1,
+                season: 1,
+                name: "a".into(),
+            },
+            Episode {
+                episode: 2,
+                season: 1,
+                name: "b".into(),
+            },
+        ];
+        let next = super::neighbor_episode(&eps, 1, 1, 1).expect("sonraki olmalı");
+        assert_eq!(next.episode, 2);
+        let prev = super::neighbor_episode(&eps, 1, 2, -1).expect("önceki olmalı");
+        assert_eq!(prev.episode, 1);
+        assert!(
+            super::neighbor_episode(&eps, 1, 3, 1).is_none(),
+            "son bölümde sonraki yok"
+        );
+        assert!(
+            super::neighbor_episode(&eps, 1, 1, -1).is_none(),
+            "ilk bölümde önceki yok"
+        );
+        assert!(super::neighbor_episode(&[], 1, 1, 1).is_none(), "boş liste");
+        assert!(
+            super::neighbor_episode(&eps, 9, 9, 1).is_none(),
+            "bilinmeyen bölüm"
+        );
+        assert!(
+            super::neighbor_episode(&eps, 1, 1, 0).is_none(),
+            "geçersiz yön"
+        );
+        // Yinelenen kayıt teklenir: sonraki aynı bölüme takılmaz.
+        let mut dup = eps.clone();
+        dup.push(Episode {
+            episode: 1,
+            season: 1,
+            name: "a-kopya".into(),
+        });
+        let next = super::neighbor_episode(&dup, 1, 1, 1).expect("sonraki olmalı");
+        assert_eq!(next.episode, 2);
     }
 
     #[test]
     fn settings_max_parallel_roundtrips() {
         let old: Settings = serde_json::from_str("{}").unwrap();
-        assert_eq!(old.max_parallel_downloads, 1, "eski ayar dosyası 1'e düşmeli");
+        assert_eq!(
+            old.max_parallel_downloads, 1,
+            "eski ayar dosyası 1'e düşmeli"
+        );
         let mut s = Settings::default();
         assert_eq!(s.max_parallel_downloads, 1);
         s.max_parallel_downloads = 4;
         let json = serde_json::to_string_pretty(&s).expect("serialize");
-        assert!(json.contains("max_parallel_downloads"), "alan JSON'da olmalı");
+        assert!(
+            json.contains("max_parallel_downloads"),
+            "alan JSON'da olmalı"
+        );
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.max_parallel_downloads, 4, "paralellik korunmalı");
     }
@@ -3924,10 +4195,15 @@ mod tests {
     #[test]
     fn settings_remove_hint_once_by_default() {
         let old: Settings = serde_json::from_str("{}").unwrap();
-        assert!(!old.seen_remove_hint, "eski ayar dosyasında ipucu görülmemiş sayılır");
+        assert!(
+            !old.seen_remove_hint,
+            "eski ayar dosyasında ipucu görülmemiş sayılır"
+        );
         assert!(!Settings::default().seen_remove_hint);
     }
 
+    // NOT: eksik #[test] özniteliği yakalandı (ölü-kod kapısı).
+    #[test]
     fn migrate_state_recovers_bare_id_and_alias_fields() {
         let value: serde_json::Value = serde_json::json!({
             "marathon": [
@@ -3939,9 +4215,15 @@ mod tests {
         });
         let st = Client::migrate_state(&value);
         assert_eq!(st.marathon.len(), 1, "bozuk kayıt state'i çökertmemeli");
-        assert_eq!(st.marathon[0].title.id, 777, "düz id'den Title.id çıkarılmalı");
+        assert_eq!(
+            st.marathon[0].title.id, 777,
+            "düz id'den Title.id çıkarılmalı"
+        );
         assert_eq!(st.saved.len(), 1);
-        assert_eq!(st.saved[0].name, "Eski Favori", "eski `title` alanı isim olarak okunmalı");
+        assert_eq!(
+            st.saved[0].name, "Eski Favori",
+            "eski `title` alanı isim olarak okunmalı"
+        );
         assert_eq!(st.saved[0].id, 999);
     }
 
@@ -3979,8 +4261,14 @@ mod tests {
         c.save_state(&st);
 
         let items = c.get_marathon();
-        let m = items.iter().find(|x| x.title.id == 777).expect("öğe olmalı");
-        assert_eq!(m.title.name, "Hidratasyon Testi", "isim önbellekten doldurulmalı");
+        let m = items
+            .iter()
+            .find(|x| x.title.id == 777)
+            .expect("öğe olmalı");
+        assert_eq!(
+            m.title.name, "Hidratasyon Testi",
+            "isim önbellekten doldurulmalı"
+        );
         assert_eq!(m.title.title_type.as_deref(), Some("anime"));
 
         let mut st2 = c.load_state();
@@ -3995,24 +4283,50 @@ mod tests {
         let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let c = Client::new();
         let tid: u64 = 999_991;
-        let w1 = Watched { title_id: tid, episode: 1, season: 0 };
-        let w2 = Watched { title_id: tid, episode: 2, season: 0 };
+        let w1 = Watched {
+            title_id: tid,
+            episode: 1,
+            season: 0,
+        };
+        let w2 = Watched {
+            title_id: tid,
+            episode: 2,
+            season: 0,
+        };
 
         c.set_current(&w1);
-        assert!(!c.is_watched(tid, 0, 1), "açılan bölüm henüz izlenmedi sayılmamalı");
+        assert!(
+            !c.is_watched(tid, 0, 1),
+            "açılan bölüm henüz izlenmedi sayılmamalı"
+        );
 
-        assert!(Client::played_enough(95.0, 100.0), ">=%90 izlendi sayılmalı");
-        assert!(!Client::played_enough(45.0, 100.0), "<%90 izlenmedi sayılmalı");
-        assert!(!Client::played_enough(0.0, 0.0), "süresiz içerik izlenmiş sayılmaz");
+        assert!(
+            Client::played_enough(95.0, 100.0),
+            ">=%90 izlendi sayılmalı"
+        );
+        assert!(
+            !Client::played_enough(45.0, 100.0),
+            "<%90 izlenmedi sayılmalı"
+        );
+        assert!(
+            !Client::played_enough(0.0, 0.0),
+            "süresiz içerik izlenmiş sayılmaz"
+        );
 
         c.save_watched(&w1, "");
         assert!(c.is_watched(tid, 0, 1), "eşik aşılınca izlendi sayılmalı");
 
         c.set_current(&w2);
-        assert!(!c.is_watched(tid, 0, 2), "sonraki bölüm geçişte izlenmeden tamamlanmamalı");
+        assert!(
+            !c.is_watched(tid, 0, 2),
+            "sonraki bölüm geçişte izlenmeden tamamlanmamalı"
+        );
 
         c.save_watched(&w2, "");
-        assert!(c.is_watched(tid, 0, 2), "sonraki bölüm izlenince işaretlenmeli");
+        assert!(
+            c.is_watched(tid, 0, 2),
+            "sonraki bölüm izlenince işaretlenmeli"
+        );
 
         c.remove_watched(tid, 0, 1);
         c.remove_watched(tid, 0, 2);
@@ -4031,29 +4345,61 @@ mod tests {
         c.remove_watched(tid, 0, 1);
         c.remove_watched(tid, 0, 2);
         c.remove_watched(tid, 0, 3);
-        assert_eq!(c.watched_episode_count(tid), 0, "başlangıçta sayaç sıfır olmalı");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            0,
+            "başlangıçta sayaç sıfır olmalı"
+        );
 
-        c.save_watched(&Watched { title_id: tid, episode: 1, season: 0 }, "");
-        assert_eq!(c.watched_episode_count(tid), 1, "manuel izlendi işareti progress olmadan sayılmalı (maraton barı)");
+        c.save_watched(
+            &Watched {
+                title_id: tid,
+                episode: 1,
+                season: 0,
+            },
+            "",
+        );
+        assert_eq!(
+            c.watched_episode_count(tid),
+            1,
+            "manuel izlendi işareti progress olmadan sayılmalı (maraton barı)"
+        );
 
         c.save_progress(tid, 0, 2, 5.0, 100.0);
-        assert_eq!(c.watched_episode_count(tid), 1, "kısmi oynatma (<%90) sayaçı şişirmemeli");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            1,
+            "kısmi oynatma (<%90) sayaçı şişirmemeli"
+        );
 
         c.save_progress(tid, 0, 3, 95.0, 100.0);
-        assert_eq!(c.watched_episode_count(tid), 2, "%90+ oynatma watched kaydı olmadan da sayılmalı");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            2,
+            "%90+ oynatma watched kaydı olmadan da sayılmalı"
+        );
 
         c.remove_watched(tid, 0, 1);
-        assert_eq!(c.watched_episode_count(tid), 1, "izlenmedi işareti sayaçı düşürmeli");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            1,
+            "izlenmedi işareti sayaçı düşürmeli"
+        );
 
         c.remove_watched(tid, 0, 2);
         c.remove_watched(tid, 0, 3);
         let mut st = c.load_state();
-        st.progress.retain(|k, _| !k.starts_with(&format!("{tid}:")));
+        st.progress
+            .retain(|k, _| !k.starts_with(&format!("{tid}:")));
         if st.current.as_ref().map(|w| w.title_id) == Some(tid) {
             st.current = None;
         }
         c.save_state(&st);
-        assert_eq!(c.watched_episode_count(tid), 0, "temizlik sonrası sayaç sıfır olmalı");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            0,
+            "temizlik sonrası sayaç sıfır olmalı"
+        );
     }
 
     #[test]
@@ -4065,19 +4411,29 @@ mod tests {
         let mut t = sample("movie", None, None);
         t.id = tid;
 
-        assert_eq!(c.title_progress_frac(&t), 0.0, "oynatılmamış filmde oran sıfır olmalı");
+        assert_eq!(
+            c.title_progress_frac(&t),
+            0.0,
+            "oynatılmamış filmde oran sıfır olmalı"
+        );
         c.save_progress(tid, 1, 1, 30.0, 100.0);
-        assert!((c.title_progress_frac(&t) - 0.3).abs() < 1e-9, "film oranı oynatma konumunu yansıtmalı");
+        assert!(
+            (c.title_progress_frac(&t) - 0.3).abs() < 1e-9,
+            "film oranı oynatma konumunu yansıtmalı"
+        );
 
         let mut st = c.load_state();
-        st.progress.retain(|k, _| !k.starts_with(&format!("{tid}:")));
+        st.progress
+            .retain(|k, _| !k.starts_with(&format!("{tid}:")));
         c.save_state(&st);
     }
 
     #[test]
     fn cover_palette_missing_file_is_none() {
         let c = Client::new();
-        assert!(c.cover_palette("https://image.tmdb.org/t/p/w185/olmayan.jpg").is_none());
+        assert!(c
+            .cover_palette("https://image.tmdb.org/t/p/w185/olmayan.jpg")
+            .is_none());
     }
 
     #[test]
@@ -4101,7 +4457,12 @@ mod tests {
     fn json_cache_caps_and_skips_search() {
         let mut m: HashMap<String, (u64, serde_json::Value)> = HashMap::new();
         for i in 0..40 {
-            mem_cache_insert(&mut m, &format!("lists:{i}"), i as u64, serde_json::Value::Null);
+            mem_cache_insert(
+                &mut m,
+                &format!("lists:{i}"),
+                i as u64,
+                serde_json::Value::Null,
+            );
         }
         assert_eq!(m.len(), MAX_JSON_CACHE_ENTRIES, "tavan aşılmamalı");
         assert!(!m.contains_key("lists:0"), "en eski atılmalı");
@@ -4124,7 +4485,10 @@ mod tests {
         assert_eq!(1.5f32.clamp(1.0, 1.25), 1.25);
         assert_eq!(0.5f32.clamp(1.0, 1.25), 1.0);
         let old: Settings = serde_json::from_str("{}").unwrap();
-        assert_eq!(old.news_font_size, "normal", "eski ayar dosyasına normal düşmeli");
+        assert_eq!(
+            old.news_font_size, "normal",
+            "eski ayar dosyasına normal düşmeli"
+        );
         let mut s = Settings::default();
         assert_eq!(s.news_font_size, "normal");
         s.news_font_size = "large".into();
@@ -4153,8 +4517,14 @@ mod tests {
     fn settings_theme_defaults_dark_and_roundtrips() {
         let old: Settings = serde_json::from_str("{}").unwrap();
         assert_eq!(old.theme, "koyu", "eski ayar dosyası koyuya düşmeli");
-        assert!(old.show_music_hint && old.show_intro_hint, "ipucular varsayılan açık");
-        assert!(!old.play_ask_quality, "oynatma kalite sorusu varsayılan kapalı");
+        assert!(
+            old.show_music_hint && old.show_intro_hint,
+            "ipucular varsayılan açık"
+        );
+        assert!(
+            !old.play_ask_quality,
+            "oynatma kalite sorusu varsayılan kapalı"
+        );
         let mut s = Settings::default();
         s.theme = "bordo".into();
         s.show_music_hint = false;
@@ -4167,7 +4537,10 @@ mod tests {
     #[test]
     fn settings_cover_quality_defaults_to_middle_and_roundtrips() {
         let old: Settings = serde_json::from_str("{}").unwrap();
-        assert_eq!(old.cover_quality, "orta", "eski ayar dosyası ortaya düşmeli");
+        assert_eq!(
+            old.cover_quality, "orta",
+            "eski ayar dosyası ortaya düşmeli"
+        );
         let mut s = Settings::default();
         assert_eq!(s.cover_quality, "orta");
         s.cover_quality = "dusuk".into();
@@ -4194,12 +4567,20 @@ mod tests {
             "bilinmeyen ortaya düşer"
         );
         let other = "https://ornek.com/a.png";
-        assert_eq!(tmdb_sized_url(other, "dusuk"), other, "TMDB dışı aynen geçer");
+        assert_eq!(
+            tmdb_sized_url(other, "dusuk"),
+            other,
+            "TMDB dışı aynen geçer"
+        );
     }
 
     #[test]
-    fn settings_skip_secret_defaults_empty_and_roundtrips() {        let old: Settings = serde_json::from_str("{}").unwrap();
-        assert!(old.official_skip_secret.is_empty(), "eski ayar dosyası bozulmamalı");
+    fn settings_skip_secret_defaults_empty_and_roundtrips() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(
+            old.official_skip_secret.is_empty(),
+            "eski ayar dosyası bozulmamalı"
+        );
         let mut s = Settings::default();
         assert!(s.official_skip_secret.is_empty());
         s.official_skip_secret = "SIR".into();
@@ -4214,7 +4595,9 @@ mod tests {
         assert!(super::is_server_error("HTTP 429"));
         assert!(super::is_server_error("HTTP 503"));
         assert!(!super::is_server_error("Bölüm videosu çözülemedi"));
-        assert!(!super::is_server_error("error sending request for uri (x): client error (SendRequest)"));
+        assert!(!super::is_server_error(
+            "error sending request for uri (x): client error (SendRequest)"
+        ));
         assert!(!super::is_server_error(""));
     }
 
@@ -4240,8 +4623,14 @@ mod tests {
 
     #[test]
     fn quality_preference_and_pick() {
-        assert_eq!(super::Client::quality_preference("best"), vec!["1080p", "720p", "480p"]);
-        assert_eq!(super::Client::quality_preference("720p"), vec!["720p", "480p"]);
+        assert_eq!(
+            super::Client::quality_preference("best"),
+            vec!["1080p", "720p", "480p"]
+        );
+        assert_eq!(
+            super::Client::quality_preference("720p"),
+            vec!["720p", "480p"]
+        );
         assert_eq!(super::Client::quality_preference("480p"), vec!["480p"]);
         let urls = vec![
             ("480p".to_string(), "u480".to_string()),
@@ -4271,17 +4660,29 @@ mod tests {
     }
 
     #[test]
-    fn parse_tau_embed_shapes() {        assert_eq!(
-            super::parse_tau_embed("https://tau-video.xyz/embed/6335c9e6d03cb090cb4c58c1?vid=389615"),
+    fn parse_tau_embed_shapes() {
+        assert_eq!(
+            super::parse_tau_embed(
+                "https://tau-video.xyz/embed/6335c9e6d03cb090cb4c58c1?vid=389615"
+            ),
             Some(("6335c9e6d03cb090cb4c58c1".into(), "389615".into()))
         );
         assert_eq!(
             super::parse_tau_embed("https://tau-video.xyz/embed/6335c9e6d03cb090cb4c58c1"),
             Some(("6335c9e6d03cb090cb4c58c1".into(), String::new()))
         );
-        assert!(super::parse_tau_embed("https://video.sibnet.ru/shell.php?videoid=1").is_none(), "tau dışı");
-        assert!(super::parse_tau_embed("https://tau-video.xyz/embed/kisa?vid=1").is_none(), "kısa id");
-        assert!(super::parse_tau_embed("https://tau-video.xyz/izle/123").is_none(), "embed yolu yok");
+        assert!(
+            super::parse_tau_embed("https://video.sibnet.ru/shell.php?videoid=1").is_none(),
+            "tau dışı"
+        );
+        assert!(
+            super::parse_tau_embed("https://tau-video.xyz/embed/kisa?vid=1").is_none(),
+            "kısa id"
+        );
+        assert!(
+            super::parse_tau_embed("https://tau-video.xyz/izle/123").is_none(),
+            "embed yolu yok"
+        );
     }
 
     fn sample_video_json() -> serde_json::Value {
@@ -4308,7 +4709,10 @@ mod tests {
     fn parse_tau_video_meta_missing_identity_none() {
         assert!(super::parse_tau_video_meta(&serde_json::json!({})).is_none());
         assert!(super::parse_tau_video_meta(&serde_json::json!({"_id": "x"})).is_none());
-        assert!(super::parse_tau_video_meta(&serde_json::json!({"_id": "x", "title_id": "1"})).is_none());
+        assert!(
+            super::parse_tau_video_meta(&serde_json::json!({"_id": "x", "title_id": "1"}))
+                .is_none()
+        );
     }
 
     #[test]
@@ -4342,8 +4746,20 @@ mod tests {
             "outro": {"from": 1345, "to": 1436, "count": 11}
         });
         let m = super::parse_skip_meta(&v);
-        assert_eq!(m.intro, Some(super::SkipSegment { from: 330.0, to: 421.0 }));
-        assert_eq!(m.outro, Some(super::SkipSegment { from: 1345.0, to: 1436.0 }));
+        assert_eq!(
+            m.intro,
+            Some(super::SkipSegment {
+                from: 330.0,
+                to: 421.0
+            })
+        );
+        assert_eq!(
+            m.outro,
+            Some(super::SkipSegment {
+                from: 1345.0,
+                to: 1436.0
+            })
+        );
         assert!(m.music.is_none());
         assert!(m.music_line().is_none());
         let t = m.sanitized_times();
@@ -4366,7 +4782,10 @@ mod tests {
         let m = super::parse_skip_meta(&v);
         assert!(m.outro.is_none());
         let line = m.music_line().expect("açılış satırı");
-        assert!(line.contains("Kaibutsu") && line.contains("YOASOBI"), "satır: {line}");
+        assert!(
+            line.contains("Kaibutsu") && line.contains("YOASOBI"),
+            "satır: {line}"
+        );
         assert!(line.contains('▶'), "dinleme bağlantısı işareti: {line}");
         let ol = m.outro_music_line().expect("kapanış satırı");
         assert!(ol.contains("Yasashii Suisei"), "satır: {ol}");
@@ -4382,14 +4801,77 @@ mod tests {
         assert_eq!(m.sanitized_times(), super::SkipTimes::default());
     }
 
+    #[test]
+    fn default_player_secret_signs_stable_hex() {
+        let a = super::sign_most_sought_slug(super::DEFAULT_PLAYER_SECRET, "11884_1_1_355");
+        let b = super::sign_most_sought_slug(super::DEFAULT_PLAYER_SECRET, "11884_1_1_355");
+        assert_eq!(a.len(), 64, "HMAC-SHA256 hex 64 olmalı");
+        assert!(a
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert_eq!(a, b, "aynı girdiye aynı imza");
+        let c = super::sign_most_sought_slug(super::DEFAULT_PLAYER_SECRET, "11884_1_2_355");
+        assert_ne!(a, c, "slug değişince imza değişmeli");
+    }
+
+    #[test]
+    fn resolve_skip_secret_prefers_manual_then_default() {
+        use_isolated_state();
+        let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let c = super::Client::new();
+        let (m, msrc) = c.resolve_skip_secret("  el-sırrı ").expect("el girdisi");
+        assert_eq!(m.as_str(), "el-sırrı");
+        assert_eq!(msrc, "manuel");
+        // Derleme anahtarı yoksa gömülü oynatıcı sırrına düşer (kullanıcı
+        // hiçbir şey girmeden imzalı istek atılır).
+        let (s, src) = c.resolve_skip_secret("").expect("varsayılan sır olmalı");
+        assert!(src == "varsayılan" || src == "kasa", "kaynak: {src}");
+        if src == "varsayılan" {
+            assert_eq!(s, super::DEFAULT_PLAYER_SECRET);
+        }
+    }
+
+    #[test]
+    fn parse_skip_meta_full_music_payload() {
+        // Canlı most-sought yanıtı (Chainsaw Man S1E1, imzalı): bilinmeyen
+        // alanlar (album/cover_art) yoksayılır, outro 0-0 elenir.
+        let v = serde_json::json!({
+            "intro": {"from": 134, "to": 225, "count": 11},
+            "outro": {"from": 0, "to": 0, "count": 0},
+            "music": {
+                "title": "KICK BACK",
+                "artist": "Kenshi Yonezu",
+                "album": "KICK BACK",
+                "spotify_url": "https://open.spotify.com/track/3khEEPRyBeOUabbmOPJzAG",
+                "apple_music_url": "https://music.apple.com/us/album/kick-back/1759899363?app=music&at=1000l33QU&i=1759899365&mt=1",
+                "cover_art": "https://i.scdn.co/image/ab67616d0000b273173fe2bb0d2a222613d80d86",
+                "song_link": "https://lis.tn/vxTbeD"
+            }
+        });
+        let m = super::parse_skip_meta(&v);
+        let line = m.music_line().expect("açılış satırı");
+        assert!(line.contains("KICK BACK") && line.contains("Kenshi Yonezu"));
+        assert!(line.contains('▶'), "spotify varken işaret: {line}");
+        assert!(m.outro_music_line().is_none());
+        let t = m.sanitized_times();
+        assert_eq!((t.op_start, t.op_end), (Some(134.0), Some(225.0)));
+        assert!(
+            t.ed_start.is_none() && t.ed_end.is_none(),
+            "0-0 outro elenir"
+        );
+        assert_eq!(
+            m.music.as_ref().and_then(|d| d.spotify_url.as_deref()),
+            Some("https://open.spotify.com/track/3khEEPRyBeOUabbmOPJzAG")
+        );
+    }
+
     /// SAHTE test anahtarı — gerçek kasa anahtarıyla ilgisi yok.
-    const TEST_VAULT_KEY: &str =
-        "1111111111111111111111111111111111111111111111111111111111111111";
+    const TEST_VAULT_KEY: &str = "1111111111111111111111111111111111111111111111111111111111111111";
     const TEST_VAULT_NONCE: &str = "222222222222222222222222";
 
     fn test_vault_blob(key_hex: &str, plaintext: &str) -> serde_json::Value {
-        use aes_gcm::{Aes256Gcm, Key, Nonce};
         use aes_gcm::aead::{Aead, KeyInit};
+        use aes_gcm::{Aes256Gcm, Key, Nonce};
         let key_bytes = super::hex_decode(key_hex).expect("test anahtarı");
         let nonce_bytes = super::hex_decode(TEST_VAULT_NONCE).expect("test nonce");
         let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
@@ -4416,25 +4898,51 @@ mod tests {
     fn decrypt_vault_rejects_bad_input() {
         let blob = test_vault_blob(TEST_VAULT_KEY, "sahte-sır-123");
         let wrong_key = "3333333333333333333333333333333333333333333333333333333333333333";
-        assert!(super::decrypt_vault_secret(wrong_key, &blob).is_none(), "yanlış anahtar");
-        assert!(super::decrypt_vault_secret("kısa", &blob).is_none(), "kısa anahtar");
-        assert!(super::decrypt_vault_secret("zz", &blob).is_none(), "bozuk hex");
-        assert!(super::decrypt_vault_secret(TEST_VAULT_KEY, &serde_json::json!({})).is_none(), "boş blob");
+        assert!(
+            super::decrypt_vault_secret(wrong_key, &blob).is_none(),
+            "yanlış anahtar"
+        );
+        assert!(
+            super::decrypt_vault_secret("kısa", &blob).is_none(),
+            "kısa anahtar"
+        );
+        assert!(
+            super::decrypt_vault_secret("zz", &blob).is_none(),
+            "bozuk hex"
+        );
+        assert!(
+            super::decrypt_vault_secret(TEST_VAULT_KEY, &serde_json::json!({})).is_none(),
+            "boş blob"
+        );
         let mut tampered = blob.clone();
         tampered["ct"] = serde_json::json!("00");
-        assert!(super::decrypt_vault_secret(TEST_VAULT_KEY, &tampered).is_none(), "kurcalanmış şifreli metin");
+        assert!(
+            super::decrypt_vault_secret(TEST_VAULT_KEY, &tampered).is_none(),
+            "kurcalanmış şifreli metin"
+        );
         let mut empty_ct = blob.clone();
         empty_ct["ct"] = serde_json::json!("");
-        assert!(super::decrypt_vault_secret(TEST_VAULT_KEY, &empty_ct).is_none(), "boş şifreli metin");
+        assert!(
+            super::decrypt_vault_secret(TEST_VAULT_KEY, &empty_ct).is_none(),
+            "boş şifreli metin"
+        );
     }
 
     #[test]
+    #[test]
+    #[test]
+    #[test]
+    #[test]
     fn sanitized_drops_garbage_keeps_real() {
         // Canlı vaka: JJK veritabanı intro'yu kabaca, outro'yu ters vermişti.
-        let v = serde_json::json!({"intro": {"from": 63, "to": 147}, "outro": {"from": 8, "to": 4}});
+        let v =
+            serde_json::json!({"intro": {"from": 63, "to": 147}, "outro": {"from": 8, "to": 4}});
         let t = super::parse_skip_meta(&v).sanitized_times();
         assert_eq!((t.op_start, t.op_end), (Some(63.0), Some(147.0)));
-        assert!(t.ed_start.is_none() && t.ed_end.is_none(), "ters aralık elenmeli: {t:?}");
+        assert!(
+            t.ed_start.is_none() && t.ed_end.is_none(),
+            "ters aralık elenmeli: {t:?}"
+        );
         // Gerçek sayılar (JJK E1) filtreden geçmeli.
         let v2 = serde_json::json!({"intro": {"from": 491.709, "to": 581.709}, "outro": {"from": 1435.923, "to": 1492.0}});
         let t2 = super::parse_skip_meta(&v2).sanitized_times();
@@ -4444,10 +4952,19 @@ mod tests {
 
     #[test]
     fn sanitized_rejects_degenerate() {
-        for (from, to) in [(-5.0, 100.0), (100.0, 100.0), (200.0, 100.0), (0.0, 3.0), (0.0, 100_000.0)] {
+        for (from, to) in [
+            (-5.0, 100.0),
+            (100.0, 100.0),
+            (200.0, 100.0),
+            (0.0, 3.0),
+            (0.0, 100_000.0),
+        ] {
             let v = serde_json::json!({"intro": {"from": from, "to": to}});
             let t = super::parse_skip_meta(&v).sanitized_times();
-            assert!(t.op_start.is_none() && t.op_end.is_none(), "elenmeli: {from}->{to}");
+            assert!(
+                t.op_start.is_none() && t.op_end.is_none(),
+                "elenmeli: {from}->{to}"
+            );
         }
     }
 
@@ -4456,8 +4973,14 @@ mod tests {
         assert!(super::friendly_play_error("HTTP 403").contains("koruması"));
         assert!(super::friendly_play_error("HTTP 429").contains("429"));
         assert!(super::friendly_play_error("HTTP 503").contains("Sunucu hatası"));
-        assert!(super::friendly_play_error("error sending request for uri (x): client error (SendRequest)").contains("Bağlantı"));
-        assert_eq!(super::friendly_play_error("Bölüm videosu çözülemedi"), "Bölüm videosu çözülemedi");
+        assert!(super::friendly_play_error(
+            "error sending request for uri (x): client error (SendRequest)"
+        )
+        .contains("Bağlantı"));
+        assert_eq!(
+            super::friendly_play_error("Bölüm videosu çözülemedi"),
+            "Bölüm videosu çözülemedi"
+        );
     }
 
     fn test_fansub(tpl: i64, name: &str) -> super::FansubInfo {
@@ -4489,9 +5012,21 @@ mod tests {
     #[test]
     fn marathon_summary_math() {
         assert_eq!(super::marathon_summary(&[]), (0, 0), "boş maratonda sıfır");
-        assert_eq!(super::marathon_summary(&[1.0, 0.5, 0.0]), (1, 50), "ortalama ve %100 sayımı");
-        assert_eq!(super::marathon_summary(&[1.0, 1.0]), (2, 100), "hepsi bitmişse %100");
-        assert_eq!(super::marathon_summary(&[0.2]), (0, 20), "tek yapımda yuvarlama");
+        assert_eq!(
+            super::marathon_summary(&[1.0, 0.5, 0.0]),
+            (1, 50),
+            "ortalama ve %100 sayımı"
+        );
+        assert_eq!(
+            super::marathon_summary(&[1.0, 1.0]),
+            (2, 100),
+            "hepsi bitmişse %100"
+        );
+        assert_eq!(
+            super::marathon_summary(&[0.2]),
+            (0, 20),
+            "tek yapımda yuvarlama"
+        );
     }
 
     #[test]
@@ -4503,21 +5038,46 @@ mod tests {
         let other: u64 = 999_989;
 
         let eps = vec![
-            Episode { episode: 1, season: 1, name: "B1".into() },
-            Episode { episode: 2, season: 1, name: "B2".into() },
+            Episode {
+                episode: 1,
+                season: 1,
+                name: "B1".into(),
+            },
+            Episode {
+                episode: 2,
+                season: 1,
+                name: "B2".into(),
+            },
         ];
         c.apply_watched_list(tid, &eps);
         c.save_progress(tid, 1, 1, 95.0, 100.0);
-        c.save_watched(&Watched { title_id: other, episode: 1, season: 1 }, "");
+        c.save_watched(
+            &Watched {
+                title_id: other,
+                episode: 1,
+                season: 1,
+            },
+            "",
+        );
         c.save_progress(other, 1, 1, 50.0, 100.0);
         assert_eq!(c.watched_episode_count(tid), 2);
 
         c.mark_title_unwatched(tid);
-        assert_eq!(c.watched_episode_count(tid), 0, "işaretler ve konumlar silinmeli");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            0,
+            "işaretler ve konumlar silinmeli"
+        );
         assert!(!c.is_watched(tid, 1, 1), "watched kaydı kalmamalı");
-        assert!(c.get_progress(tid, 1, 1).is_none(), "progress kaydı kalmamalı");
+        assert!(
+            c.get_progress(tid, 1, 1).is_none(),
+            "progress kaydı kalmamalı"
+        );
         assert!(c.is_watched(other, 1, 1), "komşu yapım etkilenmemeli");
-        assert!(c.get_progress(other, 1, 1).is_some(), "komşu konum etkilenmemeli");
+        assert!(
+            c.get_progress(other, 1, 1).is_some(),
+            "komşu konum etkilenmemeli"
+        );
 
         c.mark_title_unwatched(other);
     }
@@ -4530,20 +5090,47 @@ mod tests {
         let tid: u64 = 999_986;
         let other: u64 = 999_985;
 
-        c.save_watched(&Watched { title_id: tid, episode: 1, season: 1 }, "");
+        c.save_watched(
+            &Watched {
+                title_id: tid,
+                episode: 1,
+                season: 1,
+            },
+            "",
+        );
         c.save_progress(tid, 1, 1, 95.0, 100.0);
-        c.save_watched(&Watched { title_id: tid, episode: 2, season: 1 }, "");
+        c.save_watched(
+            &Watched {
+                title_id: tid,
+                episode: 2,
+                season: 1,
+            },
+            "",
+        );
         c.save_progress(tid, 1, 2, 50.0, 100.0);
-        c.save_watched(&Watched { title_id: other, episode: 1, season: 1 }, "");
+        c.save_watched(
+            &Watched {
+                title_id: other,
+                episode: 1,
+                season: 1,
+            },
+            "",
+        );
         c.save_progress(other, 1, 1, 50.0, 100.0);
 
         c.clear_episode(tid, 1, 1);
         assert!(!c.is_watched(tid, 1, 1), "hedef watched silinmeli");
-        assert!(c.get_progress(tid, 1, 1).is_none(), "hedef progress silinmeli");
+        assert!(
+            c.get_progress(tid, 1, 1).is_none(),
+            "hedef progress silinmeli"
+        );
         assert!(c.is_watched(tid, 1, 2), "komşu bölüm korunmalı");
         assert!(c.get_progress(tid, 1, 2).is_some(), "komşu konum korunmalı");
         assert!(c.is_watched(other, 1, 1), "komşu yapım etkilenmemeli");
-        assert!(c.get_progress(other, 1, 1).is_some(), "komşu konum etkilenmemeli");
+        assert!(
+            c.get_progress(other, 1, 1).is_some(),
+            "komşu konum etkilenmemeli"
+        );
         assert_eq!(c.watched_episode_count(tid), 1, "sayaç 1 düşmeli");
 
         c.mark_title_unwatched(tid);
@@ -4551,20 +5138,41 @@ mod tests {
     }
 
     #[test]
-    fn apply_watched_list_fills_progress_count() {        use_isolated_state();
+    fn apply_watched_list_fills_progress_count() {
+        use_isolated_state();
         let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
         let c = Client::new();
         let tid: u64 = 999_988;
 
         let eps = vec![
-            Episode { episode: 1, season: 1, name: "B1".into() },
-            Episode { episode: 2, season: 1, name: "B2".into() },
-            Episode { episode: 3, season: 1, name: "B3".into() },
+            Episode {
+                episode: 1,
+                season: 1,
+                name: "B1".into(),
+            },
+            Episode {
+                episode: 2,
+                season: 1,
+                name: "B2".into(),
+            },
+            Episode {
+                episode: 3,
+                season: 1,
+                name: "B3".into(),
+            },
         ];
         c.apply_watched_list(tid, &eps);
-        assert_eq!(c.watched_episode_count(tid), 3, "tümü işaretlenince sayaç dolmalı");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            3,
+            "tümü işaretlenince sayaç dolmalı"
+        );
         c.apply_watched_list(tid, &eps);
-        assert_eq!(c.watched_episode_count(tid), 3, "tekrar işaretleme çift saymamalı");
+        assert_eq!(
+            c.watched_episode_count(tid),
+            3,
+            "tekrar işaretleme çift saymamalı"
+        );
 
         c.mark_title_unwatched(tid);
         assert_eq!(c.watched_episode_count(tid), 0);
@@ -4573,8 +5181,16 @@ mod tests {
     #[test]
     fn resolve_embed_drops_unknown_hosts() {
         let c = Client::new();
-        assert!(c.resolve_embed("https://odnoklassniki.ru/videoembed/2099802475096").is_err(), "ok.ru elenmeli");
-        assert!(c.resolve_embed("https://drive.google.com/file/d/x/preview").is_err(), "gdrive elenmeli");
+        assert!(
+            c.resolve_embed("https://odnoklassniki.ru/videoembed/2099802475096")
+                .is_err(),
+            "ok.ru elenmeli"
+        );
+        assert!(
+            c.resolve_embed("https://drive.google.com/file/d/x/preview")
+                .is_err(),
+            "gdrive elenmeli"
+        );
     }
 
     #[test]
@@ -4584,14 +5200,18 @@ mod tests {
         let c = Client::new();
         let mut urls = None;
         for _ in 0..3 {
-            if let Ok(u) = c.resolve_all(7354, 7, 1) { urls = Some(u); break; }
+            if let Ok(u) = c.resolve_all(7354, 7, 1) {
+                urls = Some(u);
+                break;
+            }
             std::thread::sleep(std::time::Duration::from_millis(700));
         }
         let urls = urls.expect("resolve_all 3 denemede de başarısız (ağ?)");
         eprintln!("[live] çözülen kaynaklar: {urls:?}");
         assert!(!urls.is_empty(), "en az bir kaynak çözülmeli");
         assert!(
-            urls.iter().any(|u| u.contains("video.sibnet.ru/v/") && u.ends_with(".mp4")),
+            urls.iter()
+                .any(|u| u.contains("video.sibnet.ru/v/") && u.ends_with(".mp4")),
             "ep7 sibnet mp4'ü çözümlenmiş olmalı; gelen: {urls:?}"
         );
     }
@@ -4605,7 +5225,11 @@ mod tests {
         for _ in 0..3 {
             let t0 = std::time::Instant::now();
             if let Ok(p) = c.resolve_top(7354, 7, 1, 3, None) {
-                eprintln!("[live] resolve_top: {} kaynak, {:.2}s", p.len(), t0.elapsed().as_secs_f64());
+                eprintln!(
+                    "[live] resolve_top: {} kaynak, {:.2}s",
+                    p.len(),
+                    t0.elapsed().as_secs_f64()
+                );
                 pairs = Some(p);
                 break;
             }
@@ -4629,10 +5253,19 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(700));
         }
         let pairs = pairs.expect("resolve_top(ep11) 3 denemede de başarısız (ağ?)");
-        eprintln!("[live] ep11 tercihli: {:?}", pairs.iter().map(|(_,e)| Client::source_host_hint(e)).collect::<Vec<_>>());
+        eprintln!(
+            "[live] ep11 tercihli: {:?}",
+            pairs
+                .iter()
+                .map(|(_, e)| Client::source_host_hint(e))
+                .collect::<Vec<_>>()
+        );
         assert!(!pairs.is_empty());
         let first_hint = Client::source_host_hint(&pairs[0].1);
-        assert_eq!(first_hint, "sibnet.ru", "tercih edilen host ilk sırada olmalı; gelen: {pairs:?}");
+        assert_eq!(
+            first_hint, "sibnet.ru",
+            "tercih edilen host ilk sırada olmalı; gelen: {pairs:?}"
+        );
     }
 }
 
@@ -4662,7 +5295,10 @@ mod live_tests {
     #[ignore] // canlı: imzalı discover şeklini kilitler.
     fn discover_live() {
         let c = Client::new();
-        let f = DiscoverFilter { page: 1, ..Default::default() };
+        let f = DiscoverFilter {
+            page: 1,
+            ..Default::default()
+        };
         let (items, total, last) = c.discover(&f).expect("discover basarisiz");
         println!("kesfet: {} öğe, toplam {total}, son {last}", items.len());
         assert!(!items.is_empty(), "imzalı discover boş dönmemeli");
@@ -4725,7 +5361,10 @@ mod fansub_tests {
 
     #[test]
     fn cleans_wolwead_credit() {
-        assert_eq!(clean_fansub_name("Çevirmen: zafhy | Encoder: Wolwead"), "Wolwead");
+        assert_eq!(
+            clean_fansub_name("Çevirmen: zafhy | Encoder: Wolwead"),
+            "Wolwead"
+        );
     }
 
     #[test]
@@ -4761,7 +5400,9 @@ mod fansub_tests {
     #[test]
     fn cleans_raionsubs_full_credit() {
         assert_eq!(
-            clean_fansub_name("Çeviri: xerneas Redakte: Shauna Encode: YerliOyuncu919 / www.raionsubs.com"),
+            clean_fansub_name(
+                "Çeviri: xerneas Redakte: Shauna Encode: YerliOyuncu919 / www.raionsubs.com"
+            ),
             "RaionSubs"
         );
     }

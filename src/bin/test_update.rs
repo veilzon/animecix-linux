@@ -32,8 +32,10 @@ fn replace_target(bytes: &[u8], target: &Path) -> Result<(), String> {
     if bytes.len() < 4 || &bytes[0..4] != b"\x7fELF" {
         return Err("geçersiz AppImage".into());
     }
-    let tmp = std::env::temp_dir()
-        .join(format!("animecix-testupdate-{}.AppImage", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!(
+        "animecix-testupdate-{}.AppImage",
+        std::process::id()
+    ));
     std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
     std::fs::rename(&tmp, target).map_err(|e| e.to_string())?;
     Ok(())
@@ -44,7 +46,10 @@ fn parse_asset(json: &str) -> Option<String> {
     let assets = v.get("assets")?.as_array()?;
     for a in assets {
         if a.get("name")?.as_str()? == "AnimeciX-x86_64.AppImage" {
-            return a.get("browser_download_url")?.as_str().map(|s| s.to_string());
+            return a
+                .get("browser_download_url")?
+                .as_str()
+                .map(|s| s.to_string());
         }
     }
     None
@@ -72,12 +77,20 @@ fn main() {
         "parse_asset finds url",
         parse_asset(json).as_deref() == Some("http://x/AnimeciX-x86_64.AppImage"),
     );
-    check("parse_asset none", parse_asset(r#"{"assets":[]}"#).is_none());
+    check(
+        "parse_asset none",
+        parse_asset(r#"{"assets":[]}"#).is_none(),
+    );
 
-    let target = std::env::temp_dir()
-        .join(format!("animecix-testupdate-target-{}.AppImage", std::process::id()));
+    let target = std::env::temp_dir().join(format!(
+        "animecix-testupdate-target-{}.AppImage",
+        std::process::id()
+    ));
     let _ = std::fs::remove_file(&target);
-    check("replace_target ok", replace_target(b"\x7fELFfakeappimage", &target).is_ok());
+    check(
+        "replace_target ok",
+        replace_target(b"\x7fELFfakeappimage", &target).is_ok(),
+    );
     check("replace_target exists", target.exists());
     std::fs::remove_file(&target).ok();
     check(

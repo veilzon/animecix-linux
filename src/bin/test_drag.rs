@@ -25,12 +25,7 @@ fn compute_reorder(order: &[u64], id: u64, new_index: usize) -> Vec<u64> {
 
 /// DropTarget::connect_drop içindeki mantık (views.rs'te uygulanacak).
 /// Gelen Value'dan kaynak id'yi çözer; kendine bırakma ve bozuk veri yok sayılır.
-fn handle_drop(
-    value: &glib::Value,
-    self_id: u64,
-    idx: usize,
-    cb: &mut Vec<(u64, usize)>,
-) -> bool {
+fn handle_drop(value: &glib::Value, self_id: u64, idx: usize, cb: &mut Vec<(u64, usize)>) -> bool {
     if let Ok(s) = value.get::<String>() {
         if let Ok(src_id) = s.parse::<u64>() {
             if src_id != self_id {
@@ -83,14 +78,10 @@ fn build_dnd_wiring() {
         drag.connect_prepare(move |drag, _, _| {
             let alloc = card_for_icon.allocation();
             let paintable = gtk::WidgetPaintable::new(Some(&card_for_icon));
-            drag.set_icon(
-                Some(&paintable),
-                alloc.width() / 2,
-                alloc.height() / 2,
-            );
-            Some(gtk::gdk::ContentProvider::for_value(
-                &glib::Value::from(src_id.to_string()),
-            ))
+            drag.set_icon(Some(&paintable), alloc.width() / 2, alloc.height() / 2);
+            Some(gtk::gdk::ContentProvider::for_value(&glib::Value::from(
+                src_id.to_string(),
+            )))
         });
 
         // Sürüklerken kaynak kart opaklığını düşür
@@ -151,7 +142,10 @@ fn main() {
         v.type_() == glib::Type::STRING
     );
     let back: Result<String, _> = v.get::<String>();
-    check!("Value get::<String>() round-trip", back == Ok("123".to_string()));
+    check!(
+        "Value get::<String>() round-trip",
+        back == Ok("123".to_string())
+    );
 
     // ---- 2) compute_reorder (reorder_marathon mantığı) ----
     let order = vec![10u64, 20, 30, 40];
@@ -190,13 +184,28 @@ fn main() {
     check!("bozuk veri yok sayılır", cb3.is_empty());
 
     // ---- 5) centered hotspot (imleç kartın ortasında) ----
-    check!("centered_hotspot(200,100)=(100,50)", centered_hotspot(200, 100) == (100, 50));
-    check!("centered_hotspot(0,0)=(0,0)", centered_hotspot(0, 0) == (0, 0));
+    check!(
+        "centered_hotspot(200,100)=(100,50)",
+        centered_hotspot(200, 100) == (100, 50)
+    );
+    check!(
+        "centered_hotspot(0,0)=(0,0)",
+        centered_hotspot(0, 0) == (0, 0)
+    );
 
     // ---- 6) scroll_delta (auto-scroll kenar mantığı) ----
-    check!("scroll_delta üst kenar < 0 (yukarı)", scroll_delta(0.0, 500.0, 50.0) < 0.0);
-    check!("scroll_delta alt kenar > 0 (aşağı)", scroll_delta(500.0, 500.0, 50.0) > 0.0);
-    check!("scroll_delta orta = 0", scroll_delta(250.0, 500.0, 50.0) == 0.0);
+    check!(
+        "scroll_delta üst kenar < 0 (yukarı)",
+        scroll_delta(0.0, 500.0, 50.0) < 0.0
+    );
+    check!(
+        "scroll_delta alt kenar > 0 (aşağı)",
+        scroll_delta(500.0, 500.0, 50.0) > 0.0
+    );
+    check!(
+        "scroll_delta orta = 0",
+        scroll_delta(250.0, 500.0, 50.0) == 0.0
+    );
 
     // ---- 4) GTK DnD kablolama smoke testi (display varsa) ----
     match gtk::init() {
@@ -206,8 +215,12 @@ fn main() {
                 build_dnd_wiring();
             });
             match result {
-                Ok(()) => println!("[OK]   DragSource/DropTarget kablolaması kuruldu (display mevcut)"),
-                Err(_) => failures.push("DragSource/DropTarget kablolaması panik verdi".to_string()),
+                Ok(()) => {
+                    println!("[OK]   DragSource/DropTarget kablolaması kuruldu (display mevcut)")
+                }
+                Err(_) => {
+                    failures.push("DragSource/DropTarget kablolaması panik verdi".to_string())
+                }
             }
         }
         Err(_) => {

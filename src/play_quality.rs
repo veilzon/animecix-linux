@@ -21,9 +21,7 @@ pub fn order_labels(mut labels: Vec<String>) -> Vec<String> {
 }
 
 /// Ham isabetleri tekilleştir + sırala: (etiket, url, ayna).
-pub fn collect_play_qualities(
-    hits: Vec<(String, String, String)>,
-) -> Vec<PlayQuality> {
+pub fn collect_play_qualities(hits: Vec<(String, String, String)>) -> Vec<PlayQuality> {
     let mut seen: Vec<String> = Vec::new();
     let mut out: Vec<PlayQuality> = Vec::new();
     for (label, url, mirror_url) in hits {
@@ -31,7 +29,11 @@ pub fn collect_play_qualities(
             continue;
         }
         seen.push(label.clone());
-        out.push(PlayQuality { label, url, mirror_url });
+        out.push(PlayQuality {
+            label,
+            url,
+            mirror_url,
+        });
     }
     let ordered = order_labels(seen);
     let mut sorted: Vec<PlayQuality> = Vec::new();
@@ -53,9 +55,7 @@ pub fn available_play_qualities(
         let mut hits: Vec<(String, String, String)> = Vec::new();
         for q in ["1080p", "720p", "480p"] {
             match client.resolve_mirror_quality_strict(&m.url, q) {
-                Ok((label, url)) if !label.is_empty() => {
-                    hits.push((label, url, m.url.clone()))
-                }
+                Ok((label, url)) if !label.is_empty() => hits.push((label, url, m.url.clone())),
                 _ => {}
             }
         }

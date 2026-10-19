@@ -11,8 +11,6 @@ use std::sync::{
 
 use crate::download::{CHUNK, UA};
 
-/// Segment (bağlantı) sayısı.
-pub const SEGMENTS: usize = 6;
 /// Altındaki dosyalar tek bağlantıyla iner (thread maliyeti değmez).
 pub const MIN_SEGMENTED_BYTES: u64 = 8 << 20;
 
@@ -30,7 +28,11 @@ pub fn split_ranges(total: u64, n: usize) -> Vec<(u64, u64)> {
         if start >= total {
             break;
         }
-        let end = if i + 1 == n { total - 1 } else { (start + base - 1).min(total - 1) };
+        let end = if i + 1 == n {
+            total - 1
+        } else {
+            (start + base - 1).min(total - 1)
+        };
         out.push((start, end));
         start = end + 1;
     }
@@ -199,8 +201,7 @@ pub fn download_segmented(
                                 fail("yazma hatası (disk dolu?)".to_string());
                                 return;
                             }
-                            let sum =
-                                done_sum_c.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
+                            let sum = done_sum_c.fetch_add(n as u64, Ordering::Relaxed) + n as u64;
                             since_report += n as u64;
                             if since_report >= CHUNK as u64 * 4 {
                                 since_report = 0;
@@ -268,7 +269,10 @@ mod tests {
     }
 
     /// Dilim sunucu: HEAD uzunluğu + 206 dilim + başlık iddiaları.
-    fn slice_server(body_len: usize, ignore_range: bool) -> (u16, Arc<AtomicUsize>, Arc<std::sync::Mutex<Vec<String>>>) {
+    fn slice_server(
+        body_len: usize,
+        ignore_range: bool,
+    ) -> (u16, Arc<AtomicUsize>, Arc<std::sync::Mutex<Vec<String>>>) {
         static BODY_SEED: AtomicUsize = AtomicUsize::new(0);
         BODY_SEED.fetch_add(1, O::Relaxed);
         let listener = TcpListener::bind("127.0.0.1:0").expect("dinle");
@@ -320,7 +324,9 @@ mod tests {
                         "HTTP/1.1 206 Partial Content\r\nContent-Length: {blen}\r\nContent-Range: bytes {start}-{end}/{body_len}\r\nConnection: close\r\n\r\n"
                     )
                 } else {
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {blen}\r\nConnection: close\r\n\r\n")
+                    format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {blen}\r\nConnection: close\r\n\r\n"
+                    )
                 };
                 let _ = s.write_all(head.as_bytes());
                 let body: Vec<u8> = (start..=end).map(|i| (i % 251) as u8).collect();
@@ -345,7 +351,11 @@ mod tests {
         assert_eq!(probe_len(&c, &url, None), Some(50_000));
         let (port2, _, _) = slice_server(50_000, true);
         let url2 = format!("http://127.0.0.1:{port2}/v.mp4");
-        assert_eq!(probe_len(&c, &url2, None), None, "aralıksız sunucu elenmeli");
+        assert_eq!(
+            probe_len(&c, &url2, None),
+            None,
+            "aralıksız sunucu elenmeli"
+        );
     }
 
     #[test]
@@ -361,7 +371,16 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let total = probe_len(&c, &url, Some("http://ref/x")).expect("yoklama");
         assert_eq!(total, LEN as u64);
-        let r = download_segmented(&c, &url, Some("http://ref/x"), &part, total, 6, &|_, _| {}, &cancel);
+        let r = download_segmented(
+            &c,
+            &url,
+            Some("http://ref/x"),
+            &part,
+            total,
+            6,
+            &|_, _| {},
+            &cancel,
+        );
         assert!(r.is_ok(), "segmentli: {r:?}");
         let got = std::fs::read(&part).unwrap();
         assert_eq!(got.len(), LEN);
@@ -398,7 +417,10 @@ mod tests {
                 let req = String::from_utf8_lossy(&buf[..n]).into_owned();
                 if req.starts_with("HEAD ") {
                     let _ = s.write_all(
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n").as_bytes(),
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
                     );
                     continue;
                 }

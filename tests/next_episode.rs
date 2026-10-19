@@ -49,7 +49,10 @@ fn run_supervisor(mpv_child: Arc<Mutex<Option<Child>>>) -> bool {
 #[test]
 fn next_episode_no_deadlock() {
     // Uzun yaşayan sahte child (mpv gibi).
-    let child = Command::new("sleep").arg("30").spawn().expect("spawn sleep");
+    let child = Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
     let mpv_child = Arc::new(Mutex::new(Some(child)));
     let (tx, rx) = mpsc::channel::<u64>(); // sonraki bölüm numarası
 
@@ -80,7 +83,10 @@ fn next_episode_no_deadlock() {
 
 #[test]
 fn next_episode_prev_works() {
-    let child = Command::new("sleep").arg("30").spawn().expect("spawn sleep");
+    let child = Command::new("sleep")
+        .arg("30")
+        .spawn()
+        .expect("spawn sleep");
     let mpv_child = Arc::new(Mutex::new(Some(child)));
     let (tx, rx) = mpsc::channel::<u64>();
 
@@ -126,20 +132,17 @@ fn dispatch_next_episode_invokes_play() {
     let alive_c = alive.clone();
     let next_rx_c = next_rx.clone();
     // GTK callback'i taklit eden timeout (gerçek koddakiyle aynı sıra: mesajı işle, sonra alive'a bak)
-    glib::timeout_add_local(
-        Duration::from_millis(150),
-        move || {
-            let msg = { next_rx_c.lock().unwrap().try_recv().ok() };
-            if msg.is_some() {
-                play_called_c.fetch_add(1, Ordering::SeqCst);
-            }
-            if alive_c.load(Ordering::SeqCst) {
-                glib::ControlFlow::Continue
-            } else {
-                glib::ControlFlow::Break
-            }
-        },
-    );
+    glib::timeout_add_local(Duration::from_millis(150), move || {
+        let msg = { next_rx_c.lock().unwrap().try_recv().ok() };
+        if msg.is_some() {
+            play_called_c.fetch_add(1, Ordering::SeqCst);
+        }
+        if alive_c.load(Ordering::SeqCst) {
+            glib::ControlFlow::Continue
+        } else {
+            glib::ControlFlow::Break
+        }
+    });
 
     let next_tx_w = next_tx.clone();
     let alive_w = alive.clone();
@@ -159,4 +162,3 @@ fn dispatch_next_episode_invokes_play() {
         "play hiç çağrılmadı — dağıtım deseni bozuk"
     );
 }
-

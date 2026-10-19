@@ -115,14 +115,38 @@ mod tests {
 
     #[test]
     fn pick_song_url_priority_and_fallback() {
-        let op = music(Some("https://open.spotify.com/track/x"), Some("https://music.apple.com/a"), Some("https://lis.tn/y"));
+        let op = music(
+            Some("https://open.spotify.com/track/x"),
+            Some("https://music.apple.com/a"),
+            Some("https://lis.tn/y"),
+        );
         let ed = music(Some("https://open.spotify.com/track/e"), None, None);
-        assert_eq!(pick_song_url(Some(&op), Some(&ed)).as_deref(), Some("https://open.spotify.com/track/x"), "spotify önce");
-        let op2 = music(None, Some("https://music.apple.com/a"), Some("https://lis.tn/y"));
-        assert_eq!(pick_song_url(Some(&op2), None).as_deref(), Some("https://music.apple.com/a"), "apple ikinci");
+        assert_eq!(
+            pick_song_url(Some(&op), Some(&ed)).as_deref(),
+            Some("https://open.spotify.com/track/x"),
+            "spotify önce"
+        );
+        let op2 = music(
+            None,
+            Some("https://music.apple.com/a"),
+            Some("https://lis.tn/y"),
+        );
+        assert_eq!(
+            pick_song_url(Some(&op2), None).as_deref(),
+            Some("https://music.apple.com/a"),
+            "apple ikinci"
+        );
         let op3 = music(None, None, Some("https://lis.tn/y"));
-        assert_eq!(pick_song_url(Some(&op3), None).as_deref(), Some("https://lis.tn/y"), "kısa link son");
-        assert_eq!(pick_song_url(None, Some(&ed)).as_deref(), Some("https://open.spotify.com/track/e"), "açılış yoksa kapanış");
+        assert_eq!(
+            pick_song_url(Some(&op3), None).as_deref(),
+            Some("https://lis.tn/y"),
+            "kısa link son"
+        );
+        assert_eq!(
+            pick_song_url(None, Some(&ed)).as_deref(),
+            Some("https://open.spotify.com/track/e"),
+            "açılış yoksa kapanış"
+        );
         assert!(pick_song_url(None, None).is_none());
     }
 
@@ -144,7 +168,10 @@ mod tests {
     fn music_keybind_line_shape() {
         let l = music_keybind_line("https://open.spotify.com/track/x");
         assert!(l.starts_with("M run \"/bin/sh\" \"-c\""), "satır: {l}");
-        assert!(l.contains("xdg-open 'https://open.spotify.com/track/x'"), "satır: {l}");
+        assert!(
+            l.contains("xdg-open 'https://open.spotify.com/track/x'"),
+            "satır: {l}"
+        );
         assert!(l.contains("gio open"), "yedek: {l}");
         assert!(l.contains("set osd-align-x right"), "sağ-üst: {l}");
         assert!(l.contains("set osd-align-y top"), "sağ-üst: {l}");
@@ -175,10 +202,18 @@ mod tests {
 
     #[test]
     fn music_ass_shapes() {
-        let a = music_ass(Some((43.0, 133.0, "T — A ▶")), None, "Montserrat SemiBold", true);
+        let a = music_ass(
+            Some((43.0, 133.0, "T — A ▶")),
+            None,
+            "Montserrat SemiBold",
+            true,
+        );
         assert!(a.contains("{\\an9}"), "sağ üst");
         assert!(a.contains("0:00:43.00,0:02:13.00"), "zaman: {a}");
-        assert!(a.contains("Fontname") && a.contains("Montserrat SemiBold"), "font");
+        assert!(
+            a.contains("Fontname") && a.contains("Montserrat SemiBold"),
+            "font"
+        );
         assert!(a.contains("(Shift+M: tarayıcıda aç)"), "ipucu");
         let b = music_ass(Some((43.0, 133.0, "T {bozuk} — A")), None, "F", false);
         assert!(!b.contains("{bozuk}"), "başlık süslüsü temizlenmeli: {b}");

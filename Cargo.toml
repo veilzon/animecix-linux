@@ -11,7 +11,6 @@ license = "MIT"
 gtk = { package = "gtk4", version = "0.8", features = ["v4_8"] }
 adw = { package = "libadwaita", version = "0.6", features = ["v1_2"] }
 glib = "0.19"
-gio = "0.19"
 gdk-pixbuf = "0.19"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

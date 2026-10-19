@@ -1,9 +1,9 @@
+use crate::api::Client;
 use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, VecDeque};
 use std::rc::Rc;
 use std::sync::{Arc, Mutex};
-use crate::api::Client;
 
 fn ensure_size_provider(w: i32, h: i32) {
     static CACHE: Mutex<Option<HashMap<(i32, i32), ()>>> = Mutex::new(None);
@@ -75,7 +75,6 @@ const MAX_COVER_WORKERS: usize = 3;
 /// `Pixbuf`/`Texture` `Send` olmadığından ham bayt taşınır; UI'da
 /// `from_bytes` ile sarılır (yalnızca memcpy + doku sargısı).
 struct RawCover {
-    key: String,
     w: i32,
     h: i32,
     stride: i32,
@@ -157,7 +156,11 @@ impl CoverManager {
             return;
         }
 
-        self.waiters.borrow_mut().entry(key).or_default().push(pic.clone());
+        self.waiters
+            .borrow_mut()
+            .entry(key)
+            .or_default()
+            .push(pic.clone());
         let mut q = self.queue.lock().unwrap();
         if !q.iter().any(|u| u == &url) {
             q.push_back(url);
@@ -183,25 +186,11 @@ impl CoverManager {
             return None;
         }
         let scale = (w as f64 / sw).max(h as f64 / sh);
-        let (dw, dh) = (
-            (sw * scale).round() as i32,
-            (sh * scale).round() as i32,
-        );
+        let (dw, dh) = ((sw * scale).round() as i32, (sh * scale).round() as i32);
         let pb = src.scale_simple(dw, dh, gdk_pixbuf::InterpType::Bilinear)?;
         let x = ((dw - w) / 2).max(0);
         let y = ((dh - h) / 2).max(0);
         Some(pb.new_subpixbuf(x, y, w.min(dw), h.min(dh)))
-    }
-
-    /// Pixbuf'tan hedef boyda doku üretir (oranı koruyup doldur-kırp).
-    fn texture_for_size(src: &gdk_pixbuf::Pixbuf, w: i32, h: i32) -> Option<gtk::gdk::Texture> {
-        let sub = Self::crop_to_size(src, w, h)?;
-        Some(gtk::gdk::Texture::for_pixbuf(&sub))
-    }
-
-    pub fn scale_texture(bytes: &[u8], w: i32, h: i32) -> Option<gtk::gdk::Texture> {
-        let src = Self::decode_pixbuf(bytes)?;
-        Self::texture_for_size(&src, w, h)
     }
 
     fn pump_covers(&self) {
@@ -240,7 +229,6 @@ impl CoverManager {
                         .into_iter()
                         .map(|(key, w, h)| {
                             let raw = Self::crop_to_size(&src, w, h).map(|pb| RawCover {
-                                key: key.clone(),
                                 w: pb.width(),
                                 h: pb.height(),
                                 stride: pb.rowstride(),
@@ -250,10 +238,7 @@ impl CoverManager {
                             (key, raw)
                         })
                         .collect(),
-                    None => sizes
-                        .into_iter()
-                        .map(|(key, _, _)| (key, None))
-                        .collect(),
+                    None => sizes.into_iter().map(|(key, _, _)| (key, None)).collect(),
                 };
                 let _ = tx.send((url2, out));
             });
@@ -269,7 +254,17 @@ impl CoverManager {
                     this.pump_covers();
                     glib::ControlFlow::Break
                 }
-                Err(_) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // İşçi öldü, sonuç gelmeyecek: sayacı indirip kuyruğu
+                    // ilerlet (yoksa kapak sırası takılı kalır).
+                    let curr = this.active.get();
+                    if curr > 0 {
+                        this.active.set(curr - 1);
+                    }
+                    this.pump_covers();
+                    glib::ControlFlow::Break
+                }
             });
         }
     }
@@ -316,7 +311,11 @@ impl CoverManager {
         // Devirde eklenen bekleyenler (anlık görüntü dışı) yeniden kuyruğa.
         let mut requeue = false;
         for key in waiters.keys() {
-            if key.strip_prefix(url).and_then(|r| r.strip_prefix('@')).is_some() {
+            if key
+                .strip_prefix(url)
+                .and_then(|r| r.strip_prefix('@'))
+                .is_some()
+            {
                 requeue = true;
                 break;
             }
@@ -336,7 +335,10 @@ mod tests {
     #[test]
     fn cover_workers_are_sequential() {
         // Donma düzeltmesi 1 işçiydi; 3 paralel + UI-dışı yük ile denge.
-        assert_eq!(MAX_COVER_WORKERS, 3, "işçi sayısı değişirse kuyruk hesabı gözden geçir");
+        assert_eq!(
+            MAX_COVER_WORKERS, 3,
+            "işçi sayısı değişirse kuyruk hesabı gözden geçir"
+        );
     }
 
     #[test]
@@ -355,4 +357,3 @@ mod tests {
         assert_eq!(m.active.get(), 0, "sayaç sıfırlanmalı");
     }
 }
-

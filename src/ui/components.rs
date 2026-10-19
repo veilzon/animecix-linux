@@ -1,6 +1,6 @@
-use gtk::prelude::*;
-use adw::prelude::*;
 use crate::api::{Client, Title};
+use adw::prelude::*;
+use gtk::prelude::*;
 
 pub fn bookmark_button(client: &Client, t: &Title) -> gtk::Button {
     let saved = client.is_saved(t.id);
@@ -15,7 +15,11 @@ pub fn bookmark_button(client: &Client, t: &Title) -> gtk::Button {
     b.add_css_class("bookmark-btn");
     // Satır yüksekliğine göre dikey esneyip ovalleşmesin: hep yuvarlak kalsın.
     b.set_valign(gtk::Align::Center);
-    b.set_tooltip_text(Some(if saved { "Favorilerden Çıkar" } else { "Favorilere Ekle" }));
+    b.set_tooltip_text(Some(if saved {
+        "Favorilerden Çıkar"
+    } else {
+        "Favorilere Ekle"
+    }));
     b
 }
 
@@ -32,7 +36,11 @@ pub fn marathon_button(client: &Client, t: &Title) -> gtk::Button {
     b.add_css_class("bookmark-btn");
     // Satır yüksekliğine göre dikey esneyip ovalleşmesin: hep yuvarlak kalsın.
     b.set_valign(gtk::Align::Center);
-    b.set_tooltip_text(Some(if in_marathon { "Maratondan Çıkar" } else { "İzleme Maratonuna Ekle" }));
+    b.set_tooltip_text(Some(if in_marathon {
+        "Maratondan Çıkar"
+    } else {
+        "İzleme Maratonuna Ekle"
+    }));
     b
 }
 

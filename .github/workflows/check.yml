@@ -1,0 +1,110 @@
+name: Oto test kapısı
+
+# Her push/PR'de koşar: biçim + derleme + ölü-kod + bağımlılık +
+# güvenlik/lisans + tam test turu. Kırmızıysa birleştirme yok.
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
+          rm -rf /var/lib/apt/lists/*
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bookworm-check
+
+      - name: Format check
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (all targets, errors fail)
+        run: cargo clippy --release --all-targets --message-format=short 2>&1 | tee /tmp/clippy.log; test ${PIPESTATUS[0]} -eq 0
+
+      - name: Dead-code gate (unused code fails)
+        run: RUSTFLAGS="-D dead-code" cargo test --release --bin animecix --no-run
+
+      - name: Unused dependencies (machete)
+        run: |
+          cargo install cargo-machete --version 0.9.2 --locked
+          cargo machete
+
+      - name: Security + licenses (deny)
+        run: |
+          cargo install cargo-deny --version 0.20.2 --locked
+          cargo deny check
+
+      - name: Unit + integration tests
+        run: |
+          xvfb-run -a cargo test --release --bin animecix -- --test-threads=1
+          cargo test --release --test refcell_guard --test next_episode
+
+      - name: Skip harness (mpv stamp logic)
+        run: python3 tests/skip_harness.py
+
+  coverage:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
+          rm -rf /var/lib/apt/lists/*
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bookworm-cov
+
+      # Satır kapsamı tabanı: şu an ~%33, gerileme kırmızı verir.
+      - name: Coverage (bin unit tests)
+        run: |
+          cargo install cargo-llvm-cov --version 0.9.1 --locked
+          xvfb-run -a cargo llvm-cov --release --bin animecix --fail-under-lines 30 -- --test-threads=1

@@ -49,8 +49,12 @@ fn handle_client(mut stream: UnixStream, start: Instant) {
 
 fn query_mpv_prop_test(sock: &str, prop: &str) -> Option<f64> {
     let mut stream = UnixStream::connect(sock).ok()?;
-    stream.set_read_timeout(Some(Duration::from_millis(1200))).ok();
-    stream.set_write_timeout(Some(Duration::from_millis(800))).ok();
+    stream
+        .set_read_timeout(Some(Duration::from_millis(1200)))
+        .ok();
+    stream
+        .set_write_timeout(Some(Duration::from_millis(800)))
+        .ok();
     let cmd = format!("{{\"command\":[\"get_property\",\"{prop}\"]}}\n");
     stream.write_all(cmd.as_bytes()).ok()?;
     let mut buf = vec![0u8; 512];
@@ -118,7 +122,10 @@ fn main() {
             let avg = total / cycle_durations.len() as u32;
             let max = cycle_durations.iter().max().unwrap();
             let min = cycle_durations.iter().min().unwrap();
-            println!("[STATS] Poll cycle times ({} cycles):", cycle_durations.len());
+            println!(
+                "[STATS] Poll cycle times ({} cycles):",
+                cycle_durations.len()
+            );
             println!("  avg={:?}  min={:?}  max={:?}", avg, min, max);
             println!(
                 "  effective poll rate = every {:?} (sleep 500ms + query time)",
@@ -189,15 +196,9 @@ fn main() {
                 if let Some(first) = first_stale_time {
                     max_stale_delay = Instant::now().duration_since(first);
                 }
-                println!(
-                    "[TICK]  JUMP {:.1}s (wall={:.2}s)",
-                    pos, wall_secs
-                );
+                println!("[TICK]  JUMP {:.1}s (wall={:.2}s)", pos, wall_secs);
             } else {
-                println!(
-                    "[TICK]  ok {:.1}s (wall={:.2}s)",
-                    pos, wall_secs
-                );
+                println!("[TICK]  ok {:.1}s (wall={:.2}s)", pos, wall_secs);
             }
         } else {
             no_data_ticks += 1;

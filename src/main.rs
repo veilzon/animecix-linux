@@ -1,6 +1,7 @@
 mod api;
 mod app;
 mod aria;
+mod auth;
 mod covers;
 mod download;
 mod font;
@@ -14,11 +15,12 @@ mod theme;
 mod ui;
 mod update;
 
-use app::App;
 use adw::prelude::*;
+use app::App;
 use std::process::Command;
 
-const ANIMECIX_PNG_ICON: &[u8] = include_bytes!("../assets/hicolor/256x256/apps/tr.com.animecix.png");
+const ANIMECIX_PNG_ICON: &[u8] =
+    include_bytes!("../assets/hicolor/256x256/apps/tr.com.animecix.png");
 
 const ANIMECIX_SVG_ICON: &str = r##"<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
@@ -428,18 +430,18 @@ fn main() {
                     to { opacity: 1.0; }
                 }
 
-                /* === Headbar hızlı arama hapı (Lowell hızlı-hap tokenleri:
-                       999px kapsül + düşük opak zemin; odakta belirginleşir) === */
-                entry.header-search {
+                /* === Hero üstü yüzen arama hapı (Lowell tokenleri:
+                       999px kapsül + koyu zemin + gölge) === */
+                entry.quick-search {
                     border-radius: 9999px;
-                    min-width: 240px;
                     min-height: 34px;
                     padding: 4px 16px;
-                    background-color: rgba(20, 20, 28, 0.55);
-                    border: 1px solid alpha(currentColor, 0.12);
-                }
-                entry.header-search:focus {
                     background-color: rgba(20, 20, 28, 0.85);
+                    border: 1px solid alpha(currentColor, 0.12);
+                    box-shadow: 0 4px 18px alpha(black, 0.45);
+                }
+                entry.quick-search:focus {
+                    background-color: rgba(20, 20, 28, 0.95);
                     border-color: alpha(@accent_color, 0.6);
                 }
 
@@ -592,6 +594,34 @@ fn main() {
                 .success { color: #2ec27e; font-weight: bold; }
                 .error   { color: #e01b24; font-weight: bold; }
 
+                /* === Hesap sayfası (profil kartı + avatar) === */
+                .profile-header-card {
+                    background-color: alpha(currentColor, 0.06);
+                    border-radius: 16px;
+                    border: 1px solid alpha(currentColor, 0.1);
+                }
+                .profile-banner-pic {
+                    border-radius: 16px 16px 0 0;
+                }
+                .profile-banner-empty {
+                    background-color: #3a2330;
+                }
+                .side-expired {
+                    color: #f6c343;
+                }
+                .profile-avatar-circle {
+                    border-radius: 48px;
+                }
+                .profile-avatar-ring {
+                    border-radius: 52px;
+                    border: 3px solid alpha(@accent_color, 0.7);
+                    padding: 2px;
+                }
+                .avatar-overlay-box {
+                    background: none;
+                    border: none;
+                }
+
                 /* === Bölüm Progress Bar === */
                 .episode-progress {
                     min-height: 6px;
@@ -657,7 +687,7 @@ fn main() {
             dlg.set_response_appearance("ok", adw::ResponseAppearance::Suggested);
             dlg.set_transient_for(Some(&app_inst.window));
             dlg.present();
-        } else if auto_update && update::is_appimage() {
+        } else if auto_update && update::self_update_supported() {
             let app_c = app_inst.clone();
             update::check_and_prompt(
                 &app_inst.window,
@@ -741,8 +771,14 @@ pub fn check_all_dependencies() -> Vec<DepStatus> {
 
 pub fn check_desktop_entry_installed() -> bool {
     let home = std::env::var("HOME").unwrap_or_default();
-    let p1 = std::path::Path::new(&format!("{home}/.local/share/applications/tr.com.animecix.desktop")).exists();
-    let p2 = std::path::Path::new(&format!("{home}/.local/share/applications/animecix.desktop")).exists();
+    let p1 = std::path::Path::new(&format!(
+        "{home}/.local/share/applications/tr.com.animecix.desktop"
+    ))
+    .exists();
+    let p2 = std::path::Path::new(&format!(
+        "{home}/.local/share/applications/animecix.desktop"
+    ))
+    .exists();
     let p3 = std::path::Path::new("/usr/share/applications/tr.com.animecix.desktop").exists();
     let p4 = std::path::Path::new("/usr/share/applications/animecix.desktop").exists();
     p1 || p2 || p3 || p4
@@ -761,7 +797,11 @@ pub fn stable_appimage_path(home: &str) -> String {
 }
 
 pub fn desktop_exec_target(home: &str) -> String {
-    if std::env::var("APPIMAGE").ok().filter(|s| !s.trim().is_empty()).is_some() {
+    if std::env::var("APPIMAGE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .is_some()
+    {
         stable_appimage_path(home)
     } else {
         format!("{home}/.local/bin/animecix")
@@ -787,7 +827,10 @@ pub fn install_desktop_entry() -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|_| "HOME klasörü bulunamadı".to_string())?;
 
     let exec_target = desktop_exec_target(&home);
-    if let Some(ai) = std::env::var("APPIMAGE").ok().filter(|s| !s.trim().is_empty()) {
+    if let Some(ai) = std::env::var("APPIMAGE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+    {
         let _ = std::fs::remove_file(format!("{home}/.local/bin/animecix"));
         let stable = stable_appimage_path(&home);
         if ai != stable {
@@ -809,7 +852,10 @@ pub fn install_desktop_entry() -> Result<(), String> {
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(&exec_target, std::fs::Permissions::from_mode(0o755));
+                    let _ = std::fs::set_permissions(
+                        &exec_target,
+                        std::fs::Permissions::from_mode(0o755),
+                    );
                 }
             }
         }
@@ -825,7 +871,8 @@ pub fn install_desktop_entry() -> Result<(), String> {
 
     let target_icon = format!("{icons_dir}/tr.com.animecix.png");
     let target_icon_simple = format!("{icons_dir_simple}/tr.com.animecix.png");
-    let target_icon_lg = format!("{home}/.local/share/icons/hicolor/512x512/apps/tr.com.animecix.png");
+    let target_icon_lg =
+        format!("{home}/.local/share/icons/hicolor/512x512/apps/tr.com.animecix.png");
     let _ = std::fs::create_dir_all(format!("{home}/.local/share/icons/hicolor/512x512/apps"));
     let target_icon_lg_simple = format!("{icons_dir_simple}/tr.com.animecix.svg");
     let _ = std::fs::write(&target_icon_lg_simple, ANIMECIX_SVG_ICON.as_bytes());
@@ -836,15 +883,19 @@ pub fn install_desktop_entry() -> Result<(), String> {
             std::fs::read(p).ok()
         })
         .or_else(|| {
-            let p = std::path::Path::new("/usr/share/icons/hicolor/256x256/apps/tr.com.animecix.png");
+            let p =
+                std::path::Path::new("/usr/share/icons/hicolor/256x256/apps/tr.com.animecix.png");
             std::fs::read(p).ok()
         })
         .or_else(|| {
             if let Ok(ai) = std::env::var("APPIMAGE") {
                 if !ai.trim().is_empty() {
-                    let p = std::path::Path::new(&ai).parent()
+                    let p = std::path::Path::new(&ai)
+                        .parent()
                         .map(|d| d.join("assets/hicolor/256x256/apps/tr.com.animecix.png"));
-                    if let Some(pp) = p { return std::fs::read(pp).ok(); }
+                    if let Some(pp) = p {
+                        return std::fs::read(pp).ok();
+                    }
                 }
             }
             None
@@ -881,7 +932,9 @@ pub fn install_desktop_entry() -> Result<(), String> {
 
 pub fn uninstall_application() {
     let home = std::env::var("HOME").unwrap_or_default();
-    if home.is_empty() { return; }
+    if home.is_empty() {
+        return;
+    }
 
     let bin_path = format!("{home}/.local/bin/animecix");
     let _ = std::fs::remove_file(&bin_path);
@@ -918,7 +971,10 @@ fn check_command(cmd: &str) -> bool {
 fn detect_package_manager_cmd() -> (&'static str, &'static str) {
     if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
         let content_lower = content.to_lowercase();
-        if content_lower.contains("ubuntu") || content_lower.contains("debian") || content_lower.contains("mint") {
+        if content_lower.contains("ubuntu")
+            || content_lower.contains("debian")
+            || content_lower.contains("mint")
+        {
             return ("APT", "sudo apt update && sudo apt install -y");
         } else if content_lower.contains("fedora") {
             return ("DNF", "sudo dnf install -y");
@@ -934,8 +990,14 @@ fn detect_package_manager_cmd() -> (&'static str, &'static str) {
 fn detect_distro_info() -> (&'static str, &'static str) {
     if let Ok(content) = std::fs::read_to_string("/etc/os-release") {
         let content_lower = content.to_lowercase();
-        if content_lower.contains("ubuntu") || content_lower.contains("debian") || content_lower.contains("mint") {
-            return ("Ubuntu / Debian / Mint", "sudo apt update && sudo apt install mpv");
+        if content_lower.contains("ubuntu")
+            || content_lower.contains("debian")
+            || content_lower.contains("mint")
+        {
+            return (
+                "Ubuntu / Debian / Mint",
+                "sudo apt update && sudo apt install mpv",
+            );
         } else if content_lower.contains("fedora") {
             return ("Fedora", "sudo dnf install mpv");
         } else if content_lower.contains("arch") || content_lower.contains("manjaro") {
@@ -944,7 +1006,10 @@ fn detect_distro_info() -> (&'static str, &'static str) {
             return ("openSUSE", "sudo zypper install mpv");
         }
     }
-    ("Linux", "sudo apt install mpv   # ya da dnf/pacman/zypper install mpv")
+    (
+        "Linux",
+        "sudo apt install mpv   # ya da dnf/pacman/zypper install mpv",
+    )
 }
 
 #[cfg(test)]
@@ -1111,10 +1176,11 @@ fn cmd_check_icons() {
                     fail += 1;
                     println!("  [UNEXPECTED] {n} -> {tag} {}", p.display());
                 } else {
-                    // OURS veya SYSTEM fark etmez: ikon çözümleniyor, arayüz çalışır.
-                    // (Aktif tema Adwaita ikonu bulunca gömülü hicolor yedeğine
-                    // bakmaz; SYSTEM de geçerli sonuçtur.)
-                    ok += 1;
+                    if ours {
+                        ok += 1;
+                    } else {
+                        fail += 1;
+                    }
                     println!("  [{tag:6}] {n} -> {}", p.display());
                 }
             }
@@ -1129,7 +1195,7 @@ fn cmd_check_icons() {
             }
         }
     }
-    println!("Sonuç: {ok} OK, {fail} eksik");
+    println!("Sonuç: {ok} OK, {fail} sistem/yok");
     if fail > 0 {
         std::process::exit(1);
     }
@@ -1163,11 +1229,17 @@ fn cmd_check_shaders() {
                 } else {
                     String::new()
                 };
-                let status = if exists && size > 1000 { "OK" } else { "MISSING/EMPTY" };
-                if status == "OK" { ok += 1; } else { fail += 1; }
-                println!(
-                    "  [{status:5}] {name:38} mode={mode:22} size={size:7}B  head={head:.60}"
-                );
+                let status = if exists && size > 1000 {
+                    "OK"
+                } else {
+                    "MISSING/EMPTY"
+                };
+                if status == "OK" {
+                    ok += 1;
+                } else {
+                    fail += 1;
+                }
+                println!("  [{status:5}] {name:38} mode={mode:22} size={size:7}B  head={head:.60}");
                 println!("           path: {p}");
             }
             None => {

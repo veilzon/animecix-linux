@@ -1,7 +1,7 @@
 //! Karşılama ekranı: hero + özellikler + kurulum + tercihler.
 
-use gtk::prelude::*;
 use adw::prelude::*;
+use gtk::prelude::*;
 use std::rc::Rc;
 
 use crate::api::Settings;

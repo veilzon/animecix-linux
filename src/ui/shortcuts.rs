@@ -15,7 +15,9 @@ fn accel(sc: &str) -> String {
 
 /// Ayar değerleri kullanıcı dosyasından gelir; XML'e olduğu gibi girmez.
 fn esc(s: &str) -> String {
-    s.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
 }
 
 fn item(sc: &str, title: &str) -> String {
@@ -124,7 +126,10 @@ mod tests {
         assert!(with.contains("Bölüm listesinde ara"));
 
         let without = ui_xml("Ctrl+S", "/", false);
-        assert!(!without.contains("Bölüm listesinde ara"), "arama satırı gizlenmeli");
+        assert!(
+            !without.contains("Bölüm listesinde ara"),
+            "arama satırı gizlenmeli"
+        );
         assert!(without.contains(r#"<property name="accelerator">&lt;ctrl&gt;s</property>"#));
     }
 

@@ -1,5 +1,5 @@
-use gtk::prelude::*;
 use crate::api::Title;
+use gtk::prelude::*;
 
 fn create_fact_badges(facts: &[String]) -> gtk::Box {
     let box_ = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -106,7 +106,10 @@ pub fn create_title_detail_header(
     card
 }
 
-pub fn create_quick_search_tip_banner(shortcut_str: &str, on_dismiss: impl Fn() + 'static) -> gtk::Box {
+pub fn create_quick_search_tip_banner(
+    shortcut_str: &str,
+    on_dismiss: impl Fn() + 'static,
+) -> gtk::Box {
     let banner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
     banner.add_css_class("tip-banner");
 
@@ -267,8 +270,11 @@ pub fn create_movie_detail_view(
         let h = s / 3600;
         let m = (s % 3600) / 60;
         let sec = s % 60;
-        if h > 0 { format!("{h}:{:02}:{:02}", m, sec) }
-        else { format!("{m}:{:02}", sec) }
+        if h > 0 {
+            format!("{h}:{:02}:{:02}", m, sec)
+        } else {
+            format!("{m}:{:02}", sec)
+        }
     };
 
     let prog_box = gtk::Box::new(gtk::Orientation::Vertical, 4);

@@ -42,7 +42,10 @@ fn main() {
 
             let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
             row.add_css_class("fav-item-card");
-            check!("kart .fav-item-card sınıfına sahip", row.has_css_class("fav-item-card"));
+            check!(
+                "kart .fav-item-card sınıfına sahip",
+                row.has_css_class("fav-item-card")
+            );
 
             // Poster (maraton ile aynı sınıflar)
             let pic = gtk::Picture::new();
@@ -51,7 +54,10 @@ fn main() {
             pic.set_content_fit(gtk::ContentFit::Cover);
             pic.set_css_classes(&["cover", "cover-thumb"]);
             check!("poster .cover sınıfına sahip", pic.has_css_class("cover"));
-            check!("poster .cover-thumb sınıfına sahip", pic.has_css_class("cover-thumb"));
+            check!(
+                "poster .cover-thumb sınıfına sahip",
+                pic.has_css_class("cover-thumb")
+            );
 
             // Metin bloğu
             let info = gtk::Box::new(gtk::Orientation::Vertical, 4);
@@ -64,14 +70,20 @@ fn main() {
             let play = gtk::Button::with_label("▶ İzle");
             play.add_css_class("suggested-action");
             play.add_css_class("pill");
-            check!("İzle butonu .suggested-action", play.has_css_class("suggested-action"));
+            check!(
+                "İzle butonu .suggested-action",
+                play.has_css_class("suggested-action")
+            );
             check!("İzle butonu .pill", play.has_css_class("pill"));
 
             let del = gtk::Button::from_icon_name("user-trash-symbolic");
             del.add_css_class("flat");
             del.add_css_class("circular");
             del.add_css_class("destructive-action");
-            check!("Çıkar butonu .destructive-action", del.has_css_class("destructive-action"));
+            check!(
+                "Çıkar butonu .destructive-action",
+                del.has_css_class("destructive-action")
+            );
 
             // Çıkarma handler'ı BAĞLI (eski kodda bağlı değildi)
             let recorder: Rc<RefCell<Vec<u64>>> = Rc::new(RefCell::new(Vec::new()));

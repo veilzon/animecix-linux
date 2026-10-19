@@ -10,7 +10,9 @@ use crate::api::{Episode, FansubInfo, Title};
 /// Bölümlerin tümünde ortak çevirmenler (template_id kesişimi, puana göre).
 pub fn common_fansubs(items: &[(Episode, Vec<FansubInfo>)]) -> Vec<FansubInfo> {
     let mut iter = items.iter();
-    let Some((_, first)) = iter.next() else { return Vec::new() };
+    let Some((_, first)) = iter.next() else {
+        return Vec::new();
+    };
     let mut common: Vec<i64> = first.iter().map(|f| f.template_id).collect();
     for (_, list) in iter {
         common.retain(|t| list.iter().any(|f| &f.template_id == t));
@@ -137,7 +139,12 @@ pub fn show_flashcard_wizard(
         }
     }
 
-    let st = Rc::new(RefCell::new(State { items, choice, page: 0, pages }));
+    let st = Rc::new(RefCell::new(State {
+        items,
+        choice,
+        page: 0,
+        pages,
+    }));
     let on_done = Rc::new(on_done);
 
     let dlg = gtk::Window::builder()
@@ -213,7 +220,11 @@ pub fn show_flashcard_wizard(
             PageKind::Summary => ("Özet".to_string(), None),
         };
         counter_r.set_text(&caption);
-        bar_r.set_fraction(if total > 1 { s.page as f64 / (total - 1) as f64 } else { 1.0 });
+        bar_r.set_fraction(if total > 1 {
+            s.page as f64 / (total - 1) as f64
+        } else {
+            1.0
+        });
 
         let name = match kind {
             PageKind::Common => "pg_common".to_string(),
@@ -311,7 +322,10 @@ pub fn show_flashcard_wizard(
         let preselected = st.borrow().choice[pos].as_ref().map(|f| f.template_id);
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        let head = gtk::Label::new(Some(&format!("S{:02}E{:02} — {}", ep.season, ep.episode, ep.name)));
+        let head = gtk::Label::new(Some(&format!(
+            "S{:02}E{:02} — {}",
+            ep.season, ep.episode, ep.name
+        )));
         head.set_xalign(0.0);
         head.add_css_class("title-2");
         vbox.append(&head);
@@ -417,7 +431,9 @@ pub fn show_flashcard_wizard(
 
 /// O anki sayfadaki seçim (Hepsine uygula kaynağı).
 fn current_choice(s: &State, tour: &[usize]) -> Option<FansubInfo> {
-    let PageKind::Ep(t) = s.pages[s.page] else { return None };
+    let PageKind::Ep(t) = s.pages[s.page] else {
+        return None;
+    };
     let pos = tour.iter().position(|&x| x == t)?;
     s.choice.get(pos).cloned().flatten()
 }
@@ -436,7 +452,10 @@ fn build_summary(
     for (pos, &t) in tour.iter().enumerate() {
         let (ep, _) = &items[t];
         let txt = match choice.get(pos).and_then(|c| c.as_ref()) {
-            Some(fs) => format!("S{:02}E{:02} → {} ({:.1}★)", ep.season, ep.episode, fs.name, fs.rating),
+            Some(fs) => format!(
+                "S{:02}E{:02} → {} ({:.1}★)",
+                ep.season, ep.episode, fs.name, fs.rating
+            ),
             None => format!("S{:02}E{:02} → atlanacak", ep.season, ep.episode),
         };
         let lbl = gtk::Label::new(Some(&txt));
@@ -445,7 +464,9 @@ fn build_summary(
         list.append(&lbl);
     }
     if skipped_empty > 0 {
-        let lbl = gtk::Label::new(Some(&format!("{skipped_empty} bölümde çeviri yok (atlanacak)")));
+        let lbl = gtk::Label::new(Some(&format!(
+            "{skipped_empty} bölümde çeviri yok (atlanacak)"
+        )));
         lbl.set_xalign(0.0);
         lbl.add_css_class("dim-label");
         list.append(&lbl);
@@ -460,7 +481,11 @@ mod tests {
     use super::*;
 
     fn ep(season: u64, episode: u64) -> Episode {
-        Episode { season, episode, name: format!("B{episode}") }
+        Episode {
+            season,
+            episode,
+            name: format!("B{episode}"),
+        }
     }
 
     fn fs(tpl: i64, name: &str, rating: f64) -> FansubInfo {
@@ -480,7 +505,10 @@ mod tests {
     #[test]
     fn common_fansubs_intersection_and_rating_order() {
         let items = vec![
-            (ep(1, 1), vec![fs(1, "A", 9.0), fs(2, "B", 7.0), fs(3, "C", 8.0)]),
+            (
+                ep(1, 1),
+                vec![fs(1, "A", 9.0), fs(2, "B", 7.0), fs(3, "C", 8.0)],
+            ),
             (ep(1, 2), vec![fs(2, "B", 7.0), fs(3, "C", 8.0)]),
             (ep(1, 3), vec![fs(3, "C", 8.0), fs(4, "D", 9.5)]),
         ];
@@ -504,18 +532,21 @@ mod tests {
             (ep(1, 1), vec![fs(1, "A", 9.0)]),
             (ep(1, 2), vec![fs(2, "B", 9.0)]),
         ];
-        assert!(common_fansubs(&no_overlap).is_empty(), "kesişim yoksa kart çıkmaz");
-        let one_empty = vec![
-            (ep(1, 1), vec![fs(1, "A", 9.0)]),
-            (ep(1, 2), Vec::new()),
-        ];
+        assert!(
+            common_fansubs(&no_overlap).is_empty(),
+            "kesişim yoksa kart çıkmaz"
+        );
+        let one_empty = vec![(ep(1, 1), vec![fs(1, "A", 9.0)]), (ep(1, 2), Vec::new())];
         assert!(common_fansubs(&one_empty).is_empty());
     }
 
     #[test]
     fn find_template_shapes() {
         let list = vec![fs(1, "A", 9.0), fs(2, "B", 7.0)];
-        assert_eq!(find_template(&list, 2).map(|f| f.name), Some("B".to_string()));
+        assert_eq!(
+            find_template(&list, 2).map(|f| f.name),
+            Some("B".to_string())
+        );
         assert!(find_template(&list, 9).is_none());
     }
 }

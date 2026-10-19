@@ -22,13 +22,13 @@ kontrol eder ve kendini otomatik güncelleyebilir.
 - **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı), sayfalı raflar
 - **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
 - **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
-- **Hızlı arama**: üst çubuktaki arama hapı yazarken sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
+- **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
 - **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (S/E), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), isteğe bağlı oynatma kalite seçici
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme
-- (YAKINDA) **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
+- **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
-- **Otomatik güncelleme**: AppImage sürümü başlatmada yeni sürümü denetler, tek tıkla günceller
+- **Otomatik güncelleme**: AppImage, .deb ve .rpm kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (paketlerde yetki istenir)
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
 - **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, masaüstü başlatıcı, veri sıfırlama
@@ -138,7 +138,7 @@ bash build_appimage.sh
 | `s` | Oynatıcıda intro sonuna atla |
 | `e` | Oynatıcıda outro sonuna atla |
 | `n` / `p` | Oynatıcıda sonraki / önceki bölüm |
-| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm (alternatif) |
+| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm |
 | `Shift+M` (`M`) | Çalan şarkıyı tarayıcıda aç (şarkı bilgisi varsa) |
 | `Esc` | Geri / aramayı kapat |
 

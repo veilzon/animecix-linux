@@ -1,14 +1,14 @@
-use std::path::Path;
 use futures::StreamExt;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::sync::mpsc::channel;
 
-use glib::ControlFlow;
-use gtk::prelude::*;
 use adw::prelude::*;
+use glib::ControlFlow;
 use serde::Deserialize;
 
 const UPDATE_REPO: &str = "veilzon/animecix-linux";
-const ASSET_NAME: &str = "AnimeciX-x86_64.AppImage";
+const ASSET_APPIMAGE: &str = "AnimeciX-x86_64.AppImage";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Deserialize)]
@@ -23,8 +23,90 @@ struct GithubRelease {
     assets: Vec<GithubAsset>,
 }
 
-pub fn is_appimage() -> bool {
-    std::env::var("APPIMAGE").map(|v| !v.trim().is_empty()).unwrap_or(false)
+/// Kurulum türü: güncelleme yolu buna göre seçilir.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InstallKind {
+    AppImage,
+    Deb,
+    Rpm,
+    Unknown,
+}
+
+impl InstallKind {
+    /// Kullanıcıya gösterilen ad.
+    pub fn label(self) -> &'static str {
+        match self {
+            InstallKind::AppImage => "AppImage",
+            InstallKind::Deb => ".deb paketi",
+            InstallKind::Rpm => ".rpm paketi",
+            InstallKind::Unknown => "bilinmeyen kurulum",
+        }
+    }
+}
+
+/// Test kancası: yalnız debug derlemede etkin (kurulu release paketinde yok sayılır).
+fn fake_kind_env() -> Option<InstallKind> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    match std::env::var("ANIMECIX_FAKE_INSTALL_KIND")
+        .ok()?
+        .trim()
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "deb" => Some(InstallKind::Deb),
+        "rpm" => Some(InstallKind::Rpm),
+        "appimage" => Some(InstallKind::AppImage),
+        _ => None,
+    }
+}
+
+/// Kurulum türünü algılar (süreç başına bir kez; alt komut maliyeti tek sefer).
+pub fn install_kind() -> InstallKind {
+    static KIND: std::sync::OnceLock<InstallKind> = std::sync::OnceLock::new();
+    *KIND.get_or_init(|| {
+        if std::env::var("APPIMAGE")
+            .map(|v| !v.trim().is_empty())
+            .unwrap_or(false)
+        {
+            return InstallKind::AppImage;
+        }
+        if let Some(k) = fake_kind_env() {
+            return k;
+        }
+        if deb_package_installed() {
+            return InstallKind::Deb;
+        }
+        if rpm_package_installed() {
+            return InstallKind::Rpm;
+        }
+        InstallKind::Unknown
+    })
+}
+
+/// Uygulama içi güncelleme bu kurulumda destekleniyor mu.
+pub fn self_update_supported() -> bool {
+    install_kind() != InstallKind::Unknown
+}
+
+fn deb_package_installed() -> bool {
+    Command::new("dpkg-query")
+        .args(["-W", "-f=${Status}", "animecix"])
+        .output()
+        .map(|o| {
+            o.status.success()
+                && String::from_utf8_lossy(&o.stdout).contains("install ok installed")
+        })
+        .unwrap_or(false)
+}
+
+fn rpm_package_installed() -> bool {
+    Command::new("rpm")
+        .args(["-q", "animecix"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
 }
 
 pub fn needs_update(current: &str, latest: &str) -> bool {
@@ -70,23 +152,46 @@ fn latest_release() -> Result<GithubRelease, String> {
     resp.json().map_err(|e| e.to_string())
 }
 
+/// Kurulum türüne göre release asset'i seçer (saf; test edilebilir).
+fn pick_asset(kind: InstallKind, assets: &[GithubAsset]) -> Option<&GithubAsset> {
+    match kind {
+        InstallKind::AppImage => assets.iter().find(|a| a.name == ASSET_APPIMAGE),
+        InstallKind::Deb => assets.iter().find(|a| a.name.ends_with("_amd64.deb")),
+        InstallKind::Rpm => assets.iter().find(|a| a.name.ends_with(".x86_64.rpm")),
+        InstallKind::Unknown => None,
+    }
+}
+
+/// Paket sihirli baytları: deb (ar arşivi + debian-binary), rpm (lead magic).
+fn package_magic_ok(kind: InstallKind, bytes: &[u8]) -> bool {
+    match kind {
+        InstallKind::Deb => {
+            let head = &bytes[..bytes.len().min(256)];
+            bytes.starts_with(b"!<arch>\n") && head.windows(13).any(|w| w == b"debian-binary")
+        }
+        InstallKind::Rpm => bytes.starts_with(&[0xED, 0xAB, 0xEE, 0xDB]),
+        InstallKind::AppImage => bytes.starts_with(b"\x7fELF"),
+        InstallKind::Unknown => false,
+    }
+}
+
 pub fn replace_target(bytes: &[u8], target: &Path) -> Result<(), String> {
     if bytes.len() < 4 || &bytes[0..4] != b"\x7fELF" {
         return Err("İndirilen dosya geçerli bir AppImage değil".into());
     }
-    let tmp = std::env::temp_dir()
-        .join(format!("AnimeciX-update-{}.AppImage", std::process::id()));
+    let tmp = std::env::temp_dir().join(format!("AnimeciX-update-{}.AppImage", std::process::id()));
     std::fs::write(&tmp, bytes).map_err(|e| e.to_string())?;
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let mut perms = std::fs::metadata(&tmp).map_err(|e| e.to_string())?.permissions();
+        let mut perms = std::fs::metadata(&tmp)
+            .map_err(|e| e.to_string())?
+            .permissions();
         perms.set_mode(0o755);
         std::fs::set_permissions(&tmp, perms).map_err(|e| e.to_string())?;
     }
-    match std::fs::rename(&tmp, target) {
-        Ok(_) => return Ok(()),
-        Err(_) => {}
+    if std::fs::rename(&tmp, target).is_ok() {
+        return Ok(());
     }
     let backup = target.with_extension("AppImage.old");
     if backup.exists() {
@@ -118,7 +223,23 @@ pub fn replace_target(bytes: &[u8], target: &Path) -> Result<(), String> {
     Ok(())
 }
 
-pub fn download_update<F>(url: &str, target: &Path, mut on_progress: F) -> Result<(), String>
+/// Güncelleme paketlerinin indirildiği dizin (kullanıcı önbelleği).
+fn updates_dir() -> PathBuf {
+    let base = std::env::var("XDG_CACHE_HOME")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .map(PathBuf::from)
+        .or_else(|| {
+            std::env::var("HOME")
+                .ok()
+                .filter(|s| !s.trim().is_empty())
+                .map(|h| PathBuf::from(h).join(".cache"))
+        })
+        .unwrap_or_else(std::env::temp_dir);
+    base.join("animecix").join("updates")
+}
+
+fn download_bytes<F>(url: &str, mut on_progress: F) -> Result<Vec<u8>, String>
 where
     F: FnMut(u64, u64) + Send + 'static,
 {
@@ -126,7 +247,7 @@ where
         .enable_all()
         .build()
         .map_err(|e| e.to_string())?;
-    let bytes = rt.block_on(async {
+    rt.block_on(async {
         let client = reqwest::Client::builder()
             .user_agent("animecix-updater")
             .build()
@@ -144,8 +265,124 @@ where
             on_progress(buf.len() as u64, total);
         }
         Ok::<Vec<u8>, String>(buf)
-    })?;
+    })
+}
+
+pub fn download_update<F>(url: &str, target: &Path, on_progress: F) -> Result<(), String>
+where
+    F: FnMut(u64, u64) + Send + 'static,
+{
+    let bytes = download_bytes(url, on_progress)?;
     replace_target(&bytes, target)
+}
+
+/// Paketi indirir, sihirli baytları doğrular ve önbellek dizinine yazar.
+fn download_package<F>(
+    kind: InstallKind,
+    url: &str,
+    asset_name: &str,
+    on_progress: F,
+) -> Result<PathBuf, String>
+where
+    F: FnMut(u64, u64) + Send + 'static,
+{
+    let bytes = download_bytes(url, on_progress)?;
+    if !package_magic_ok(kind, &bytes) {
+        return Err(format!(
+            "İndirilen dosya geçerli bir {} değil",
+            kind.label()
+        ));
+    }
+    let dir = updates_dir();
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Güncelleme dizini oluşturulamadı: {e}"))?;
+    let file_name = Path::new(asset_name)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("animecix-update.pkg");
+    let dest = dir.join(file_name);
+    std::fs::write(&dest, &bytes).map_err(|e| format!("Paket yazılamadı: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        // pkexec ile çalışan paket yöneticisi dosyayı okuyabilmeli.
+        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o644));
+    }
+    Ok(dest)
+}
+
+/// Kurulum komutu (saf): (program, argümanlar). Paketler polkit ile kurulur.
+fn install_args(kind: InstallKind, path: &Path) -> Option<(String, Vec<String>)> {
+    let pkg = path.display().to_string();
+    match kind {
+        InstallKind::Deb => Some((
+            "pkexec".to_string(),
+            vec![
+                "apt-get".to_string(),
+                "install".to_string(),
+                "-y".to_string(),
+                "-o".to_string(),
+                "DPkg::Lock::Timeout=120".to_string(),
+                pkg,
+            ],
+        )),
+        InstallKind::Rpm => Some((
+            "pkexec".to_string(),
+            vec![
+                "dnf".to_string(),
+                "install".to_string(),
+                "-y".to_string(),
+                pkg,
+            ],
+        )),
+        _ => None,
+    }
+}
+
+fn run_install(kind: InstallKind, path: &Path) -> Result<(), String> {
+    let Some((program, args)) = install_args(kind, path) else {
+        return Err("Bu kurulum türünde paket kurulumu desteklenmiyor".into());
+    };
+    let out = Command::new(&program).args(&args).output().map_err(|e| {
+        format!(
+            "{program} çalıştırılamadı: {e}. Paketi elle kurabilirsiniz: {}",
+            path.display()
+        )
+    })?;
+    if out.status.success() {
+        return Ok(());
+    }
+    let code = out.status.code().unwrap_or(-1);
+    if code == 126 || code == 127 {
+        return Err("Kurulum için yetki verilmedi (iptal edildi).".into());
+    }
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let detail = stderr
+        .lines()
+        .rev()
+        .take(3)
+        .collect::<Vec<_>>()
+        .into_iter()
+        .rev()
+        .collect::<Vec<_>>()
+        .join(" ");
+    let mut msg = format!("Paket kurulumu başarısız (çıkış {code}).");
+    if !detail.is_empty() {
+        msg.push(' ');
+        msg.push_str(&detail);
+    }
+    msg.push_str(&format!(" Paketi elle kurabilirsiniz: {}", path.display()));
+    Err(msg)
+}
+
+/// Güncelleme sonrası uygulamayı yeniden başlatır (AppImage yolu veya kendi exe).
+fn restart_app(appimage_target: Option<&str>) -> ! {
+    let exe = match appimage_target {
+        Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+        _ => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("animecix")),
+    };
+    let _ = Command::new(exe).spawn();
+    std::process::exit(0);
 }
 
 pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
@@ -153,26 +390,36 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
     show_if_uptodate: bool,
     on_suppress_uptodate: impl Fn() + 'static,
 ) {
-    if !is_appimage() {
+    let kind = install_kind();
+    if kind == InstallKind::Unknown {
         if show_if_uptodate {
-            present_info(window, "Güncelleme Kullanılamıyor", "Otomatik güncelleme yalnızca AppImage sürümünde çalışır.");
+            present_info(
+                window,
+                "Güncelleme Kullanılamıyor",
+                "Otomatik güncelleme yalnızca AppImage, .deb veya .rpm kurulumlarında çalışır.",
+            );
         }
         return;
     }
-    let (tx, rx) = channel::<Result<Option<(String, String)>, String>>();
+    // (etiket, asset adı, indirme adresi)
+    let (tx, rx) = channel::<Result<Option<(String, String, String)>, String>>();
     std::thread::spawn(move || {
-        let res = (|| -> Result<Option<(String, String)>, String> {
+        let res = (|| -> Result<Option<(String, String, String)>, String> {
             let rel = latest_release()?;
             if !needs_update(CURRENT_VERSION, &rel.tag_name) {
                 return Ok(None);
             }
-            let url = rel
-                .assets
-                .iter()
-                .find(|a| a.name == ASSET_NAME)
-                .map(|a| a.browser_download_url.clone())
-                .ok_or_else(|| "asset bulunamadı".to_string())?;
-            Ok(Some((rel.tag_name, url)))
+            let asset = pick_asset(kind, &rel.assets).ok_or_else(|| {
+                format!(
+                    "sürümde {} için güncelleme dosyası bulunamadı",
+                    kind.label()
+                )
+            })?;
+            Ok(Some((
+                rel.tag_name.clone(),
+                asset.name.clone(),
+                asset.browser_download_url.clone(),
+            )))
         })();
         let _ = tx.send(res);
     });
@@ -180,8 +427,8 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
     let win = window.clone();
     let mut on_suppress = Some(on_suppress_uptodate);
     glib::idle_add_local(move || match rx.try_recv() {
-        Ok(Ok(Some((tag, url)))) => {
-            present_update_dialog(win.clone(), &tag, &url);
+        Ok(Ok(Some((tag, asset_name, url)))) => {
+            present_update_dialog(win.clone(), kind, &tag, &asset_name, &url);
             ControlFlow::Break
         }
         Ok(Ok(None)) => {
@@ -238,36 +485,77 @@ enum UpdMsg {
     Error(String),
 }
 
-fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(window: W, tag: &str, url: &str) {
+/// Tek bir güncelleme işinin parametreleri (worker + tekrar dene).
+#[derive(Clone)]
+struct UpdateJob {
+    kind: InstallKind,
+    url: String,
+    asset_name: String,
+    appimage_target: Option<String>,
+}
+
+fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
+    window: W,
+    kind: InstallKind,
+    tag: &str,
+    asset_name: &str,
+    url: &str,
+) {
     let tag = tag.trim_start_matches('v').to_string();
     let url = url.to_string();
-    let target = std::env::var("APPIMAGE").unwrap_or_default();
-    if target.is_empty() {
-        present_info(&window, "Güncelleme Başarısız", "AppImage yolu bulunamadı.");
-        return;
-    }
+    let asset_name = asset_name.to_string();
+    let appimage_target = if kind == InstallKind::AppImage {
+        match std::env::var("APPIMAGE") {
+            Ok(t) if !t.trim().is_empty() => Some(t),
+            _ => {
+                present_info(&window, "Güncelleme Başarısız", "AppImage yolu bulunamadı.");
+                return;
+            }
+        }
+    } else {
+        None
+    };
+    let body = if kind == InstallKind::AppImage {
+        format!("AnimeciX v{tag} yayınlandı. İndirip uygulamayı güncelleyelim mi?")
+    } else {
+        format!(
+            "AnimeciX v{tag} yayınlandı. {} indirilip sistem paket yöneticisiyle kurulacak; yetki istenecek. Güncellensin mi?",
+            kind.label()
+        )
+    };
     let dialog = adw::MessageDialog::builder()
         .heading("Yeni Sürüm Mevcut")
-        .body(format!(
-            "AnimeciX v{tag} yayınlandı. İndirip uygulamayı güncelleyelim mi?"
-        ))
+        .body(body)
         .close_response("later")
         .default_response("later")
         .build();
     dialog.add_response("later", "Daha Sonra");
-    dialog.add_response("update", "Güncelle ve Yeniden Başlat");
+    dialog.add_response(
+        "update",
+        if kind == InstallKind::AppImage {
+            "Güncelle ve Yeniden Başlat"
+        } else {
+            "Kur ve Yeniden Başlat"
+        },
+    );
     dialog.set_response_appearance("update", adw::ResponseAppearance::Suggested);
     dialog.set_transient_for(Some(&window));
     dialog.connect_response(None, move |dlg, resp| {
         if resp == "update" {
             dlg.close();
-            run_update_with_progress(window.clone(), &url, &target);
+            let job = UpdateJob {
+                kind,
+                url: url.clone(),
+                asset_name: asset_name.clone(),
+                appimage_target: appimage_target.clone(),
+            };
+            run_update_with_progress(window.clone(), job);
         }
     });
     dialog.present();
 }
 
-fn run_update_with_progress<W: IsA<gtk::Window> + Clone + 'static>(window: W, url: &str, target: &str) {
+fn run_update_with_progress<W: IsA<gtk::Window> + Clone + 'static>(window: W, job: UpdateJob) {
     let dlg = adw::Window::builder()
         .title("Güncelleniyor")
         .modal(true)
@@ -290,9 +578,7 @@ fn run_update_with_progress<W: IsA<gtk::Window> + Clone + 'static>(window: W, ur
     dlg.set_content(Some(&box_));
     dlg.present();
 
-    let url = url.to_string();
-    let target = target.to_string();
-    start_update_worker(&dlg, &label, &bar, &window, &url, &target);
+    start_update_worker(&dlg, &label, &bar, &window, job);
 }
 
 fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
@@ -300,18 +586,47 @@ fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
     label: &gtk::Label,
     bar: &gtk::ProgressBar,
     window: &W,
-    url: &str,
-    target: &str,
+    job: UpdateJob,
 ) {
+    let UpdateJob {
+        kind,
+        url,
+        asset_name,
+        appimage_target,
+    } = job;
     let (tx, rx) = channel::<UpdMsg>();
     let prog_tx = tx.clone();
-    let url_s = url.to_string();
-    let target_path = std::path::PathBuf::from(target);
+    let url_s = url.clone();
+    let asset_s = asset_name.clone();
+    let target_thread = appimage_target.clone();
     std::thread::spawn(move || {
         let _ = tx.send(UpdMsg::Step("İndiriliyor…".into()));
-        let result = download_update(&url_s, &target_path, move |cur, total| {
-            let _ = prog_tx.send(UpdMsg::Progress(cur, total));
-        });
+        let result = match kind {
+            InstallKind::AppImage => {
+                let target = PathBuf::from(target_thread.unwrap_or_default());
+                download_update(&url_s, &target, move |cur, total| {
+                    let _ = prog_tx.send(UpdMsg::Progress(cur, total));
+                })
+            }
+            _ => {
+                let prog = prog_tx.clone();
+                match download_package(kind, &url_s, &asset_s, move |cur, total| {
+                    let _ = prog.send(UpdMsg::Progress(cur, total));
+                }) {
+                    Ok(path) => {
+                        let _ = tx.send(UpdMsg::Step("Kuruluyor… (yetki istenebilir)".into()));
+                        match run_install(kind, &path) {
+                            Ok(()) => {
+                                let _ = std::fs::remove_file(&path);
+                                Ok(())
+                            }
+                            Err(e) => Err(e),
+                        }
+                    }
+                    Err(e) => Err(e),
+                }
+            }
+        };
         match result {
             Ok(()) => {
                 let _ = tx.send(UpdMsg::Step("Doğrulanıyor ve yükleniyor…".into()));
@@ -327,69 +642,78 @@ fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
     let label = label.clone();
     let bar = bar.clone();
     let window = window.clone();
-    let url_c = url.to_string();
-    let target_c = target.to_string();
-    glib::idle_add_local(move || {
-        match rx.try_recv() {
-            Ok(UpdMsg::Progress(cur, total)) => {
-                if total > 0 {
-                    let f = (cur as f64 / total as f64).clamp(0.0, 1.0);
-                    bar.set_fraction(f);
-                    bar.set_text(Some(&format!("{}%", (f * 100.0) as u32)));
-                } else {
-                    bar.pulse();
-                    bar.set_text(Some(&format!("{} KB", cur / 1024)));
-                }
-                ControlFlow::Continue
+    let url_c = url;
+    let asset_c = asset_name;
+    let target_c = appimage_target;
+    glib::idle_add_local(move || match rx.try_recv() {
+        Ok(UpdMsg::Progress(cur, total)) => {
+            if total > 0 {
+                let f = (cur as f64 / total as f64).clamp(0.0, 1.0);
+                bar.set_fraction(f);
+                bar.set_text(Some(&format!("{}%", (f * 100.0) as u32)));
+            } else {
+                bar.pulse();
+                bar.set_text(Some(&format!("{} KB", cur / 1024)));
             }
-            Ok(UpdMsg::Step(s)) => {
-                label.set_text(&s);
-                ControlFlow::Continue
-            }
-            Ok(UpdMsg::Done) => {
-                label.set_text("Yeniden başlatılıyor…");
-                bar.set_fraction(1.0);
-                bar.set_text(Some("100%"));
-                let _ = std::process::Command::new(&target_c).spawn();
-                std::process::exit(0);
-            }
-            Ok(UpdMsg::Error(e)) => {
-                label.set_text(&format!("Güncelleme başarısız: {e}"));
-                bar.set_fraction(0.0);
-                dlg.set_deletable(true);
-                if let Some(b) = dlg.content().and_then(|w| w.downcast::<gtk::Box>().ok()) {
-                    let retry = gtk::Button::with_label("Tekrar Dene");
-                    retry.set_margin_top(8);
-                    let dlg2 = dlg.clone();
-                    let win2 = window.clone();
-                    let url2 = url_c.clone();
-                    let target2 = target_c.clone();
-                    retry.connect_clicked(move |_| {
-                        dlg2.close();
-                        run_update_with_progress(win2.clone(), &url2, &target2);
-                    });
-                    b.append(&retry);
-
-                    let ok = gtk::Button::with_label("Tamam");
-                    ok.set_margin_top(6);
-                    let dlg3 = dlg.clone();
-                    ok.connect_clicked(move |_| {
-                        dlg3.close();
-                    });
-                    b.append(&ok);
-                    ok.grab_focus();
-                }
-                ControlFlow::Break
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => ControlFlow::Continue,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+            ControlFlow::Continue
         }
+        Ok(UpdMsg::Step(s)) => {
+            label.set_text(&s);
+            ControlFlow::Continue
+        }
+        Ok(UpdMsg::Done) => {
+            label.set_text("Yeniden başlatılıyor…");
+            bar.set_fraction(1.0);
+            bar.set_text(Some("100%"));
+            restart_app(target_c.as_deref());
+        }
+        Ok(UpdMsg::Error(e)) => {
+            label.set_text(&format!("Güncelleme başarısız: {e}"));
+            bar.set_fraction(0.0);
+            dlg.set_deletable(true);
+            if let Some(b) = dlg.content().and_then(|w| w.downcast::<gtk::Box>().ok()) {
+                let retry = gtk::Button::with_label("Tekrar Dene");
+                retry.set_margin_top(8);
+                let dlg2 = dlg.clone();
+                let win2 = window.clone();
+                let job2 = UpdateJob {
+                    kind,
+                    url: url_c.clone(),
+                    asset_name: asset_c.clone(),
+                    appimage_target: target_c.clone(),
+                };
+                retry.connect_clicked(move |_| {
+                    dlg2.close();
+                    run_update_with_progress(win2.clone(), job2.clone());
+                });
+                b.append(&retry);
+
+                let ok = gtk::Button::with_label("Tamam");
+                ok.set_margin_top(6);
+                let dlg3 = dlg.clone();
+                ok.connect_clicked(move |_| {
+                    dlg3.close();
+                });
+                b.append(&ok);
+                ok.grab_focus();
+            }
+            ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => ControlFlow::Continue,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
     });
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn asset(name: &str, url: &str) -> GithubAsset {
+        GithubAsset {
+            name: name.to_string(),
+            browser_download_url: url.to_string(),
+        }
+    }
 
     #[test]
     fn version_compare() {
@@ -403,8 +727,68 @@ mod tests {
     }
 
     #[test]
+    fn pick_asset_matches_install_kind() {
+        let assets = vec![
+            asset("AnimeciX-x86_64.AppImage", "tu1"),
+            asset("animecix_1.2.6_amd64.deb", "tu2"),
+            asset("animecix-1.2.6-1.fc40.x86_64.rpm", "tu3"),
+        ];
+        assert_eq!(
+            pick_asset(InstallKind::AppImage, &assets).map(|a| a.browser_download_url.as_str()),
+            Some("tu1")
+        );
+        assert_eq!(
+            pick_asset(InstallKind::Deb, &assets).map(|a| a.name.as_str()),
+            Some("animecix_1.2.6_amd64.deb")
+        );
+        assert_eq!(
+            pick_asset(InstallKind::Rpm, &assets).map(|a| a.name.as_str()),
+            Some("animecix-1.2.6-1.fc40.x86_64.rpm")
+        );
+        assert!(pick_asset(InstallKind::Unknown, &assets).is_none());
+        assert!(pick_asset(InstallKind::Deb, &assets[..2]).is_some());
+    }
+
+    #[test]
+    fn package_magic_checks() {
+        let mut deb = b"!<arch>\ndebian-binary   padding".to_vec();
+        deb.resize(64, 0);
+        assert!(package_magic_ok(InstallKind::Deb, &deb));
+        assert!(!package_magic_ok(InstallKind::Deb, b"not a deb package"));
+
+        let rpm = [0xED_u8, 0xAB, 0xEE, 0xDB, 0, 0, 0, 0];
+        assert!(package_magic_ok(InstallKind::Rpm, &rpm));
+        assert!(!package_magic_ok(InstallKind::Rpm, b"\x7fELF"));
+
+        assert!(package_magic_ok(InstallKind::AppImage, b"\x7fELFrest"));
+        assert!(!package_magic_ok(InstallKind::AppImage, b"nope"));
+        assert!(!package_magic_ok(InstallKind::Unknown, b"\x7fELF"));
+    }
+
+    #[test]
+    fn install_args_use_pkexec_and_pkg_manager() {
+        let (prog, args) = install_args(InstallKind::Deb, Path::new("/tmp/x.deb")).unwrap();
+        assert_eq!(prog, "pkexec");
+        assert_eq!(args[0], "apt-get");
+        assert!(args.contains(&"/tmp/x.deb".to_string()));
+        assert!(install_args(InstallKind::AppImage, Path::new("/tmp/x.AppImage")).is_none());
+
+        let (prog, args) = install_args(InstallKind::Rpm, Path::new("/tmp/x.rpm")).unwrap();
+        assert_eq!(prog, "pkexec");
+        assert_eq!(args[0], "dnf");
+        assert!(args.contains(&"/tmp/x.rpm".to_string()));
+    }
+
+    #[test]
+    fn updates_dir_is_user_cache() {
+        let d = updates_dir();
+        assert!(d.ends_with("animecix/updates"), "beklenmeyen dizin: {d:?}");
+    }
+
+    #[test]
     fn replace_writes_and_renames() {
-        let tmp = std::env::temp_dir().join(format!("animecix-replace-test-{}", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("animecix-replace-test-{}", std::process::id()));
         let _ = std::fs::remove_file(&tmp);
         let elf = b"\x7fELFfakeappimage";
         replace_target(elf, &tmp).unwrap();
@@ -443,7 +827,8 @@ mod tests {
             }
         });
         let url = format!("http://127.0.0.1:{}/AnimeciX-x86_64.AppImage", port);
-        let target = std::env::temp_dir().join(format!("animecix-dl-test-{}.AppImage", std::process::id()));
+        let target =
+            std::env::temp_dir().join(format!("animecix-dl-test-{}.AppImage", std::process::id()));
         let _ = std::fs::remove_file(&target);
         let progress = std::sync::Arc::new(std::sync::Mutex::new((0u64, 0u64)));
         let prog = progress.clone();
@@ -461,7 +846,8 @@ mod tests {
 
     #[test]
     fn download_update_fails_on_unreachable() {
-        let target = std::env::temp_dir().join(format!("animecix-dl-fail-{}.AppImage", std::process::id()));
+        let target =
+            std::env::temp_dir().join(format!("animecix-dl-fail-{}.AppImage", std::process::id()));
         let _ = std::fs::remove_file(&target);
         let r = download_update("http://127.0.0.1:1/nope", &target, |_, _| {});
         assert!(r.is_err(), "erişilemeyen adres başarısız olmalı");

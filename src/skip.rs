@@ -2,7 +2,7 @@
 //! tuş/OSD komutları ve plan durumu. Ham soket ilkelleri player.rs'te,
 //! API ayrıştırma api.rs'te kalır; burası ikisini mpv'ye bağlar.
 
-use crate::api::{SkipTimes, CachedSkip, SkipMeta};
+use crate::api::{CachedSkip, SkipMeta, SkipTimes};
 use crate::music;
 
 /// Tek bölümün atlama durumu: süreler + şarkılar + kaynak etiketi.
@@ -65,11 +65,13 @@ pub fn fetch_plan_for_embeds(
     fallback_embeds: &[String],
     manual_secret: &str,
 ) -> Option<SkipPlan> {
+    // Sır sırası: el girdisi → kasa → gömülü varsayılan (hiçbiri yoksa
+    // imzasız denenir; intro/outro herkese açık, müzik imzada gelebilir).
     let (secret, src) = match client.resolve_skip_secret(manual_secret) {
-        Some(p) => p,
+        Some((s, src)) => (Some(s), src),
         None => {
-            eprintln!("[SKIP-RESMI] sır yok (kasa derlenmemiş, kutu boş)");
-            return None;
+            eprintln!("[SKIP-RESMI] sır yok, imzasız devam ediliyor");
+            (None, "imzasiz")
         }
     };
     let mut meta = client
@@ -87,7 +89,7 @@ pub fn fetch_plan_for_embeds(
         eprintln!("[SKIP-RESMI] (önbellek) slug={slug}");
         return Some(SkipPlan::from_cached(&cs, "kasa (önbellek)"));
     }
-    match client.fetch_official_skip(&m, &secret) {
+    match client.fetch_official_skip(&m, secret.as_deref()) {
         Ok(sm) => {
             let plan = SkipPlan::from_official(&sm, src);
             if plan.is_empty() {
@@ -96,8 +98,7 @@ pub fn fetch_plan_for_embeds(
             }
             eprintln!(
                 "[SKIP-RESMI] (kaynak={src}) slug={slug} op={:?}-{:?} ed={:?}-{:?}",
-                plan.times.op_start, plan.times.op_end,
-                plan.times.ed_start, plan.times.ed_end
+                plan.times.op_start, plan.times.op_end, plan.times.ed_start, plan.times.ed_end
             );
             client.skip_cache_put(&slug, &plan.cached());
             Some(plan)
@@ -117,7 +118,8 @@ pub fn input_conf(t: &SkipTimes, source: &str) -> String {
         let s = sec as u64;
         format!("{:02}:{:02}", s / 60, s % 60)
     };
-    let align = "set osd-align-x left; set osd-align-y bottom; set osd-margin-x 30; set osd-margin-y 30;";
+    let align =
+        "set osd-align-x left; set osd-align-y bottom; set osd-margin-x 30; set osd-margin-y 30;";
     let skip_cmd = if let (Some(st), Some(et)) = (t.op_start, t.op_end) {
         format!("s seek {et:.1} absolute; {align} show-text \"⏩ İntro Atlandı ({source}: {} → {})\" 3000\n", fmt_sec(st), fmt_sec(et))
     } else {
@@ -128,7 +130,7 @@ pub fn input_conf(t: &SkipTimes, source: &str) -> String {
     } else {
         format!("e {align} show-text \"⚠️ Outro zamanı bulunamadı\" 2500\n")
     };
-    format!("{skip_cmd}{outro_cmd}S seek -30; {align} show-text \"⏪ 30s Geri\" 2000\nEnd ignore\n")
+    format!("{skip_cmd}{outro_cmd}S seek -30; {align} show-text \"⏪ 30s Geri\" 2000\nEnd ignore\nn quit 42\np quit 43\nCtrl+RIGHT quit 42\n")
 }
 
 /// mpv IPC JSON'una gömülecek metni güvenli yapar (tırnak/tersbölü kırar).
@@ -184,8 +186,14 @@ mod tests {
             "outro": {"from": 8, "to": 4},
         }));
         let p = SkipPlan::from_official(&sm, "kasa");
-        assert_eq!((p.times.op_start, p.times.op_end), (Some(63.0), Some(147.0)));
-        assert!(p.times.ed_start.is_none() && p.times.ed_end.is_none(), "çöp outro elenmeli");
+        assert_eq!(
+            (p.times.op_start, p.times.op_end),
+            (Some(63.0), Some(147.0))
+        );
+        assert!(
+            p.times.ed_start.is_none() && p.times.ed_end.is_none(),
+            "çöp outro elenmeli"
+        );
         assert!(!p.is_empty());
         assert!(p.music_op.is_none() && p.music_ed.is_none());
         assert_eq!(SkipPlan::default().is_empty(), true);
@@ -202,14 +210,28 @@ mod tests {
 
     #[test]
     fn input_conf_shapes() {
-        let t = SkipTimes { op_start: Some(43.0), op_end: Some(133.0), ed_start: None, ed_end: None };
+        let t = SkipTimes {
+            op_start: Some(43.0),
+            op_end: Some(133.0),
+            ed_start: None,
+            ed_end: None,
+        };
         let c = input_conf(&t, "resmi kaynak");
         assert!(c.contains("s seek 133.0 absolute"), "tuş: {c}");
-        assert!(c.contains("resmi kaynak: 00:43 → 02:13"), "kaynak+aralık: {c}");
+        assert!(
+            c.contains("resmi kaynak: 00:43 → 02:13"),
+            "kaynak+aralık: {c}"
+        );
         assert!(c.contains("Outro zamanı bulunamadı"), "eksik çift: {c}");
         let empty = input_conf(&SkipTimes::default(), "x");
-        assert!(empty.contains("İntro zamanı bulunamadı") && empty.contains("Outro zamanı bulunamadı"), "boş conf dürüst olmalı: {empty}");
+        assert!(
+            empty.contains("İntro zamanı bulunamadı") && empty.contains("Outro zamanı bulunamadı"),
+            "boş conf dürüst olmalı: {empty}"
+        );
         assert!(empty.contains("S seek -30"), "geri tuşu korunmalı");
+        assert!(c.contains("n quit 42"), "sonraki bölüm tuşu: {c}");
+        assert!(c.contains("p quit 43"), "önceki bölüm tuşu: {c}");
+        assert!(c.contains("Ctrl+RIGHT quit 42"), "klavye sonraki: {c}");
     }
 
     #[test]
@@ -217,18 +239,53 @@ mod tests {
         let out = mpv_safe_text("🎵 \"Quoted\" \\ Title — A");
         assert!(!out.contains('"'), "tırnak kalmamalı: {out}");
         assert!(!out.contains('\\'), "tersbölü kalmamalı: {out}");
-        assert!(out.contains("Quoted") && out.contains("Title"), "içerik korunmalı: {out}");
+        assert!(
+            out.contains("Quoted") && out.contains("Title"),
+            "içerik korunmalı: {out}"
+        );
     }
 
     #[test]
     fn show_text_and_prompts() {
         let cmd = show_text_cmd("a \"b\" c", 8000);
-        assert!(cmd.contains("a 'b' c") && cmd.contains("8000"), "cmd: {cmd}");
-        let v: serde_json::Value = serde_json::from_str(cmd.trim()).expect("IPC JSON geçerli olmalı");
+        assert!(
+            cmd.contains("a 'b' c") && cmd.contains("8000"),
+            "cmd: {cmd}"
+        );
+        let v: serde_json::Value =
+            serde_json::from_str(cmd.trim()).expect("IPC JSON geçerli olmalı");
         assert_eq!(v["command"][0], "show-text");
         assert!(prompt_op(None).contains("İntro Başladı"));
-        assert!(prompt_op(Some("🎵 X — Y")).contains("🎵 X — Y"), "şarkı eklenmeli");
+        assert!(
+            prompt_op(Some("🎵 X — Y")).contains("🎵 X — Y"),
+            "şarkı eklenmeli"
+        );
         assert!(prompt_ed(None).contains("Outro Başladı"));
         assert!(prompt_ed(Some("🎵 Z")).contains("🎵 Z"));
+    }
+
+    #[test]
+    fn cached_roundtrip_preserves_music() {
+        let sm = crate::api::parse_skip_meta(&serde_json::json!({
+            "intro": {"from": 134, "to": 225, "count": 11},
+            "music": {
+                "title": "KICK BACK",
+                "artist": "Kenshi Yonezu",
+                "spotify_url": "https://open.spotify.com/track/3khEEPRyBeOUabbmOPJzAG",
+                "song_link": "https://lis.tn/vxTbeD"
+            }
+        }));
+        let p = SkipPlan::from_official(&sm, "varsayılan");
+        assert!(!p.is_empty());
+        assert!(p.music_op.as_deref().unwrap_or("").contains("KICK BACK"));
+        assert_eq!(
+            p.song_url.as_deref(),
+            Some("https://open.spotify.com/track/3khEEPRyBeOUabbmOPJzAG")
+        );
+        let back = SkipPlan::from_cached(&p.cached(), "kasa (önbellek)");
+        assert_eq!(back.music_op, p.music_op);
+        assert_eq!(back.music_ed, p.music_ed);
+        assert_eq!(back.song_url, p.song_url);
+        assert_eq!(back.times, p.times);
     }
 }

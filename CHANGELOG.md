@@ -1,3 +1,44 @@
+# Changelog — v1.2.7 (güncel sürüm notları)
+
+- Ana sayfada arama çubuğu öne çıkan alanın üstüne taşındı; yazıp
+  Enter'a basınca arama açılır.
+- Oynatıcıda Ctrl + Sağ Ok ile sonraki bölüme geçilir.
+- Yinelenen bölüm kayıtları teklenir; sonraki/önceki bölüme geçerken
+  takılma olmaz.
+- Kapak yüklemesi aksarsa sıra kendini toparlar, boş kapak kalmaz.
+
+# Changelog — v1.2.6
+
+## Öne çıkanlar
+
+- **Hesap sistemi:** giriş/çıkış, profil sayfası; favori, konum ve geçmiş
+  siteyle çift-yön eşitleniyor. Açılışta sessiz senkron, oturum düşünce
+  uyarı.
+- **Sonraki/önceki bölüm:** mpv içinde `n`/`p` ile geçme (her zaman açık).
+  Ayarlardan otomatik sonraki bölüm açılabilir (varsayılan kapalı).
+- **Müzik düzeltmesi:** şarkı bilgisi artık gömülü varsayılan sırla imzalı
+  çekiliyor — müzikli kayıtlarda üstte şarkı katmanı, `Shift+M` ile
+  tarayıcıda açma, mpv OSD'sinde şarkı adı.
+
+## Eklenenler
+
+- **Otomatik sonraki bölüm anahtarı** (Oynatıcı Ayarları).
+- **CI kapıları:** fmt, clippy, ölü-kod, bağımlılık ve güvenlik denetimi
+  + test kapsamı eşiği.
+- `gio` bağımlılığı atıldı, AppImage inceldi.
+
+## Kaldırılanlar
+
+- Yok (kullanıcıya dönük kaldırma yok).
+
+## Bilinen durum
+
+- İntro/outro/müzik verisi tau-video most-sought küratör havuzundan gelir;
+  AniSkip (api.aniskip.com) kullanılmıyor. Havuzda müzik satırı olmayan
+  kayıtlarda (örn. Frieren S1) şarkı görünmez — sunucu verisi.
+- Avatar/banner yükleme canlı doğrulandı ama bu ağaçta kapalı
+  (yerel mod saplaması).
+
 # Changelog — v1.2.5 → v1.2.6
 
 ## Öne çıkanlar

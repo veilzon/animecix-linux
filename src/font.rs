@@ -43,7 +43,10 @@ mod tests {
         let a = ensure_fonts().expect("font yazılmalı");
         let target = a.join(FONT_FILE);
         assert!(target.exists(), "ttf diskte olmalı");
-        assert!(target.metadata().map(|m| m.len()).unwrap_or(0) > 100_000, "ttf dolu olmalı");
+        assert!(
+            target.metadata().map(|m| m.len()).unwrap_or(0) > 100_000,
+            "ttf dolu olmalı"
+        );
         let b = ensure_fonts().expect("ikinci çağrı da");
         assert_eq!(a, b);
         assert!(!FONT_STYLE.is_empty());
@@ -55,8 +58,14 @@ mod tests {
         let joined = args.join(" ");
         assert!(joined.contains("--osd-fonts-dir=/tmp/x"), "{joined}");
         assert!(joined.contains("--sub-fonts-dir=/tmp/x"), "{joined}");
-        assert!(joined.contains(&format!("--osd-font={FONT_STYLE}")), "{joined}");
+        assert!(
+            joined.contains(&format!("--osd-font={FONT_STYLE}")),
+            "{joined}"
+        );
         assert!(joined.contains("--osd-font-size=38"), "{joined}");
-        assert!(joined.contains(&format!("--sub-font={FONT_STYLE}")), "{joined}");
+        assert!(
+            joined.contains(&format!("--sub-font={FONT_STYLE}")),
+            "{joined}"
+        );
     }
 }

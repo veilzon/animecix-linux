@@ -173,11 +173,7 @@ impl RowMenu {
         self.popover.popup();
         self.reveal.set_visible(true);
         self.reveal.set_reveal_child(true);
-        if let Some(list) = self
-            .reveal
-            .child()
-            .and_downcast::<gtk::ListBox>()
-        {
+        if let Some(list) = self.reveal.child().and_downcast::<gtk::ListBox>() {
             focus_first_row(&list);
         }
     }

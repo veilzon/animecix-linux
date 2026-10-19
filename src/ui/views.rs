@@ -1,9 +1,9 @@
-use gtk::prelude::*;
-use adw::prelude::*;
-use std::rc::Rc;
-use std::cell::RefCell;
-use crate::api::{Client, HistoryEntry, Settings, Title, marathon_summary};
+use crate::api::{marathon_summary, Client, HistoryEntry, Settings, Title};
 use crate::ui::episodes_view;
+use adw::prelude::*;
+use gtk::prelude::*;
+use std::cell::RefCell;
+use std::rc::Rc;
 
 pub struct MarathonView;
 
@@ -56,9 +56,7 @@ impl MarathonView {
         top_row.append(&clear_btn);
 
         let stats_row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-        let stats_lbl = gtk::Label::new(Some(&format!(
-            "… / {} Anime Tamamlandı", total_count
-        )));
+        let stats_lbl = gtk::Label::new(Some(&format!("… / {} Anime Tamamlandı", total_count)));
         stats_lbl.add_css_class("title-4");
         stats_lbl.add_css_class("dim-label");
         stats_lbl.set_xalign(0.0);
@@ -84,7 +82,10 @@ impl MarathonView {
         let client_s = client.clone();
         let (stx, srx) = std::sync::mpsc::channel::<(usize, u32)>();
         std::thread::spawn(move || {
-            let fracs: Vec<f64> = summary_titles.iter().map(|t| client_s.title_progress_frac(t)).collect();
+            let fracs: Vec<f64> = summary_titles
+                .iter()
+                .map(|t| client_s.title_progress_frac(t))
+                .collect();
             let _ = stx.send(marathon_summary(&fracs));
         });
         glib::idle_add_local(move || match srx.try_recv() {
@@ -124,9 +125,9 @@ impl MarathonView {
                 let alloc = card_for_icon.allocation();
                 let paintable = gtk::WidgetPaintable::new(Some(&card_for_icon));
                 drag.set_icon(Some(&paintable), alloc.width() / 2, alloc.height() / 2);
-                Some(gtk::gdk::ContentProvider::for_value(
-                    &glib::Value::from(src_id.to_string()),
-                ))
+                Some(gtk::gdk::ContentProvider::for_value(&glib::Value::from(
+                    src_id.to_string(),
+                )))
             });
             let card_dim = card_box.clone();
             drag.connect_drag_begin(move |_, _| {
@@ -156,12 +157,21 @@ impl MarathonView {
             let chk = gtk::CheckButton::new();
             chk.set_active(item.completed);
             chk.set_valign(gtk::Align::Center);
-            chk.set_tooltip_text(Some(if item.completed { "Tamamlandı olarak işaretli" } else { "Tamamlandı olarak işaretle" }));
+            chk.set_tooltip_text(Some(if item.completed {
+                "Tamamlandı olarak işaretli"
+            } else {
+                "Tamamlandı olarak işaretle"
+            }));
             let tid = item.title.id;
             let on_t_c = on_toggle_rc.clone();
             let chk_guard = Rc::new(std::cell::Cell::new(false));
             let chk_guard_c = chk_guard.clone();
-            chk.connect_toggled(move |_| { if chk_guard_c.get() { return; } on_t_c(tid); });
+            chk.connect_toggled(move |_| {
+                if chk_guard_c.get() {
+                    return;
+                }
+                on_t_c(tid);
+            });
 
             let pic = gtk::Picture::new();
             pic.set_width_request(48);
@@ -184,9 +194,19 @@ impl MarathonView {
             name_lbl.set_wrap(false);
             name_lbl.set_single_line_mode(true);
             name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            if item.completed { name_lbl.add_css_class("dim-label"); }
-            let status_badge = gtk::Label::new(Some(if item.completed { "🏁 Tamamlandı" } else { "⏳ Devam Ediyor" }));
-            status_badge.add_css_class(if item.completed { "status-badge-completed" } else { "status-badge-progress" });
+            if item.completed {
+                name_lbl.add_css_class("dim-label");
+            }
+            let status_badge = gtk::Label::new(Some(if item.completed {
+                "🏁 Tamamlandı"
+            } else {
+                "⏳ Devam Ediyor"
+            }));
+            status_badge.add_css_class(if item.completed {
+                "status-badge-completed"
+            } else {
+                "status-badge-progress"
+            });
             title_row.append(&name_lbl);
             title_row.append(&status_badge);
             info_box.append(&title_row);
@@ -200,7 +220,9 @@ impl MarathonView {
             let client_c = client.clone();
             let t_c = item.title.clone();
             let (tx, rx) = std::sync::mpsc::channel::<f64>();
-            std::thread::spawn(move || { let _ = tx.send(client_c.title_progress_frac(&t_c)); });
+            std::thread::spawn(move || {
+                let _ = tx.send(client_c.title_progress_frac(&t_c));
+            });
             let chk_u = chk.clone();
             let badge_u = status_badge.clone();
             let name_u = name_lbl.clone();
@@ -212,15 +234,31 @@ impl MarathonView {
                     guard_u.set(true);
                     chk_u.set_active(done);
                     guard_u.set(false);
-                    chk_u.set_tooltip_text(Some(if done { "Tamamlandı olarak işaretli" } else { "Tamamlandı olarak işaretle" }));
-                    badge_u.set_text(if done { "🏁 Tamamlandı" } else { "⏳ Devam Ediyor" });
+                    chk_u.set_tooltip_text(Some(if done {
+                        "Tamamlandı olarak işaretli"
+                    } else {
+                        "Tamamlandı olarak işaretle"
+                    }));
+                    badge_u.set_text(if done {
+                        "🏁 Tamamlandı"
+                    } else {
+                        "⏳ Devam Ediyor"
+                    });
                     badge_u.remove_css_class("status-badge-completed");
                     badge_u.remove_css_class("status-badge-progress");
-                    badge_u.add_css_class(if done { "status-badge-completed" } else { "status-badge-progress" });
-                    if done { name_u.add_css_class("dim-label"); } else { name_u.remove_css_class("dim-label"); }
+                    badge_u.add_css_class(if done {
+                        "status-badge-completed"
+                    } else {
+                        "status-badge-progress"
+                    });
+                    if done {
+                        name_u.add_css_class("dim-label");
+                    } else {
+                        name_u.remove_css_class("dim-label");
+                    }
                     glib::ControlFlow::Break
                 }
-                Err(_)   => glib::ControlFlow::Continue,
+                Err(_) => glib::ControlFlow::Continue,
             });
 
             let actions = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -339,7 +377,9 @@ impl HistoryView {
             chk.connect_toggled(move |b| {
                 let mut ids = sel_clone.borrow_mut();
                 if b.is_active() {
-                    if !ids.contains(&tid) { ids.push(tid); }
+                    if !ids.contains(&tid) {
+                        ids.push(tid);
+                    }
                 } else {
                     ids.retain(|&id| id != tid);
                 }
@@ -458,7 +498,10 @@ impl SettingsView {
         let ep_shortcuts = &["/", "Ctrl+F", "F3"];
         let ep_shortcut_model = gtk::StringList::new(ep_shortcuts);
         shortcut_row.set_model(Some(&ep_shortcut_model));
-        let current_ep_sc = ep_shortcuts.iter().position(|&s| s == settings.quick_search_shortcut).unwrap_or(0);
+        let current_ep_sc = ep_shortcuts
+            .iter()
+            .position(|&s| s == settings.quick_search_shortcut)
+            .unwrap_or(0);
         shortcut_row.set_selected(current_ep_sc as u32);
         shortcut_row.set_sensitive(settings.quick_search_enabled);
 
@@ -475,7 +518,10 @@ impl SettingsView {
         let search_shortcuts = &["Ctrl+S", "F2", "/"];
         let search_sc_model = gtk::StringList::new(search_shortcuts);
         search_sc_row.set_model(Some(&search_sc_model));
-        let current_sc = search_shortcuts.iter().position(|&s| s == settings.search_shortcut).unwrap_or(0);
+        let current_sc = search_shortcuts
+            .iter()
+            .position(|&s| s == settings.search_shortcut)
+            .unwrap_or(0);
         search_sc_row.set_selected(current_sc as u32);
         search_group.add(&search_sc_row);
         root.append(&search_group);
@@ -560,6 +606,13 @@ impl SettingsView {
             settings.play_ask_quality,
         );
         player_group.add(&play_q_row);
+
+        let (auto_next_row, auto_next_sw) = crate::ui::components::switch_row(
+            "Otomatik Sonraki Bölüm",
+            "Bölüm bitince sıradakini kendiliğinden açar (kapalıysa mpv'de 'n'/'p' ile geçilir)",
+            settings.auto_next,
+        );
+        player_group.add(&auto_next_row);
         root.append(&player_group);
 
         let perf_group = adw::PreferencesGroup::new();
@@ -575,7 +628,14 @@ impl SettingsView {
         let patience_row = adw::ActionRow::new();
         patience_row.set_title("Kaynak Açılış Sabrı");
         patience_row.set_subtitle("Yavaş internet için artırın. Medya hiç açılmazsa ölü kaynakta bu kadar saniye (20-120) beklenir, sonra sıradakine geçilir.");
-        let patience_adj = gtk::Adjustment::new(settings.source_patience_secs as f64, 20.0, 120.0, 5.0, 10.0, 0.0);
+        let patience_adj = gtk::Adjustment::new(
+            settings.source_patience_secs as f64,
+            20.0,
+            120.0,
+            5.0,
+            10.0,
+            0.0,
+        );
         let patience_spin = gtk::SpinButton::new(Some(&patience_adj), 1.0, 0);
         patience_spin.set_numeric(true);
         patience_spin.set_value(settings.source_patience_secs as f64);
@@ -625,8 +685,13 @@ impl SettingsView {
 
         let cover_q_row = adw::ComboRow::new();
         cover_q_row.set_title("Kapak Kalitesi");
-        cover_q_row.set_subtitle("Liste ve film kapaklarının indirilen çözünürlüğü (değişim anında uygulanır)");
-        let cover_q_names: Vec<&str> = crate::api::COVER_QUALITIES.iter().map(|(_, n)| *n).collect();
+        cover_q_row.set_subtitle(
+            "Liste ve film kapaklarının indirilen çözünürlüğü (değişim anında uygulanır)",
+        );
+        let cover_q_names: Vec<&str> = crate::api::COVER_QUALITIES
+            .iter()
+            .map(|(_, n)| *n)
+            .collect();
         cover_q_row.set_model(Some(&gtk::StringList::new(&cover_q_names)));
         cover_q_row.set_selected(
             crate::api::COVER_QUALITIES
@@ -674,12 +739,24 @@ impl SettingsView {
 
         let on_save = Rc::new(on_save);
 
+        let update_supported = crate::update::self_update_supported();
+        let update_desc = match crate::update::install_kind() {
+            crate::update::InstallKind::AppImage => {
+                "Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller"
+            }
+            crate::update::InstallKind::Deb | crate::update::InstallKind::Rpm => {
+                "Başlatmada yeni sürümü kontrol eder; paketi indirip sistem paket yöneticisiyle kurar (yetki istenir)"
+            }
+            crate::update::InstallKind::Unknown => {
+                "Yalnızca AppImage, .deb veya .rpm kurulumlarında kullanılabilir"
+            }
+        };
         let (auto_update_row, auto_update_sw) = crate::ui::components::switch_row(
             "Otomatik Güncelleme",
-            "Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller",
+            update_desc,
             settings.auto_update,
         );
-        auto_update_row.set_sensitive(crate::update::is_appimage());
+        auto_update_row.set_sensitive(update_supported);
         update_group.add(&auto_update_row);
 
         let (notify_row, notify_sw) = crate::ui::components::switch_row(
@@ -687,14 +764,14 @@ impl SettingsView {
             "Başlatmada güncel sürümdeyken bilgilendirme göster",
             settings.notify_uptodate,
         );
-        notify_row.set_sensitive(crate::update::is_appimage());
+        notify_row.set_sensitive(update_supported);
         update_group.add(&notify_row);
 
         let check_btn = gtk::Button::with_label("Şimdi Güncelle");
         check_btn.add_css_class("flat");
         check_btn.add_css_class("pill");
         check_btn.set_margin_top(4);
-        check_btn.set_sensitive(crate::update::is_appimage());
+        check_btn.set_sensitive(update_supported);
         let check_btn_c = check_btn.clone();
         let settings_for_suppress = settings.clone();
         let on_save_suppress = on_save.clone();
@@ -730,6 +807,7 @@ impl SettingsView {
             let ih_r = intro_hint_sw.clone();
             let mh_r = music_hint_sw.clone();
             let pq_r = play_q_sw.clone();
+            let an_r = auto_next_sw.clone();
             let au_r = auto_update_sw.clone();
             let notify_r = notify_sw.clone();
             let up_r = upscale_row.clone();
@@ -766,6 +844,7 @@ impl SettingsView {
                 updated.show_intro_hint = ih_r.is_active();
                 updated.show_music_hint = mh_r.is_active();
                 updated.play_ask_quality = pq_r.is_active();
+                updated.auto_next = an_r.is_active();
                 updated.auto_update = au_r.is_active();
                 updated.notify_uptodate = notify_r.is_active();
                 updated.upscale = match up_r.selected() {
@@ -811,6 +890,8 @@ impl SettingsView {
         music_hint_sw.connect_active_notify(move |_| sa5b());
         let sa5c = save_all.clone();
         play_q_sw.connect_active_notify(move |_| sa5c());
+        let sa5d = save_all.clone();
+        auto_next_sw.connect_active_notify(move |_| sa5d());
         let sa6 = save_all.clone();
         auto_update_sw.connect_active_notify(move |_| sa6());
         let sa7 = save_all.clone();
@@ -831,7 +912,9 @@ impl SettingsView {
         let dl_dir_row = adw::ActionRow::new();
         dl_dir_row.set_title("İndirme Klasörü");
         let initial_dl = s_base.download_dir.clone().unwrap_or_else(|| {
-            crate::download::default_download_dir().to_string_lossy().into_owned()
+            crate::download::default_download_dir()
+                .to_string_lossy()
+                .into_owned()
         });
         dl_dir_row.set_subtitle(&initial_dl);
         let dl_pick = gtk::Button::with_label("Değiştir");
@@ -933,7 +1016,10 @@ impl SettingsView {
 
         let ver_row = adw::ActionRow::new();
         ver_row.set_title("Sürüm Numarası");
-        ver_row.set_subtitle(&format!("AnimeciX Masaüstü İstemcisi  •  v{}", env!("CARGO_PKG_VERSION")));
+        ver_row.set_subtitle(&format!(
+            "AnimeciX Masaüstü İstemcisi  •  v{}",
+            env!("CARGO_PKG_VERSION")
+        ));
 
         let ver_badge = gtk::Label::new(Some("Güncel ✓"));
         ver_badge.add_css_class("status-badge-completed");
@@ -941,7 +1027,8 @@ impl SettingsView {
         ver_row.add_suffix(&ver_badge);
         info_group.add(&ver_row);
 
-        let reinstall_btn = gtk::Button::with_label("Masaüstü Başlatıcısını Sistemime Kur / Güncelle");
+        let reinstall_btn =
+            gtk::Button::with_label("Masaüstü Başlatıcısını Sistemime Kur / Güncelle");
         reinstall_btn.add_css_class("flat");
         reinstall_btn.add_css_class("pill");
         reinstall_btn.set_margin_top(4);
@@ -980,7 +1067,8 @@ impl SettingsView {
         // Grup başlığı her satırın metnine katılır; satırı kalmayan grup gizlenir.
         // NOT: AdwPreferencesGroup'un ilk çocuğu satırlar değil iç kutudur;
         // satırlar ListBox içinde derinde durur — o yüzden özyinelemeli toplanır.
-        let mut search_groups: Vec<(adw::PreferencesGroup, Vec<(gtk::Widget, String)>)> = Vec::new();
+        let mut search_groups: Vec<(adw::PreferencesGroup, Vec<(gtk::Widget, String)>)> =
+            Vec::new();
         let mut gc = root.first_child();
         while let Some(c) = gc {
             let next = c.next_sibling();
@@ -1047,8 +1135,7 @@ pub fn tr_fold(s: &str) -> String {
 /// Satırın içine girilmez (anahtar/suffix ayrıca indekslenmez); başlık
 /// etiketleri atlanır (grup başlığı her satırın metnine ayrıca katılır).
 fn collect_searchable(w: &gtk::Widget, out: &mut Vec<gtk::Widget>) {
-    if w.clone().downcast::<adw::ActionRow>().is_ok()
-        || w.clone().downcast::<gtk::Button>().is_ok()
+    if w.clone().downcast::<adw::ActionRow>().is_ok() || w.clone().downcast::<gtk::Button>().is_ok()
     {
         out.push(w.clone());
         return;

@@ -78,8 +78,8 @@ pub fn sanitize_filename(s: &str) -> String {
     out = out.split_whitespace().collect::<Vec<_>>().join(" ");
     out = out.trim_matches(|c| c == '.' || c == ' ').to_string();
     const RESERVED: [&str; 22] = [
-        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7",
-        "COM8", "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
     ];
     if RESERVED.contains(&out.to_uppercase().as_str()) {
         out.push('_');
@@ -93,7 +93,7 @@ pub fn sanitize_filename(s: &str) -> String {
         end -= 1;
     }
     out.truncate(end);
-    out.trim_end_matches(|c| c == '.' || c == ' ').to_string()
+    out.trim_end_matches(['.', ' ']).to_string()
 }
 
 /// Bölüm dosya adı: `S01E02 - Ad [Fansub][1080p].mp4`.
@@ -121,7 +121,11 @@ pub fn range_header(have: u64) -> Option<String> {
 
 /// Hedef dizinde boş alan (bayt). Öğrenilemezse None.
 pub fn free_space(path: &Path) -> Option<u64> {
-    let anchor = if path.exists() { path.to_path_buf() } else { path.parent()?.to_path_buf() };
+    let anchor = if path.exists() {
+        path.to_path_buf()
+    } else {
+        path.parent()?.to_path_buf()
+    };
     let c = std::ffi::CString::new(anchor.to_string_lossy().as_bytes()).ok()?;
     let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
     if unsafe { libc::statvfs(c.as_ptr(), &mut stat) } != 0 {
@@ -186,9 +190,8 @@ pub fn start_download(
                     ) {
                         Ok(()) => {
                             if std::fs::rename(&part, &dest_final).is_err() {
-                                let _ = tx.send(DownloadEvent::Error(
-                                    "tamamlama (rename) hatası".into(),
-                                ));
+                                let _ = tx
+                                    .send(DownloadEvent::Error("tamamlama (rename) hatası".into()));
                                 return;
                             }
                             let _ = tx.send(DownloadEvent::Progress(total, total));
@@ -228,7 +231,7 @@ pub fn start_download(
             return;
         }
         let total = resp.content_length().unwrap_or(0);
-        let total = if resume { total + have } else { have.max(0) + total };
+        let total = if resume { total + have } else { have + total };
         let mut file = match std::fs::OpenOptions::new()
             .create(true)
             .write(true)
@@ -315,16 +318,19 @@ pub fn build_record(
     label: &str,
     url: &str,
 ) -> DownloadRecord {
-    let label = if label.is_empty() { "en iyi".to_string() } else { label.to_string() };
+    let label = if label.is_empty() {
+        "en iyi".to_string()
+    } else {
+        label.to_string()
+    };
     let dest = base_dir.join(series).join(episode_filename(
-        ep.season,
-        ep.episode,
-        &ep.name,
-        &fs.name,
-        &label,
+        ep.season, ep.episode, &ep.name, &fs.name, &label,
     ));
     DownloadRecord {
-        id: format!("{series}:S{:02}E{:02}:{}", ep.season, ep.episode, fs.template_id),
+        id: format!(
+            "{series}:S{:02}E{:02}:{}",
+            ep.season, ep.episode, fs.template_id
+        ),
         title: series.to_string(),
         season: ep.season,
         episode: ep.episode,
@@ -354,7 +360,11 @@ pub fn resolve_for_download(
     for m in &fs.mirrors {
         match client.resolve_mirror_quality_strict(&m.url, quality) {
             Ok((label, url)) => {
-                let label = if label.is_empty() { quality.to_string() } else { label };
+                let label = if label.is_empty() {
+                    quality.to_string()
+                } else {
+                    label
+                };
                 return Ok(build_record(base_dir, series, ep, fs, &label, &url));
             }
             Err(e) => last_err = e,
@@ -387,12 +397,20 @@ pub fn save_queue(path: &Path, items: &[DownloadRecord]) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    std::fs::write(path, serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?)
-        .map_err(|e| e.to_string())
+    std::fs::write(
+        path,
+        serde_json::to_string_pretty(&v).map_err(|e| e.to_string())?,
+    )
+    .map_err(|e| e.to_string())
 }
 
-pub fn load_queue(path: &Path) -> Vec<DownloadRecord> {    let Ok(bytes) = std::fs::read(path) else { return Vec::new() };
-    let Ok(v) = serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) else { return Vec::new() };
+pub fn load_queue(path: &Path) -> Vec<DownloadRecord> {
+    let Ok(bytes) = std::fs::read(path) else {
+        return Vec::new();
+    };
+    let Ok(v) = serde_json::from_slice::<Vec<serde_json::Value>>(&bytes) else {
+        return Vec::new();
+    };
     v.iter()
         .filter_map(|r| {
             let status = match r["status"].as_str().unwrap_or("queued") {
@@ -462,7 +480,8 @@ pub fn default_download_dir() -> PathBuf {
     let base = glib::user_special_dir(glib::UserDirectory::Videos)
         .filter(|p| !p.as_os_str().is_empty())
         .unwrap_or_else(|| {
-            PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string())).join("Videos")
+            PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
+                .join("Videos")
         });
     base.join("Animecix")
 }
@@ -539,7 +558,11 @@ impl DownloadManager {
     }
 
     pub fn snapshot(&self) -> Vec<DownloadRecord> {
-        self.inner.queue.lock().map(|q| q.clone()).unwrap_or_default()
+        self.inner
+            .queue
+            .lock()
+            .map(|q| q.clone())
+            .unwrap_or_default()
     }
 
     /// Kuyruğa ekler (aynı hedef zaten sıradaysa tekrar eklemez).
@@ -579,7 +602,10 @@ impl DownloadManager {
         }
         if let Ok(mut q) = self.inner.queue.lock() {
             if let Some(r) = q.iter_mut().find(|r| r.id == id) {
-                if matches!(r.status, DownloadStatus::Downloading | DownloadStatus::Queued) {
+                if matches!(
+                    r.status,
+                    DownloadStatus::Downloading | DownloadStatus::Queued
+                ) {
                     r.status = DownloadStatus::Paused;
                 }
             }
@@ -652,7 +678,9 @@ impl DownloadManager {
     /// Paralellik üst sınırını günceller (1-32). Artırım bekleyen işleri
     /// hemen başlatır; azaltım devam edenleri bölmez, yeni alımı kısar.
     pub fn set_max_parallel(&self, n: usize) {
-        self.inner.max_parallel.store(n.clamp(1, 32), Ordering::SeqCst);
+        self.inner
+            .max_parallel
+            .store(n.clamp(1, 32), Ordering::SeqCst);
         self.ensure_worker();
     }
 
@@ -690,7 +718,12 @@ impl DownloadManager {
     fn run_job(&self, rec: DownloadRecord) {
         // Kademeli başlatma: aynı saniyedeki SYN/TLS yığınını dağıt
         // (leaky-bucket kısıtlaması tetiklenmesin). İlk iş beklemez.
-        let sibs = self.inner.active.load(Ordering::SeqCst).saturating_sub(1).min(3);
+        let sibs = self
+            .inner
+            .active
+            .load(Ordering::SeqCst)
+            .saturating_sub(1)
+            .min(3);
         if sibs > 0 {
             std::thread::sleep(std::time::Duration::from_secs(2 * sibs as u64));
         }
@@ -709,7 +742,13 @@ impl DownloadManager {
             let (tx, rx) = mpsc::channel();
             // aria2c varsa çok bağlantı, yoksa iç motor (imza/olay sözleşmesi aynı).
             let handle = if crate::aria::find_aria2c().is_some() {
-                crate::aria::start_download_aria(&rec.url, rec.referer.as_deref(), &rec.dest, tx, segs as u32)
+                crate::aria::start_download_aria(
+                    &rec.url,
+                    rec.referer.as_deref(),
+                    &rec.dest,
+                    tx,
+                    segs as u32,
+                )
             } else {
                 start_download(&rec.url, rec.referer.as_deref(), &rec.dest, tx, segs)
             };
@@ -732,13 +771,21 @@ impl DownloadManager {
                         }
                         this.save();
                         this.emit(UiEvent::Changed);
-                        this.emit(UiEvent::Toast(format!("İndi: {}", rec.dest.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default())));
+                        this.emit(UiEvent::Toast(format!(
+                            "İndi: {}",
+                            rec.dest
+                                .file_name()
+                                .map(|n| n.to_string_lossy().into_owned())
+                                .unwrap_or_default()
+                        )));
                         break;
                     }
                     DownloadEvent::Cancelled => {
                         this.set_progress(
                             &rec.id,
-                            std::fs::metadata(rec.dest.with_extension("mp4.part")).map(|m| m.len()).unwrap_or(0),
+                            std::fs::metadata(rec.dest.with_extension("mp4.part"))
+                                .map(|m| m.len())
+                                .unwrap_or(0),
                             rec.total,
                         );
                         this.set_status(&rec.id, DownloadStatus::Paused);
@@ -795,8 +842,14 @@ mod tests {
 
     #[test]
     fn sanitize_filename_keeps_turkish_drops_separators() {
-        assert_eq!(sanitize_filename("Gün Batımı: Bölüm/1?"), "Gün Batımı_ Bölüm_1_");
-        assert_eq!(sanitize_filename("Kaoru Hana wa Rin to Saku"), "Kaoru Hana wa Rin to Saku");
+        assert_eq!(
+            sanitize_filename("Gün Batımı: Bölüm/1?"),
+            "Gün Batımı_ Bölüm_1_"
+        );
+        assert_eq!(
+            sanitize_filename("Kaoru Hana wa Rin to Saku"),
+            "Kaoru Hana wa Rin to Saku"
+        );
         assert_eq!(sanitize_filename("CON"), "CON_");
         assert_eq!(sanitize_filename("..."), "video");
         assert_eq!(sanitize_filename(""), "video");
@@ -809,7 +862,11 @@ mod tests {
     }
 
     fn test_ep() -> crate::api::Episode {
-        crate::api::Episode { season: 1, episode: 2, name: "Bölüm".into() }
+        crate::api::Episode {
+            season: 1,
+            episode: 2,
+            name: "Bölüm".into(),
+        }
     }
 
     fn test_fs() -> crate::api::FansubInfo {
@@ -830,18 +887,43 @@ mod tests {
     fn build_record_field_placement_regression() {
         // Regresyon: (etiket, url) sırası karışırsa kaliteye URL, url'ye
         // etiket düşer ve indirme "builder error" verir.
-        let r = build_record(Path::new("/tmp/x"), "Dizi", &test_ep(), &test_fs(), "1080p", "https://cdn/v.mp4");
+        let r = build_record(
+            Path::new("/tmp/x"),
+            "Dizi",
+            &test_ep(),
+            &test_fs(),
+            "1080p",
+            "https://cdn/v.mp4",
+        );
         assert_eq!(r.quality, "1080p", "kalite etikettir: {}", r.quality);
         assert_eq!(r.url, "https://cdn/v.mp4", "url adrestir: {}", r.url);
-        assert!(r.dest.to_string_lossy().ends_with("[1080p].mp4"), "dosya adı: {}", r.dest.display());
-        let r2 = build_record(Path::new("/tmp/x"), "Dizi", &test_ep(), &test_fs(), "", "https://cdn/v.mp4");
+        assert!(
+            r.dest.to_string_lossy().ends_with("[1080p].mp4"),
+            "dosya adı: {}",
+            r.dest.display()
+        );
+        let r2 = build_record(
+            Path::new("/tmp/x"),
+            "Dizi",
+            &test_ep(),
+            &test_fs(),
+            "",
+            "https://cdn/v.mp4",
+        );
         assert_eq!(r2.quality, "en iyi");
         assert_eq!(r2.url, "https://cdn/v.mp4");
     }
 
     #[test]
     fn build_record_fills_ep_name() {
-        let r = build_record(Path::new("/tmp/x"), "Dizi", &test_ep(), &test_fs(), "1080p", "https://cdn/v.mp4");
+        let r = build_record(
+            Path::new("/tmp/x"),
+            "Dizi",
+            &test_ep(),
+            &test_fs(),
+            "1080p",
+            "https://cdn/v.mp4",
+        );
         assert_eq!(r.ep_name, "Bölüm", "bölüm adı ep.name'den gelmeli");
     }
 
@@ -894,7 +976,8 @@ mod tests {
     }
 
     #[test]
-    fn sibnet_referer_shapes() {        assert_eq!(
+    fn sibnet_referer_shapes() {
+        assert_eq!(
             sibnet_referer("https://video.sibnet.ru/v/abc123/1.mp4").as_deref(),
             Some("https://video.sibnet.ru/shell.php?videoid=1")
         );
@@ -902,7 +985,8 @@ mod tests {
     }
 
     #[test]
-    fn fmt_bytes_shapes() {        assert_eq!(fmt_bytes(0), "0 B");
+    fn fmt_bytes_shapes() {
+        assert_eq!(fmt_bytes(0), "0 B");
         assert_eq!(fmt_bytes(512), "512 B");
         assert_eq!(fmt_bytes(1536), "1.5 KB");
         assert_eq!(fmt_bytes(5 * 1024 * 1024), "5.0 MB");
@@ -910,7 +994,8 @@ mod tests {
     }
 
     #[test]
-    fn range_header_shapes() {        assert_eq!(range_header(0), None);
+    fn range_header_shapes() {
+        assert_eq!(range_header(0), None);
         assert_eq!(range_header(12345).as_deref(), Some("bytes=12345-"));
     }
 
@@ -977,7 +1062,10 @@ mod tests {
                     std::thread::sleep(std::time::Duration::from_millis(300));
                     let body = vec![0xCDu8; LEN];
                     let _ = s.write_all(
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n").as_bytes(),
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
                     );
                     let _ = s.write_all(&body);
                     cc.fetch_sub(1, O::SeqCst);
@@ -1003,19 +1091,29 @@ mod tests {
         let t0 = std::time::Instant::now();
         loop {
             let snap = m.snapshot();
-            if snap.iter().all(|r| matches!(r.status, DownloadStatus::Done)) {
+            if snap
+                .iter()
+                .all(|r| matches!(r.status, DownloadStatus::Done))
+            {
                 break;
             }
             assert!(
-                !snap.iter().any(|r| matches!(r.status, DownloadStatus::Error(_))),
+                !snap
+                    .iter()
+                    .any(|r| matches!(r.status, DownloadStatus::Error(_))),
                 "hata olmamalı: {snap:?}"
             );
-            assert!(t0.elapsed() < std::time::Duration::from_secs(30), "takıldı: {snap:?}");
+            assert!(
+                t0.elapsed() < std::time::Duration::from_secs(30),
+                "takıldı: {snap:?}"
+            );
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         for id in ["a", "b", "c"] {
             assert_eq!(
-                std::fs::metadata(dir.join(format!("{id}.mp4"))).unwrap().len(),
+                std::fs::metadata(dir.join(format!("{id}.mp4")))
+                    .unwrap()
+                    .len(),
                 LEN as u64
             );
         }
@@ -1052,7 +1150,10 @@ mod tests {
                     }
                     let body = vec![0xCEu8; LEN];
                     let _ = s.write_all(
-                        format!("HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n").as_bytes(),
+                        format!(
+                            "HTTP/1.1 200 OK\r\nContent-Length: {LEN}\r\nConnection: close\r\n\r\n"
+                        )
+                        .as_bytes(),
                     );
                     let _ = s.write_all(&body);
                 });
@@ -1075,7 +1176,9 @@ mod tests {
         let t0 = std::time::Instant::now();
         loop {
             let snap = m.snapshot();
-            let fast_done = snap.iter().any(|r| r.id == "fast" && matches!(r.status, DownloadStatus::Done));
+            let fast_done = snap
+                .iter()
+                .any(|r| r.id == "fast" && matches!(r.status, DownloadStatus::Done));
             let slows_gone = snap
                 .iter()
                 .filter(|r| r.id == "slow1" || r.id == "slow2")
@@ -1098,7 +1201,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Yerel mini sunucu: tam indirme + progress + resume (206) kanıtı.    #[test]
+    /// Yerel mini sunucu: tam indirme + progress + resume (206) kanıtı.
+    /// NOT: `#[test]` eskiden doc-satırına gömülü kaldığından test hiç
+    /// koşmuyordu (ölü-kod kapısı yakaladı).
+    #[test]
     fn download_full_and_resume_against_local_server() {
         use std::io::{Read, Write};
         use std::net::TcpListener;
@@ -1106,36 +1212,56 @@ mod tests {
 
         static BODY_LEN: usize = 300_000;
         let listener = TcpListener::bind("127.0.0.1:0").expect("dinle");
+        listener.set_nonblocking(true).expect("nonblocking");
         let port = listener.local_addr().unwrap().port();
         let hits = Arc::new(AtomicUsize::new(0));
         let hits_r = hits.clone();
+        // NOT: istemci HEAD + Range-yoklama + GET açar (probe_len sonrası
+        // en az 3 bağlantı); `take(2)` çürümüştü. Sunucu süre-bitiminde
+        // çıkar, `join` takılmaz.
         let server = std::thread::spawn(move || {
-            for stream in listener.incoming().take(2) {
-                let Ok(mut s) = stream else { continue };
-                hits_r.fetch_add(1, O::Relaxed);
-                let mut buf = vec![0u8; 4096];
-                let n = s.read(&mut buf).unwrap_or(0);
-                let req: String = String::from_utf8_lossy(&buf[..n]).into_owned();
-                let range = req
-                    .lines()
-                    .find_map(|l| l.strip_prefix("Range: bytes="))
-                    .and_then(|v| v.trim_end_matches(['\r', '-']).parse::<usize>().ok());
-                let (status, start) = match range {
-                    Some(st) if st < BODY_LEN => ("206 Partial Content", st),
-                    _ => ("200 OK", 0),
-                };
-                let body_len = BODY_LEN - start;
-                let head = if status.starts_with("206") {
-                    format!(
-                        "HTTP/1.1 206 Partial Content\r\nContent-Length: {body_len}\r\nContent-Range: bytes {start}-{}/{BODY_LEN}\r\nConnection: close\r\n\r\n",
-                        BODY_LEN - 1
-                    )
-                } else {
-                    format!("HTTP/1.1 200 OK\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n")
-                };
-                let _ = s.write_all(head.as_bytes());
-                let body = vec![0xABu8; body_len];
-                let _ = s.write_all(&body);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(20);
+            loop {
+                match listener.accept() {
+                    Ok((mut s, _)) => {
+                        hits_r.fetch_add(1, O::Relaxed);
+                        let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(5)));
+                        let mut buf = vec![0u8; 4096];
+                        let n = s.read(&mut buf).unwrap_or(0);
+                        let req: String = String::from_utf8_lossy(&buf[..n]).into_owned();
+                        let range = req
+                            .lines()
+                            .find_map(|l| l.strip_prefix("Range: bytes="))
+                            .and_then(|v| v.split('-').next())
+                            .and_then(|v| v.trim().parse::<usize>().ok());
+                        let (status, start) = match range {
+                            Some(st) if st < BODY_LEN => ("206 Partial Content", st),
+                            _ => ("200 OK", 0),
+                        };
+                        let body_len = BODY_LEN - start;
+                        let head = if status.starts_with("206") {
+                            format!(
+                                "HTTP/1.1 206 Partial Content\r\nContent-Length: {body_len}\r\nContent-Range: bytes {start}-{}/{BODY_LEN}\r\nConnection: close\r\n\r\n",
+                                BODY_LEN - 1
+                            )
+                        } else {
+                            format!("HTTP/1.1 200 OK\r\nContent-Length: {body_len}\r\nConnection: close\r\n\r\n")
+                        };
+                        let _ = s.write_all(head.as_bytes());
+                        // HEAD'e gövde yazılmaz (istemci okumaz, tıkanma olur).
+                        if !req.starts_with("HEAD") {
+                            let body = vec![0xABu8; body_len];
+                            let _ = s.write_all(&body);
+                        }
+                    }
+                    Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                        if hits_r.load(O::Relaxed) >= 4 || std::time::Instant::now() > deadline {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(20));
+                    }
+                    Err(_) => break,
+                }
             }
         });
 
@@ -1153,13 +1279,20 @@ mod tests {
         for ev in rx.iter() {
             match ev {
                 DownloadEvent::Progress(a, b) => last = (a, b),
-                DownloadEvent::Done => { done = true; break; }
+                DownloadEvent::Done => {
+                    done = true;
+                    break;
+                }
                 DownloadEvent::Error(e) => panic!("indirme hatası: {e}"),
                 DownloadEvent::Cancelled => panic!("beklenmedik iptal"),
             }
         }
         assert!(done);
-        assert_eq!(last, (BODY_LEN as u64, BODY_LEN as u64), "progress: {last:?}");
+        assert_eq!(
+            last,
+            (BODY_LEN as u64, BODY_LEN as u64),
+            "progress: {last:?}"
+        );
         assert_eq!(std::fs::metadata(&dest).unwrap().len(), BODY_LEN as u64);
 
         // 2) yarım .part + resume.
@@ -1170,7 +1303,10 @@ mod tests {
         let mut done2 = false;
         for ev in rx2.iter() {
             match ev {
-                DownloadEvent::Done => { done2 = true; break; }
+                DownloadEvent::Done => {
+                    done2 = true;
+                    break;
+                }
                 DownloadEvent::Error(e) => panic!("resume hatası: {e}"),
                 _ => {}
             }
@@ -1264,7 +1400,10 @@ mod tests {
                 .filter(|r| !matches!(r.status, DownloadStatus::Queued))
                 .count();
             if admitted >= 2 || t0.elapsed() > std::time::Duration::from_secs(10) {
-                assert!(admitted >= 2, "iki iş aynı anda başlamalı, admitted={admitted}");
+                assert!(
+                    admitted >= 2,
+                    "iki iş aynı anda başlamalı, admitted={admitted}"
+                );
                 break;
             }
             std::thread::sleep(std::time::Duration::from_millis(50));
@@ -1286,7 +1425,11 @@ mod tests {
         let m = DownloadManager::new(dir.join("q.json"), tx);
         let snap = m.snapshot();
         assert_eq!(snap.len(), 2);
-        assert_eq!(snap[0].status, DownloadStatus::Queued, "yarım iş kuyruğa dönmeli");
+        assert_eq!(
+            snap[0].status,
+            DownloadStatus::Queued,
+            "yarım iş kuyruğa dönmeli"
+        );
         assert_eq!(snap[1].status, DownloadStatus::Done);
         let _ = std::fs::remove_dir_all(&dir);
     }
