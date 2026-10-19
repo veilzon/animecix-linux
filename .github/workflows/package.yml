@@ -99,6 +99,10 @@ jobs:
             mkdir -p "girdi/usr/share/icons/hicolor/${s}x${s}/apps"
             cp "assets/icon-${s}.png" "girdi/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
           done
+          # Gömülü Adwaita seti (60 SVG): sistemde Adwaita yoksa bile ikonlar çalışır.
+          mkdir -p girdi/usr/share/animecix/assets
+          cp -r assets/hicolor girdi/usr/share/animecix/assets/
+          cp assets/ATTRIBUTION-Adwaita.md girdi/usr/share/animecix/ || true
           echo "$VER" > girdi/VER
           find girdi -type f | sort
 
@@ -211,6 +215,7 @@ jobs:
           /usr/bin/animecix
           /usr/share/applications/tr.com.animecix.desktop
           /usr/share/icons/hicolor/*/apps/tr.com.animecix.png
+          /usr/share/animecix
           EOF
           rpmbuild -bb --define "_topdir $PWD/rpmbuild" --buildroot "$PWD/iskele" "$PWD/rpmbuild/SPECS/animecix.spec"
           find "$PWD/rpmbuild/RPMS" -name '*.rpm' -exec cp {} ./ \;
