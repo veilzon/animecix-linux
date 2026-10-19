@@ -225,7 +225,9 @@ jobs:
         run: |
           RPM=$(ls ./animecix-*.x86_64.rpm | head -n 1)
           echo "RPM=$RPM"
-          dnf install -y "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
+          # Kanonik URL: mirrors.rpmfusion.org yönlendirmesi ölü aynaya
+          # (repos.eggycrew.com, DNS yok) düşüyordu.
+          dnf install -y "https://download1.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm"
           dnf install -y "./$RPM"
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
