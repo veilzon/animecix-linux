@@ -109,6 +109,51 @@ fn rpm_package_installed() -> bool {
         .unwrap_or(false)
 }
 
+/// Test kancası: kurulu paket sürümünü taklit eder (yalnız debug derleme).
+fn fake_pkg_version_env() -> Option<String> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    std::env::var("ANIMECIX_FAKE_PKG_VERSION")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+}
+
+/// Paket kurulumlarında güncelleme karşılaştırmasının tabanı: kurulu paket
+/// sürümü. Böylece bayat bir ikili çalışsa bile kurulu sürüm güncel olduğunda
+/// gereksiz uyarı gösterilmez; okunamazsa derleme sürümüne düşülür.
+fn installed_package_version(kind: InstallKind) -> Option<String> {
+    if let Some(v) = fake_pkg_version_env() {
+        return Some(normalize_pkg_version(&v));
+    }
+    let out = match kind {
+        InstallKind::Deb => Command::new("dpkg-query")
+            .args(["-W", "-f=${Version}", "animecix"])
+            .output()
+            .ok()?,
+        InstallKind::Rpm => Command::new("rpm")
+            .args(["-q", "--qf", "%{VERSION}", "animecix"])
+            .output()
+            .ok()?,
+        _ => return None,
+    };
+    if !out.status.success() {
+        return None;
+    }
+    let v = normalize_pkg_version(&String::from_utf8_lossy(&out.stdout));
+    (!v.is_empty()).then_some(v)
+}
+
+/// "v1.2.7-1.fc40" → "1.2.7": yalnız baştaki sayı+nokta parçası alınır.
+fn normalize_pkg_version(raw: &str) -> String {
+    let s = raw.trim();
+    let s = s.strip_prefix('v').unwrap_or(s);
+    let end = s
+        .find(|c: char| !(c.is_ascii_digit() || c == '.'))
+        .unwrap_or(s.len());
+    s[..end].trim_end_matches('.').to_string()
+}
+
 pub fn needs_update(current: &str, latest: &str) -> bool {
     fn parse(v: &str) -> Vec<u32> {
         v.trim_start_matches('v')
@@ -375,13 +420,50 @@ fn run_install(kind: InstallKind, path: &Path) -> Result<(), String> {
     Err(msg)
 }
 
-/// Güncelleme sonrası uygulamayı yeniden başlatır (AppImage yolu veya kendi exe).
+/// Yeniden başlatma kabuğu: `$0` = çalıştırılacak yol. Yeni süreç, eski süreç
+/// D-Bus adını bırakana dek kısa bir gecikmeyle devralır; gecikmesiz spawn
+/// tek-örnek çakışmasında yeni sürecin sessizce kapanmasına yol açıyordu.
+/// Çıktı, teşhis için restart.log'a eklenir.
+const RESTART_SHELL: &str = "mkdir -p \"${XDG_DATA_HOME:-$HOME/.local/share}/animecix\"; \
+sleep 1; exec \"$0\" >>\"${XDG_DATA_HOME:-$HOME/.local/share}/animecix/restart.log\" 2>&1";
+
+/// Verilen yolu, oturumdan koparılmış bir yardımcı kabuk üzerinden yeniden
+/// başlatır (kabuk hemen başlar, hedefi 1 sn sonra devralır).
+pub fn spawn_restart(exe: &Path) {
+    let mut cmd = Command::new("/bin/sh");
+    cmd.arg("-c")
+        .arg(RESTART_SHELL)
+        .arg(exe)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    #[cfg(unix)]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        cmd.pre_exec(|| {
+            libc::setsid();
+            Ok(())
+        });
+    }
+    let _ = cmd.spawn();
+}
+
+/// Güncelleme sonrası uygulamayı yeniden başlatır (AppImage yolu veya sistem
+/// ikilisi). Kendi exe'si yerine /usr/bin/animecix tercih edilir: süreç eski
+/// bir kullanıcı kopyasından çalışsa bile yenisi güncel paketten gelir.
 fn restart_app(appimage_target: Option<&str>) -> ! {
     let exe = match appimage_target {
         Some(p) if !p.trim().is_empty() => PathBuf::from(p),
-        _ => std::env::current_exe().unwrap_or_else(|_| PathBuf::from("animecix")),
+        _ => {
+            let system = PathBuf::from("/usr/bin/animecix");
+            if system.is_file() {
+                system
+            } else {
+                std::env::current_exe().unwrap_or_else(|_| PathBuf::from("animecix"))
+            }
+        }
     };
-    let _ = Command::new(exe).spawn();
+    spawn_restart(&exe);
     std::process::exit(0);
 }
 
@@ -406,7 +488,9 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
     std::thread::spawn(move || {
         let res = (|| -> Result<Option<(String, String, String)>, String> {
             let rel = latest_release()?;
-            if !needs_update(CURRENT_VERSION, &rel.tag_name) {
+            let base =
+                installed_package_version(kind).unwrap_or_else(|| CURRENT_VERSION.to_string());
+            if !needs_update(&base, &rel.tag_name) {
                 return Ok(None);
             }
             let asset = pick_asset(kind, &rel.assets).ok_or_else(|| {
@@ -852,5 +936,86 @@ mod tests {
         let r = download_update("http://127.0.0.1:1/nope", &target, |_, _| {});
         assert!(r.is_err(), "erişilemeyen adres başarısız olmalı");
         std::fs::remove_file(&target).ok();
+    }
+
+    #[test]
+    fn normalize_pkg_version_strips_package_suffixes() {
+        assert_eq!(normalize_pkg_version("1.2.7\n"), "1.2.7");
+        assert_eq!(normalize_pkg_version("v1.2.7"), "1.2.7");
+        assert_eq!(normalize_pkg_version("1.2.7-1.fc40"), "1.2.7");
+        assert_eq!(normalize_pkg_version("1.2.7-1"), "1.2.7");
+        assert_eq!(normalize_pkg_version(" 1.2.7. "), "1.2.7");
+        assert_eq!(normalize_pkg_version("bozuk"), "");
+    }
+
+    #[test]
+    fn restart_shell_execs_target_after_delay() {
+        let dir = std::env::temp_dir().join(format!("animecix-restart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("marker");
+        let fake = dir.join("fake-animecix");
+        std::fs::write(
+            &fake,
+            format!("#!/bin/sh\ntouch \"{}\"\n", marker.display()),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let status = Command::new("/bin/sh")
+            .arg("-c")
+            .arg(RESTART_SHELL)
+            .arg(&fake)
+            .env("XDG_DATA_HOME", &dir)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(marker.is_file(), "hedef çalıştırılmadı");
+        assert!(
+            dir.join("animecix/restart.log").is_file(),
+            "restart.log yazılmadı"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn spawn_restart_starts_target() {
+        let dir =
+            std::env::temp_dir().join(format!("animecix-spawn-restart-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let marker = dir.join("marker");
+        let fake = dir.join("fake-animecix");
+        std::fs::write(
+            &fake,
+            format!("#!/bin/sh\ntouch \"{}\"\n", marker.display()),
+        )
+        .unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        // Log hedefini teste yönlendir; çocuk ortamı spawn anında kopyalanır.
+        let old = std::env::var_os("XDG_DATA_HOME");
+        std::env::set_var("XDG_DATA_HOME", &dir);
+        spawn_restart(&fake);
+        match old {
+            Some(v) => std::env::set_var("XDG_DATA_HOME", v),
+            None => std::env::remove_var("XDG_DATA_HOME"),
+        }
+        let mut started = false;
+        for _ in 0..30 {
+            if marker.is_file() {
+                started = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        assert!(started, "spawn_restart hedefi başlatmadı");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

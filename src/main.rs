@@ -41,7 +41,7 @@ pub fn restart_app() {
         .filter(|p| p.is_file())
         .or_else(|| std::env::current_exe().ok());
     if let Some(exe) = exe {
-        let _ = std::process::Command::new(exe).spawn();
+        update::spawn_restart(&exe);
         std::process::exit(0);
     }
 }
@@ -796,16 +796,39 @@ pub fn stable_appimage_path(home: &str) -> String {
     format!("{home}/.local/bin/{STABLE_APPIMAGE_NAME}")
 }
 
+/// Paket (deb/rpm) kurulumunda sistem ikilisinin yolu.
+pub const SYSTEM_BIN_PATH: &str = "/usr/bin/animecix";
+
+/// Kısayolun çalıştıracağı yol: AppImage'de sabit kopya, paket kurulumunda
+/// sistem ikilisi (/usr/bin/animecix). Eski sürümlerin ~/.local/bin/animecix'e
+/// yaptığı kopya güncelleme sonrası bayat kalıp uyarı döngüsü yarattığı için
+/// artık kullanılmaz.
 pub fn desktop_exec_target(home: &str) -> String {
-    if std::env::var("APPIMAGE")
-        .ok()
-        .filter(|s| !s.trim().is_empty())
-        .is_some()
-    {
-        stable_appimage_path(home)
-    } else {
-        format!("{home}/.local/bin/animecix")
+    let appimage = std::env::var("APPIMAGE").ok();
+    let current = std::env::current_exe().ok();
+    desktop_exec_target_for(
+        appimage.as_deref(),
+        home,
+        std::path::Path::new(SYSTEM_BIN_PATH).is_file(),
+        current.as_deref(),
+    )
+}
+
+fn desktop_exec_target_for(
+    appimage: Option<&str>,
+    home: &str,
+    system_bin_exists: bool,
+    current_exe: Option<&std::path::Path>,
+) -> String {
+    if appimage.filter(|s| !s.trim().is_empty()).is_some() {
+        return stable_appimage_path(home);
     }
+    if system_bin_exists {
+        return SYSTEM_BIN_PATH.to_string();
+    }
+    current_exe
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| format!("{home}/.local/bin/animecix"))
 }
 
 pub fn parse_desktop_exec(path: &str) -> Option<String> {
@@ -844,21 +867,11 @@ pub fn install_desktop_entry() -> Result<(), String> {
             }
         }
     } else {
-        let bin_dir = format!("{home}/.local/bin");
-        let _ = std::fs::create_dir_all(&bin_dir);
-        if let Ok(exe_path) = std::env::current_exe() {
-            if let Ok(bytes) = std::fs::read(&exe_path) {
-                let _ = std::fs::write(&exec_target, &bytes);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::PermissionsExt;
-                    let _ = std::fs::set_permissions(
-                        &exec_target,
-                        std::fs::Permissions::from_mode(0o755),
-                    );
-                }
-            }
-        }
+        // Eski sürümler ikiliyi ~/.local/bin/animecix'e kopyalıyordu; kopya
+        // güncelleme sonrası bayat kalıp "güncelleme var" uyarı döngüsü
+        // yaratıyordu. Kısayol artık sistem ikilisini gösterir; eski kopya
+        // silinir (çalışan dosyayı silmek güvenli, süreç inode'undan devam eder).
+        let _ = std::fs::remove_file(format!("{home}/.local/bin/animecix"));
     }
 
     let apps_dir = format!("{home}/.local/share/applications");
@@ -1055,10 +1068,22 @@ mod tests {
     }
 
     #[test]
-    fn desktop_exec_target_falls_back_to_local_bin() {
-        std::env::remove_var("APPIMAGE");
+    fn desktop_exec_target_prefers_system_binary() {
+        let cur = std::path::Path::new("/home/x/indir/animecix");
         assert_eq!(
-            desktop_exec_target("/home/x"),
+            desktop_exec_target_for(None, "/home/x", true, Some(cur)),
+            "/usr/bin/animecix"
+        );
+        assert_eq!(
+            desktop_exec_target_for(Some("  "), "/home/x", true, None),
+            "/usr/bin/animecix"
+        );
+        assert_eq!(
+            desktop_exec_target_for(None, "/home/x", false, Some(cur)),
+            "/home/x/indir/animecix"
+        );
+        assert_eq!(
+            desktop_exec_target_for(None, "/home/x", false, None),
             "/home/x/.local/bin/animecix"
         );
     }

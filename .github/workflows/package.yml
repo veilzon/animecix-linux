@@ -104,6 +104,9 @@ jobs:
           cp -r assets/hicolor girdi/usr/share/animecix/assets/
           cp assets/ATTRIBUTION-Adwaita.md girdi/usr/share/animecix/ || true
           echo "$VER" > girdi/VER
+          # Paket %post/postinst temizliği: eski sürümlerin bayat kullanıcı
+          # kopyasını siler (tek kaynak: packaging/post-install-cleanup.sh).
+          cp packaging/post-install-cleanup.sh girdi/temizlik.sh
           find girdi -type f | sort
 
       - name: Girdiyi paylaş
@@ -148,6 +151,10 @@ jobs:
           Description: Anime, dizi ve film izleme istemcisi (GTK4, thin: sistem mpv kullanır)
            Harici mpv + sistem GTK ile çalışan ince paket. Debian 12+ / Ubuntu 24.04+ gerekir.
           EOF
+          # Eski sürümlerin ~/.local/bin ikili kopyasını ve ona işaret eden
+          # kullanıcı kısayolunu temizleyen postinst (güncelleme döngüsü fix'i).
+          cp girdi/temizlik.sh "$P/DEBIAN/postinst"
+          chmod 755 "$P/DEBIAN/postinst"
           dpkg-deb --build "$P" "animecix_${VER}_amd64.deb"
           ls -la animecix_${VER}_amd64.deb
 
@@ -217,6 +224,9 @@ jobs:
           /usr/share/icons/hicolor/*/apps/tr.com.animecix.png
           /usr/share/animecix
           EOF
+          # %post: eski sürümlerin bayat ~/.local/bin kopyasını temizle.
+          printf '%%post\n' >> "$PWD/rpmbuild/SPECS/animecix.spec"
+          cat girdi/temizlik.sh >> "$PWD/rpmbuild/SPECS/animecix.spec"
           rpmbuild -bb --define "_topdir $PWD/rpmbuild" --buildroot "$PWD/iskele" "$PWD/rpmbuild/SPECS/animecix.spec"
           find "$PWD/rpmbuild/RPMS" -name '*.rpm' -exec cp {} ./ \;
           ls -la ./animecix-*.x86_64.rpm
