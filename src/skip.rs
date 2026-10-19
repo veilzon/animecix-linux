@@ -131,6 +131,17 @@ pub fn input_conf(t: &SkipTimes, source: &str) -> String {
     format!("{skip_cmd}{outro_cmd}S seek -30; {align} show-text \"⏪ 30s Geri\" 2000\nEnd ignore\n")
 }
 
+/// Sonraki bölüm kısayolları: '>', 'N', 'Ctrl+RIGHT'.
+/// Basıldığında bayrak dosyasına dokunur (touch) ve mpv'yi kapatarak animecix'e sonraki bölümü açtırır.
+pub fn next_keybind_lines(flag_path: &str) -> String {
+    let align = "set osd-align-x left; set osd-align-y bottom; set osd-margin-x 30; set osd-margin-y 30;";
+    format!(
+        "> run \"/usr/bin/touch\" \"{flag_path}\" ; {align} show-text \"⏭ Sonraki Bölüm Açılıyor...\" 2500 ; quit\n\
+         N run \"/usr/bin/touch\" \"{flag_path}\" ; {align} show-text \"⏭ Sonraki Bölüm Açılıyor...\" 2500 ; quit\n\
+         Ctrl+RIGHT run \"/usr/bin/touch\" \"{flag_path}\" ; {align} show-text \"⏭ Sonraki Bölüm Açılıyor...\" 2500 ; quit\n"
+    )
+}
+
 /// mpv IPC JSON'una gömülecek metni güvenli yapar (tırnak/tersbölü kırar).
 pub fn mpv_safe_text(s: &str) -> String {
     s.replace('\\', "/").replace('"', "'")
@@ -230,5 +241,14 @@ mod tests {
         assert!(prompt_op(Some("🎵 X — Y")).contains("🎵 X — Y"), "şarkı eklenmeli");
         assert!(prompt_ed(None).contains("Outro Başladı"));
         assert!(prompt_ed(Some("🎵 Z")).contains("🎵 Z"));
+    }
+
+    #[test]
+    fn next_keybind_lines_includes_expected_keys() {
+        let lines = next_keybind_lines("/tmp/flag.txt");
+        assert!(lines.contains("> run \"/usr/bin/touch\" \"/tmp/flag.txt\""));
+        assert!(lines.contains("N run \"/usr/bin/touch\" \"/tmp/flag.txt\""));
+        assert!(lines.contains("Ctrl+RIGHT run \"/usr/bin/touch\" \"/tmp/flag.txt\""));
+        assert!(lines.contains("quit"));
     }
 }

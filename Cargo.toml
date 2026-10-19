@@ -2,6 +2,7 @@
 name = "animecix"
 version = "1.2.6"
 edition = "2021"
+default-run = "animecix"
 description = "Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 homepage = "https://github.com/veilzon/animecix-linux"
 repository = "https://github.com/veilzon/animecix-linux"
