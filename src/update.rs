@@ -420,10 +420,9 @@ fn run_install(kind: InstallKind, path: &Path) -> Result<(), String> {
     Err(msg)
 }
 
-/// Yeniden başlatma kabuğu: `$0` = çalıştırılacak yol. Yeni süreç, eski süreç
-/// D-Bus adını bırakana dek kısa bir gecikmeyle devralır; gecikmesiz spawn
-/// tek-örnek çakışmasında yeni sürecin sessizce kapanmasına yol açıyordu.
-/// Çıktı, teşhis için restart.log'a eklenir.
+/// Yeniden başlatma kabuğu: `$0` = çalıştırılacak yol. Kabuk hemen başlar,
+/// hedefi 1 sn sonra devralır (eski süreç tamamen kapanmadan yeni süreç
+/// başlamasın). Çıktı, teşhis için restart.log'a eklenir.
 const RESTART_SHELL: &str = "mkdir -p \"${XDG_DATA_HOME:-$HOME/.local/share}/animecix\"; \
 sleep 1; exec \"$0\" >>\"${XDG_DATA_HOME:-$HOME/.local/share}/animecix/restart.log\" 2>&1";
 
@@ -449,8 +448,9 @@ pub fn spawn_restart(exe: &Path) {
 }
 
 /// Güncelleme sonrası uygulamayı yeniden başlatır (AppImage yolu veya sistem
-/// ikilisi). Kendi exe'si yerine /usr/bin/animecix tercih edilir: süreç eski
-/// bir kullanıcı kopyasından çalışsa bile yenisi güncel paketten gelir.
+/// ikilisi). Paket yöneticisi ikiliyi değiştirdiğinde `current_exe()`
+/// "/usr/bin/animecix (deleted)" dönebildiği ve o yol spawn edilemediği için
+/// (uygulama sessizce kapanıyordu) sabit sistem yolu tercih edilir.
 fn restart_app(appimage_target: Option<&str>) -> ! {
     let exe = match appimage_target {
         Some(p) if !p.trim().is_empty() => PathBuf::from(p),
