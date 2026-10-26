@@ -2,23 +2,32 @@
 <html lang="tr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="color-scheme" content="light dark">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<meta name="robots" content="noindex, follow">
+<meta name="theme-color" content="#05070B">
 <title>Sayfa bulunamadı · AnimeciX</title>
+<meta name="description" content="Aradığın sayfa AnimeciX sitesinde yok.">
 <link rel="icon" type="image/png" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<a href="#main" class="show-on-focus">İçeriğe geç</a>
-<div class="window">
-<main id="main" class="content" style="text-align:center; padding-top:96px; padding-bottom:96px;">
-  <p class="section-eyebrow">404</p>
-  <h1>Sayfa bulunamadı</h1>
-  <p class="subtitle">Aradığın sayfa burada yok.</p>
-  <div class="actions" style="margin-top:24px;">
-    <a href="index.html" class="btn suggested-action large">Ana sayfaya dön</a>
-  </div>
+<body class="error-page">
+<a class="skip-link" href="#main">İçeriğe geç</a>
+<div class="page-grain" aria-hidden="true"></div>
+<main id="main" class="error-main">
+  <a class="brand" href="index.html" aria-label="AnimeciX ana sayfa">
+    <img src="assets/icon.png" width="28" height="28" alt="">
+    <span>AnimeciX</span>
+  </a>
+  <p class="error-code">404</p>
+  <h1>Sayfa bulunamadı.</h1>
+  <p>Aradığın sayfa burada yok. Ana sayfadan devam edebilirsin.</p>
+  <a class="btn btn-primary" href="index.html">
+    <span>Ana sayfaya dön</span>
+    <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></span>
+  </a>
 </main>
-</div>
 </body>
 </html>

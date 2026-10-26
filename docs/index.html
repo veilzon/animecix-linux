@@ -3,262 +3,560 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<title>AnimeciX</title>
-<meta name="description" content="AnimeciX: Linux için GTK4/libadwaita ile yazılmış, AppImage olarak dağıtılan anime, dizi ve film masaüstü istemcisi. MPV, resmi intro/outro atlama, Anime4K, otomatik güncelleme.">
-<meta name="keywords" content="anime, linux, gtk4, libadwaita, appimage, mpv, intro-atlama, anime4k">
+<meta name="color-scheme" content="dark">
+<title>AnimeciX · Linux için anime, dizi ve film</title>
+<meta name="description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.">
+<meta name="keywords" content="anime, linux, gtk4, libadwaita, appimage, mpv, anime4k, anime indirme">
 <meta name="author" content="veilzon">
-<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
-
+<meta name="theme-color" content="#05070B">
+<link rel="icon" type="image/png" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
 <link rel="canonical" href="https://veilzon.github.io/animecix-linux/">
 <link rel="alternate" hreflang="tr" href="https://veilzon.github.io/animecix-linux/">
 <link rel="alternate" hreflang="en" href="https://veilzon.github.io/animecix-linux/en.html">
 <link rel="alternate" hreflang="x-default" href="https://veilzon.github.io/animecix-linux/">
 
 <meta property="og:type" content="website">
-<meta property="og:title" content="AnimeciX">
-<meta property="og:description" content="GTK4/libadwaita anime, dizi ve film istemcisi. AppImage olarak dağıtılır.">
-<meta property="og:url" content="https://veilzon.github.io/animecix-linux/">
-<meta property="og:image" content="https://veilzon.github.io/animecix-linux/assets/icon.png">
-<meta property="og:locale" content="tr_TR">
 <meta property="og:site_name" content="AnimeciX">
-
+<meta property="og:title" content="AnimeciX · Anime, tek pencerede.">
+<meta property="og:description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.">
+<meta property="og:url" content="https://veilzon.github.io/animecix-linux/">
+<meta property="og:image" content="https://veilzon.github.io/animecix-linux/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AnimeciX ana sayfa ve uygulama ikonu">
+<meta property="og:locale" content="tr_TR">
+<meta property="og:locale:alternate" content="en_US">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="AnimeciX">
-<meta name="twitter:description" content="GTK4/libadwaita anime istemcisi. AppImage.">
-<meta name="twitter:image" content="https://veilzon.github.io/animecix-linux/assets/icon.png">
+<meta name="twitter:title" content="AnimeciX · Anime, tek pencerede.">
+<meta name="twitter:description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir.">
+<meta name="twitter:image" content="https://veilzon.github.io/animecix-linux/assets/og.png">
+<meta name="twitter:image:alt" content="AnimeciX ana sayfa ve uygulama ikonu">
 
-<link rel="icon" type="image/png" href="assets/icon.png">
-<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/geist-latin-ext-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" as="image" href="assets/screenshots/home.webp" type="image/webp" fetchpriority="high">
+<script>document.documentElement.classList.add("js");</script>
 <link rel="stylesheet" href="style.css">
-
+<noscript><style>.tab-panel[hidden]{display:block}</style></noscript>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "AnimeciX",
-  "operatingSystem": "Linux",
   "applicationCategory": "MultimediaApplication",
-  "description": "GTK4/libadwaita anime, dizi ve film masaüstü istemcisi. AppImage olarak dağıtılır. MPV, resmi intro/outro atlama, Anime4K, otomatik güncelleme.",
+  "operatingSystem": "Linux",
+  "softwareVersion": "1.2.7",
+  "dateModified": "2026-10-26",
+  "inLanguage": "tr",
+  "description": "Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.",
   "url": "https://veilzon.github.io/animecix-linux/",
   "downloadUrl": "https://github.com/veilzon/animecix-linux/releases/latest",
-  "softwareVersion": "1.2.1",
-  "dateModified": "2026-09-13",
-  "inLanguage": ["tr", "en"],
+  "screenshot": "https://veilzon.github.io/animecix-linux/assets/screenshots/home.webp",
+  "softwareRequirements": "Linux x86_64, GTK4, libadwaita, MPV",
+  "sameAs": ["https://github.com/veilzon/animecix-linux"],
   "license": "https://github.com/veilzon/animecix-linux/blob/main/LICENSE",
-  "author": {"@type": "Person", "name": "veilzon", "url": "https://github.com/veilzon"},
-  "publisher": {"@type": "Organization", "name": "AnimeciX", "url": "https://github.com/veilzon/animecix-linux"},
-  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-  "featureList": [
-    "GTK4/libadwaita arayüz",
-    "Tek dosya AppImage",
-    "MPV oynatıcı",
-    "Bölüm ve film indirme (çok bağlantılı, kaldığı yerden devam)",
-    "Sayfalar menüsü (Ctrl+T ile hızlı erişim)",
-    "5 koyu tema",
-    "Resmi intro/outro atlama + şarkı bilgisi",
-    "Anime4K upscaling (Hafif, Ultra, Keskinleştirme)",
-    "Otomatik güncelleme",
-    "Akıllı kaynak seçimi",
-    "Favoriler, Maraton, Geçmiş"
-  ]
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "veilzon"
+  }
 }
 </script>
 </head>
 <body>
+<a class="skip-link" href="#main">İçeriğe geç</a>
+<div class="page-grain" aria-hidden="true"></div>
+<div id="nav-sentinel" aria-hidden="true"></div>
 
-<a href="#main" class="show-on-focus">İçeriğe geç</a>
-
-<div class="window">
-
-<header class="headerbar">
-  <div class="headerbar-inner">
-    <a href="index.html" class="brand">
-      <img src="assets/icon.png" alt="">
+<header class="site-header">
+  <nav class="nav" aria-label="Ana menü">
+    <a class="brand" href="index.html" aria-label="AnimeciX ana sayfa">
+      <img src="assets/icon.png" width="28" height="28" alt="">
       <span>AnimeciX</span>
     </a>
-    <nav aria-label="Üst gezinme">
-      <a href="#features" class="nav-link">Özellikler</a>
-      <a href="#install" class="nav-link">Kurulum</a>
-      <a href="#faq" class="nav-link">SSS</a>
-      <a href="en.html" hreflang="en">EN</a>
-      <a href="https://github.com/veilzon/animecix-linux" class="btn flat" rel="noopener">GitHub</a>
-    </nav>
-  </div>
+    <div class="nav-links">
+      <a href="#ozellikler">Özellikler</a>
+      <a href="#temalar">Temalar</a>
+      <a href="#kurulum">Kurulum</a>
+      <a href="#sss">SSS</a>
+    </div>
+    <div class="nav-actions">
+      <a class="lang" href="en.html" hreflang="en" lang="en">EN</a>
+      <a class="icon-link" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener" aria-label="GitHub deposu">
+        <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#github-logo"></use></svg>
+      </a>
+      <a class="btn btn-primary btn-small" href="#kurulum">
+        <span>İndir</span>
+        <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+      </a>
+      <button class="menu-button" type="button" aria-label="Menüyü aç" aria-controls="mobile-menu" aria-expanded="false" data-menu-open>
+        <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#list"></use></svg>
+      </button>
+    </div>
+  </nav>
 </header>
 
-<main id="main" class="content">
-
-<section class="hero">
-  <span class="section-eyebrow">v1.2.1</span>
-  <h1>AnimeciX</h1>
-  <p class="subtitle">Linux için anime, dizi ve film masaüstü istemcisi. GTK4/libadwaita ile yazıldı, AppImage olarak dağıtılır.</p>
-  <div class="actions">
-    <a href="https://github.com/veilzon/animecix-linux/releases/latest" class="btn suggested-action large" rel="noopener">İndir (AppImage)</a>
-    <a href="https://github.com/veilzon/animecix-linux" class="btn outlined large" rel="noopener">Kaynak kodu</a>
+<dialog id="mobile-menu" class="mobile-menu" aria-label="Mobil menü">
+  <div class="mobile-menu-head">
+    <a class="brand" href="index.html" aria-label="AnimeciX ana sayfa">
+      <img src="assets/icon.png" width="28" height="28" alt="">
+      <span>AnimeciX</span>
+    </a>
+    <button class="icon-button" type="button" aria-label="Menüyü kapat" data-menu-close>
+      <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#x"></use></svg>
+    </button>
   </div>
-  <p class="meta">Linux x86_64 · 13.7 MB · MIT Lisansı</p>
-</section>
-
-<section id="features">
-  <p class="section-eyebrow">Özellikler</p>
-  <h2 class="section-title">Ne yapar?</h2>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/home.png" alt="Ana sayfa" width="1030" height="770" loading="eager" fetchpriority="high"></div>
-    <div class="text">
-      <h2>Ana sayfa</h2>
-      <p>Kategorilere göre anime, dizi ve film listeleri. Ortalanmış hap arama çubuğu (<kbd>Ctrl</kbd>+<kbd>S</kbd>), başlık çubuğunda <kbd>‹ Geri</kbd> butonu ve <kbd>Ctrl</kbd>+<kbd>T</kbd> ile açılan Sayfalar menüsü. Tıklayınca detay sayfası.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/episodes.png" alt="Bölüm listesi ve intro atlama" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Bölümler ve oynatıcı</h2>
-      <p>MPV tabanlı oynatıcı. Resmi intro/outro verisiyle atlama yapar (<kbd>S</kbd>/<kbd>E</kbd>, üçüncü parti servis yok). Çalan şarkı sağ üstte görünür, <kbd>Shift</kbd>+<kbd>M</kbd> ile tarayıcıda açılır. İstersen bölüm açılırken kalite sorulur. Anime4K ile görüntü iyileştirme, otomatik tam ekran.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/film.png" alt="Film sayfası" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Film</h2>
-      <p>Filmler kendi sayfasında: tek tıkla oynat, tek tıkla indir. Tüm kaynaklar paralel çözülür, en kalitelisi seçilir. Ölü kaynaklar elenir, başarısız olursa sonraki denenir.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/downloads.png" alt="İndirilenler" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>İndirilenler</h2>
-      <p>Bölüm ve film indirme yöneticisi: 6 bağlantıyla hızlı indirme, kaldığı yerden devam, toplu indirme sihirbazı. Kuyruk sırayla işlenir, ilerleme satırda canlı görünür.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/favorites.png" alt="Favoriler" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Favoriler</h2>
-      <p>Beğendiğin başlıkları yıldızla işaretle. Tüm favoriler tek listede, poster ve son izlenen bölümle birlikte.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/marathon.png" alt="Maraton" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Maraton</h2>
-      <p>İzleme listen. Sürükle-bırak ile sırala, her bölümde ilerleme çubuğu. Sıradaki bölüme tek tıkla devam et.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/history.png" alt="Geçmiş" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Geçmiş</h2>
-      <p>İzlediğin bölümler otomatik kaydedilir. Kaldığın yerden devam et, ya da eski bir bölümü tekrar aç.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/temalar.png" alt="Beş koyu tema" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>5 koyu tema</h2>
-      <p>Koyu, Bordo, Orman, Lacivert, Mor. Karşılama ekranında canlı önizlemeyle dene, tek tıkla geç. Bölüm satırları temanın rengine bürünür.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/settings.png" alt="Ayarlar" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Ayarlar</h2>
-      <p>Tema, kısayollar (arama, Sayfalar menüsü), oynatma kalite seçici, indirme klasörü, masaüstü başlatıcı kurulumu, veri sıfırlama ve güncelleme denetimi. Hepsi tek ekranda.</p>
-    </div>
-  </article>
-</section>
-
-<hr class="divider">
-
-<section id="install" class="content-narrow">
-  <p class="section-eyebrow">Kurulum</p>
-  <h2 class="section-title">Üç şekilde kurulur</h2>
-
-  <h3 class="title-2">AppImage (önerilen)</h3>
-  <p>Tek dosya, taşınabilir, kurulum gerektirmez.</p>
-  <div class="frame">
-<pre><code>wget https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage
-chmod +x AnimeciX-x86_64.AppImage
-./AnimeciX-x86_64.AppImage</code></pre>
+  <nav class="mobile-links" aria-label="Mobil menü bağlantıları">
+    <a href="#ozellikler">Özellikler <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#temalar">Temalar <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#kurulum">Kurulum <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#sss">SSS <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="en.html" hreflang="en" lang="en">English <span class="lang">EN</span></a>
+  </nav>
+  <div class="mobile-menu-foot">
+    <a class="btn btn-primary" href="#kurulum">İndir</a>
+    <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
   </div>
+</dialog>
 
-  <h3 class="title-2">Masaüstü başlatıcı</h3>
-  <p>Uygulamayı aç, Ayarlar → "Masaüstüne kur" seçeneği ile <code>.desktop</code> dosyası ve uygulama simgesi eklenir. Şu an dağıtım yalnızca AppImage ile yapılır.</p>
-
-  <h3 class="title-2">Bağımlılıklar (elle kurulum)</h3>
-  <div class="boxed-list">
-    <div><h3>Fedora</h3><p><code>sudo dnf install gtk4 libadwaita mpv</code></p></div>
-    <div><h3>Ubuntu / Debian</h3><p><code>sudo apt install libgtk-4-1 libadwaita-1-0 mpv</code></p></div>
-    <div><h3>Arch</h3><p><code>sudo pacman -S gtk4 libadwaita mpv</code></p></div>
-  </div>
-
-  <p class="caption" style="margin-top:24px">Uygulama her başlatmada yeni sürümü kontrol eder. AppImage sürümü kendini otomatik güncelleyebilir.</p>
-</section>
-
-<hr class="divider">
-
-<section id="faq" class="content-narrow">
-  <p class="section-eyebrow">SSS</p>
-  <h2 class="section-title">Sık sorulanlar</h2>
-
-  <details class="expander">
-    <summary>İndirme nasıl çalışıyor?</summary>
-    <div class="body">
-      <p>Bölüm veya film sayfasındaki indir butonuna basman yeterli. Dosyalar 6 bağlantıyla paralel iner, bağlantı koparsa kaldığı yerden devam eder. Toplu indirme sihirbazıyla bir sezonun tamamını sıraya koyabilirsin. Kayıt yeri Ayarlar → indirme klasöründen değişir.</p>
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="version-line"><span class="status-dot" aria-hidden="true"></span> Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.2.7</p>
+        <h1 id="hero-title">Anime, tek pencerede.</h1>
+        <p class="hero-lead">Keşfet, izle, indir. Geçmiş, favoriler ve indirmeler hep hazır.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#kurulum">
+            <span>İndir</span>
+            <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">
+            <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#github-logo"></use></svg>
+            <span>Kaynak kodu</span>
+          </a>
+        </div>
+      </div>
+      <div class="hero-stage" data-spotlight>
+        <div class="stage-shell">
+          <div class="stage-core">
+            <img src="assets/screenshots/home.webp" width="1280" height="800" alt="AnimeciX ana sayfa: devam eden bölümler ve öne çıkan animeler" fetchpriority="high" decoding="async">
+          </div>
+        </div>
+        <div class="hero-callout hero-resume" aria-hidden="true">
+          <span class="resume-label">Devam et</span>
+          <div class="resume-top">
+            <span class="resume-mark">H</span>
+            <span class="resume-meta">
+              <strong>Horimiya</strong>
+              <span>S01E06 · 22:11</span>
+            </span>
+          </div>
+          <div class="progress"><span style="width:93%"></span></div>
+        </div>
+        <div class="hero-callout hero-download" aria-hidden="true">
+          <span class="download-ring"><svg class="icon"><use href="assets/icons.svg#download-simple"></use></svg></span>
+          <span class="download-text">
+            <strong>Horimiya S01E02</strong>
+            <span>%72 · 158.6 MB / 220.3 MB</span>
+          </span>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Anime4K shader'ları nasıl çalışır?</summary>
-    <div class="body">
-      <p>Ayarlar → Görüntü bölümünden beş mod arasında seçim yapılır: Kapalı, Keskinleştir (ewa_lanczossharp), Hafif (DTD), Ultra (CNN UL), ve Hafif + Keskinleştirme (DTD + unsharp filtresi). Hafif mod düşük GPU yüküyle iyi sonuç verir; Ultra mod kaliteyi en üst seviyeye taşır.</p>
+  <section class="stats" aria-label="Ürün bilgileri">
+    <div class="wrap stats-grid">
+      <div class="stat">
+        <span class="stat-value">05</span>
+        <span class="stat-label">tema</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">06</span>
+        <span class="stat-label">bağlantı</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">Anime4K</span>
+        <span class="stat-label">yükseltme</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">MPV</span>
+        <span class="stat-label">oynatıcı</span>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Uygulama kendini otomatik günceller mi?</summary>
-    <div class="body">
-      <p>AppImage sürümü her başlatmada GitHub Releases'i kontrol eder. Yeni sürüm varsa bildirim gösterir ve onayla kendini günceller. Ayarlar → Otomatik güncelleme ile kapatılabilir.</p>
+  <section class="section discover" id="ozellikler" aria-labelledby="discover-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="discover-title">Binlerce başlık. Tek arama.</h2>
+        <p>Tür, puan ve popülerliğe göre filtrele. Aradığını saniyeler içinde bul.</p>
+      </div>
+      <div class="media-frame discover-frame" data-reveal>
+        <div class="media-shell">
+          <div class="media-core">
+            <img src="assets/screenshots/discover.webp" width="1280" height="800" alt="AnimeciX Keşfet ekranı: tür ve popülerlik filtreleriyle anime listesi" loading="lazy" decoding="async">
+          </div>
+        </div>
+        <div class="shortcut-card" aria-hidden="true">
+          <span class="key">Ctrl</span>
+          <span class="key">S</span>
+          <span>Her yerden ara</span>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Bu uygulama resmi mi?</summary>
-    <div class="body">
-      <p>Hayır. AnimeciX gayriresmî bir üçüncü taraf istemcidir. Herkese açık bir API kullanır; hizmet sağlayıcıya zarar vermeden, kendi sorumluluğunuzda kullanın.</p>
+  <section class="section watch-section" aria-labelledby="watch-title">
+    <div class="wrap">
+      <div class="watch-panel">
+        <div class="watch-copy">
+          <h2 id="watch-title">Bölümler. Senin ritminde.</h2>
+          <p>MPV oynatıcı, resmi intro/outro atlama ve Anime4K. Kaliteyi seç, kaldığın yerden devam et.</p>
+          <ul class="feature-list">
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#subtitles"></use></svg></span>
+              <div>
+                <strong>Resmi intro/outro atlama</strong>
+                <span>S ve E ile.</span>
+              </div>
+            </li>
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#sparkle"></use></svg></span>
+              <div>
+                <strong>Anime4K</strong>
+                <span>Hafif, Ultra, Keskinleştirme.</span>
+              </div>
+            </li>
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#sliders-horizontal"></use></svg></span>
+              <div>
+                <strong>Kalite seçimi</strong>
+                <span>Bölüm başına.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div class="watch-media" data-reveal>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/episodes.webp" width="1280" height="800" alt="Horimiya bölüm listesi: izlenen bölümler ve izleme ilerlemesi" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Hangi dağıtımlar destekleniyor?</summary>
-    <div class="body">
-      <p>GTK4, libadwaita ve MPV yükleyen tüm modern Linux dağıtımları. Test edilenler: Fedora 40+, Ubuntu 24.04+, Arch, openSUSE Tumbleweed, EndeavourOS.</p>
+  <section class="section collection" aria-labelledby="collection-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="collection-title">Kütüphanen. Hep hazır.</h2>
+        <p>Geçmiş, favoriler, takvim ve filmler. Hepsi tek yerde, hepsi senin.</p>
+      </div>
+      <div class="bento">
+        <article class="bento-card bento-wide" data-reveal>
+          <div class="bento-copy">
+            <h3>Geçmiş</h3>
+            <p>Kaldığın yerden.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/history.webp" width="1280" height="800" alt="İzleme geçmişi: son izlenen animeler ve kaldığın bölüm" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-narrow" data-reveal>
+          <div class="bento-copy">
+            <h3>Favoriler</h3>
+            <p>Yıldızla, kaybolmasın.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/favorites.webp" width="1280" height="800" alt="Favoriler: altı animenin yer aldığı liste" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-narrow" data-reveal>
+          <div class="bento-copy">
+            <h3>Takvim</h3>
+            <p>Yeni bölümü kaçırma.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/calendar.webp" width="1280" height="800" alt="Yayın takvimi: günlük yeni bölüm saatleri" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-wide" data-reveal>
+          <div class="bento-copy">
+            <h3>Filmler</h3>
+            <p>Tek tıkla izle.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/film.webp" width="1280" height="800" alt="Suzume no Tojimari film sayfası" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+      </div>
     </div>
-  </details>
-</section>
+  </section>
 
+  <section class="section themes" id="temalar" aria-labelledby="themes-title">
+    <div class="wrap themes-grid">
+      <div class="themes-copy">
+        <h2 id="themes-title">Beş tema. Tek karakter.</h2>
+        <p>Koyu, Bordo, Orman, Lacivert, Mor. Anında geç, satırlar temaya uysun.</p>
+        <div class="theme-controls" role="group" aria-label="Tema seçimi">
+          <button class="theme-button" type="button" data-theme="koyu" data-theme-label="Koyu" aria-pressed="true"><span class="theme-dot" style="--dot:#3584E4" aria-hidden="true"></span>Koyu</button>
+          <button class="theme-button" type="button" data-theme="bordo" data-theme-label="Bordo" aria-pressed="false"><span class="theme-dot" style="--dot:#E5484D" aria-hidden="true"></span>Bordo</button>
+          <button class="theme-button" type="button" data-theme="orman" data-theme-label="Orman" aria-pressed="false"><span class="theme-dot" style="--dot:#2EC27E" aria-hidden="true"></span>Orman</button>
+          <button class="theme-button" type="button" data-theme="lacivert" data-theme-label="Lacivert" aria-pressed="false"><span class="theme-dot" style="--dot:#62A0EA" aria-hidden="true"></span>Lacivert</button>
+          <button class="theme-button" type="button" data-theme="mor" data-theme-label="Mor" aria-pressed="false"><span class="theme-dot" style="--dot:#7C3AED" aria-hidden="true"></span>Mor</button>
+        </div>
+        <p class="theme-status" aria-live="polite">Şu an: <strong data-theme-name>Koyu</strong></p>
+        <p class="theme-note">Tema seçimi anında uygulanır.</p>
+      </div>
+      <div class="theme-stage" data-reveal>
+        <div class="media-shell">
+          <div class="media-core theme-previews">
+            <img class="theme-preview is-active" data-theme-preview="koyu" src="assets/screenshots/theme-koyu.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Koyu tema" loading="lazy" decoding="async">
+            <img class="theme-preview" data-theme-preview="bordo" src="assets/screenshots/theme-bordo.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Bordo tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="orman" src="assets/screenshots/theme-orman.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Orman tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="lacivert" src="assets/screenshots/theme-lacivert.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Lacivert tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="mor" src="assets/screenshots/theme-mor.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Mor tema" loading="lazy" decoding="async" aria-hidden="true">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section downloads" aria-labelledby="downloads-title">
+    <div class="wrap downloads-grid">
+      <div class="downloads-copy">
+        <h2 id="downloads-title">İnternet yokken de izle.</h2>
+        <p>6 bağlantı, kaldığı yerden devam ve toplu indirme. Yolculukta da yanında.</p>
+        <ul class="feature-list">
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#lightning"></use></svg></span>
+            <div>
+              <strong>6 bağlantı</strong>
+              <span>Hızlı indirme.</span>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-clockwise"></use></svg></span>
+            <div>
+              <strong>Kaldığı yerden</strong>
+              <span>Kopmadan devam.</span>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#stack"></use></svg></span>
+            <div>
+              <strong>Toplu indirme</strong>
+              <span>Sezonun tamamı.</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <div class="downloads-media" data-reveal>
+        <div class="media-shell">
+          <div class="media-core">
+            <img src="assets/screenshots/downloads.webp" width="1280" height="800" alt="İndirilenler: Horimiya bölümü yüzde 72 indirilmiş durumda" loading="lazy" decoding="async">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section install" id="kurulum" aria-labelledby="install-title">
+    <div class="wrap">
+      <div class="install-panel">
+        <div class="install-head">
+          <h2 id="install-title">Kur. İzle. Devam et.</h2>
+          <p>AppImage, deb veya rpm. Dağıtımını seç, tek komutla başla.</p>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Kurulum paketleri">
+          <button class="tab" type="button" role="tab" id="tab-appimage" aria-selected="true" aria-controls="panel-appimage" tabindex="0">AppImage</button>
+          <button class="tab" type="button" role="tab" id="tab-debian" aria-selected="false" aria-controls="panel-debian" tabindex="-1">Debian / Ubuntu</button>
+          <button class="tab" type="button" role="tab" id="tab-fedora" aria-selected="false" aria-controls="panel-fedora" tabindex="-1">Fedora</button>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-appimage" aria-labelledby="tab-appimage">
+          <div class="install-meta">
+            <span class="install-size">13 MB</span>
+            <span class="install-note">Tek dosya. Sistemdeki GTK4, libadwaita ve MPV'yi kullanır.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Komut</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Kopyalandı" data-failed-label="Kopyalanamadı">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Kopyala</span>
+              </button>
+            </div>
+            <pre><code>curl -L -o AnimeciX.AppImage \
+  https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage
+chmod +x AnimeciX.AppImage
+./AnimeciX.AppImage</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage">
+              <span>Doğrudan indir</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-debian" aria-labelledby="tab-debian" hidden>
+          <div class="install-meta">
+            <span class="install-size">3.5 MB</span>
+            <span class="install-note">Bağımlılıkları paketle gelir.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Komut</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Kopyalandı" data-failed-label="Kopyalanamadı">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Kopyala</span>
+              </button>
+            </div>
+            <pre><code>curl -L -O \
+  https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix_1.2.7_amd64.deb
+sudo apt install ./animecix_1.2.7_amd64.deb</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix_1.2.7_amd64.deb">
+              <span>Doğrudan indir</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-fedora" aria-labelledby="tab-fedora" hidden>
+          <div class="install-meta">
+            <span class="install-size">3.8 MB</span>
+            <span class="install-note">Bağımlılıkları paketle gelir.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Komut</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Kopyalandı" data-failed-label="Kopyalanamadı">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Kopyala</span>
+              </button>
+            </div>
+            <pre><code>curl -L -O \
+  https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix-1.2.7-1.fc40.x86_64.rpm
+sudo dnf install ./animecix-1.2.7-1.fc40.x86_64.rpm</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix-1.2.7-1.fc40.x86_64.rpm">
+              <span>Doğrudan indir</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <a class="install-all" href="https://github.com/veilzon/animecix-linux/releases" target="_blank" rel="noopener">
+          Tüm sürümler
+          <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section faq" id="sss" aria-labelledby="faq-title">
+    <div class="wrap faq-grid">
+      <div class="faq-copy">
+        <h2 id="faq-title">Kısa cevaplar.</h2>
+        <p>Daha fazlası GitHub'da.</p>
+        <a class="text-link" href="https://github.com/veilzon/animecix-linux/issues" target="_blank" rel="noopener">
+          Soru sor
+          <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg>
+        </a>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>
+            <span>AppImage tek başına yeterli mi?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>Sistemde GTK4, libadwaita ve MPV olmalı. deb ve rpm paketleri bu bağımlılıkları kendisi kurar.</p>
+        </details>
+        <details>
+          <summary>
+            <span>İndirme nasıl çalışıyor?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>6 bağlantı, kaldığı yerden devam ve toplu indirme. Klasörü Ayarlar'dan seç.</p>
+        </details>
+        <details>
+          <summary>
+            <span>Anime4K ne yapıyor?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>MPV'de gerçek zamanlı yükseltme. Hafif, Ultra ve Keskinleştirme modları.</p>
+        </details>
+        <details>
+          <summary>
+            <span>Otomatik güncellenir mi?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>AppImage her açılışta kontrol eder. Ayarlar'dan kapatabilirsin.</p>
+        </details>
+        <details>
+          <summary>
+            <span>Resmi bir uygulama mı?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>Hayır. Üçüncü taraf bir istemci. Herkese açık API kullanır, kendi sorumluluğunda kullan.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section final-cta" aria-labelledby="cta-title">
+    <div class="wrap">
+      <div class="cta-panel">
+        <div class="cta-copy">
+          <h2 id="cta-title">Sıradaki bölüm seni bekliyor.</h2>
+          <p class="cta-meta">Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.2.7 <span class="dot-sep" aria-hidden="true">·</span> 13 MB</p>
+        </div>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="#kurulum">
+            <span>İndir</span>
+            <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 
-<footer class="footer">
-  <span>© 2026 veilzon · <a href="https://github.com/veilzon/animecix-linux/blob/main/LICENSE">MIT</a> </span>
-  <ul>
-    <li><a href="https://github.com/veilzon/animecix-linux" rel="noopener">GitHub</a></li>
-    <li><a href="https://github.com/veilzon/animecix-linux/releases" rel="noopener">Sürümler</a></li>
-    <li><a href="https://github.com/veilzon/animecix-linux/issues" rel="noopener">Hata bildir</a></li>
-    <li><a href="en.html" hreflang="en">English</a></li>
-  </ul>
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="index.html" aria-label="AnimeciX ana sayfa">
+        <img src="assets/icon.png" width="28" height="28" alt="">
+        <span>AnimeciX</span>
+      </a>
+      <p>Üçüncü taraf istemci. Resmi değil.</p>
+    </div>
+    <nav class="footer-links" aria-label="Alt menü">
+      <a href="https://github.com/veilzon/animecix-linux/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+      <a href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/veilzon/animecix-linux/releases" target="_blank" rel="noopener">Sürümler</a>
+      <a href="https://github.com/veilzon/animecix-linux/issues" target="_blank" rel="noopener">Sorunlar</a>
+      <a href="en.html" hreflang="en" lang="en">English</a>
+    </nav>
+  </div>
 </footer>
 
-</div>
+<script src="script.js" defer></script>
 </body>
 </html>

@@ -3,262 +3,560 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="color-scheme" content="light dark">
-<title>AnimeciX</title>
-<meta name="description" content="AnimeciX: a GTK4/libadwaita anime, series and movie desktop client for Linux. Distributed as a single AppImage. MPV, official intro/outro skipping, Anime4K, auto-update.">
-<meta name="keywords" content="anime, linux, gtk4, libadwaita, appimage, mpv, intro-skip, anime4k">
+<meta name="color-scheme" content="dark">
+<title>AnimeciX · Anime, series and movies for Linux</title>
+<meta name="description" content="A desktop client for anime, series and movies on Linux. Discover, watch, download. MPV, intro/outro skip, Anime4K, five themes and offline downloads.">
+<meta name="keywords" content="anime, linux, gtk4, libadwaita, appimage, mpv, anime4k, anime download">
 <meta name="author" content="veilzon">
-<meta name="theme-color" content="#fafafb" media="(prefers-color-scheme: light)">
-<meta name="theme-color" content="#1e1e1e" media="(prefers-color-scheme: dark)">
-
+<meta name="theme-color" content="#05070B">
+<link rel="icon" type="image/png" href="assets/icon.png">
+<link rel="apple-touch-icon" href="assets/icon.png">
 <link rel="canonical" href="https://veilzon.github.io/animecix-linux/en.html">
 <link rel="alternate" hreflang="en" href="https://veilzon.github.io/animecix-linux/en.html">
 <link rel="alternate" hreflang="tr" href="https://veilzon.github.io/animecix-linux/">
 <link rel="alternate" hreflang="x-default" href="https://veilzon.github.io/animecix-linux/">
 
 <meta property="og:type" content="website">
-<meta property="og:title" content="AnimeciX">
-<meta property="og:description" content="A GTK4/libadwaita anime, series and movie client for Linux. AppImage.">
-<meta property="og:url" content="https://veilzon.github.io/animecix-linux/en.html">
-<meta property="og:image" content="https://veilzon.github.io/animecix-linux/assets/icon.png">
-<meta property="og:locale" content="en_US">
 <meta property="og:site_name" content="AnimeciX">
-
+<meta property="og:title" content="AnimeciX · Anime, one window.">
+<meta property="og:description" content="A desktop client for anime, series and movies on Linux. Discover, watch, download. MPV, intro/outro skip, Anime4K, five themes and offline downloads.">
+<meta property="og:url" content="https://veilzon.github.io/animecix-linux/en.html">
+<meta property="og:image" content="https://veilzon.github.io/animecix-linux/assets/og.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="AnimeciX home screen and app icon">
+<meta property="og:locale" content="en_US">
+<meta property="og:locale:alternate" content="tr_TR">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="AnimeciX">
-<meta name="twitter:description" content="A GTK4/libadwaita anime client for Linux. AppImage.">
-<meta name="twitter:image" content="https://veilzon.github.io/animecix-linux/assets/icon.png">
+<meta name="twitter:title" content="AnimeciX · Anime, one window.">
+<meta name="twitter:description" content="A desktop client for anime, series and movies on Linux. Discover, watch, download.">
+<meta name="twitter:image" content="https://veilzon.github.io/animecix-linux/assets/og.png">
+<meta name="twitter:image:alt" content="AnimeciX home screen and app icon">
 
-<link rel="icon" type="image/png" href="assets/icon.png">
-<link rel="apple-touch-icon" href="assets/icon.png">
+<link rel="preload" href="assets/fonts/geist-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="assets/fonts/geist-latin-ext-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" as="image" href="assets/screenshots/home.webp" type="image/webp" fetchpriority="high">
+<script>document.documentElement.classList.add("js");</script>
 <link rel="stylesheet" href="style.css">
-
+<noscript><style>.tab-panel[hidden]{display:block}</style></noscript>
 <script type="application/ld+json">
 {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "AnimeciX",
-  "operatingSystem": "Linux",
   "applicationCategory": "MultimediaApplication",
-  "description": "A GTK4/libadwaita anime, series and movie desktop client for Linux. Distributed as a single AppImage. MPV, official intro/outro skipping, Anime4K, auto-update.",
+  "operatingSystem": "Linux",
+  "softwareVersion": "1.2.7",
+  "dateModified": "2026-10-26",
+  "inLanguage": "en",
+  "description": "A desktop client for anime, series and movies on Linux. Discover, watch, download. MPV, intro/outro skip, Anime4K, five themes and offline downloads.",
   "url": "https://veilzon.github.io/animecix-linux/en.html",
   "downloadUrl": "https://github.com/veilzon/animecix-linux/releases/latest",
-  "softwareVersion": "1.2.1",
-  "dateModified": "2026-09-13",
-  "inLanguage": "en",
+  "screenshot": "https://veilzon.github.io/animecix-linux/assets/screenshots/home.webp",
+  "softwareRequirements": "Linux x86_64, GTK4, libadwaita, MPV",
+  "sameAs": ["https://github.com/veilzon/animecix-linux"],
   "license": "https://github.com/veilzon/animecix-linux/blob/main/LICENSE",
-  "author": {"@type": "Person", "name": "veilzon", "url": "https://github.com/veilzon"},
-  "publisher": {"@type": "Organization", "name": "AnimeciX", "url": "https://github.com/veilzon/animecix-linux"},
-  "offers": {"@type": "Offer", "price": "0", "priceCurrency": "USD"},
-  "featureList": [
-    "GTK4/libadwaita UI",
-    "Single-file AppImage",
-    "MPV player",
-    "Episode and movie downloads (multi-connection, resume)",
-    "Pages menu (instant access with Ctrl+T)",
-    "5 dark themes",
-    "Official intro/outro skipping + song info",
-    "Anime4K upscaling (Light, Ultra, Sharpening)",
-    "Auto-update",
-    "Smart source selection",
-    "Favorites, Marathon, History"
-  ]
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "author": {
+    "@type": "Person",
+    "name": "veilzon"
+  }
 }
 </script>
 </head>
 <body>
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="page-grain" aria-hidden="true"></div>
+<div id="nav-sentinel" aria-hidden="true"></div>
 
-<a href="#main" class="show-on-focus">Skip to content</a>
-
-<div class="window">
-
-<header class="headerbar">
-  <div class="headerbar-inner">
-    <a href="en.html" class="brand">
-      <img src="assets/icon.png" alt="">
+<header class="site-header">
+  <nav class="nav" aria-label="Main menu">
+    <a class="brand" href="en.html" aria-label="AnimeciX home">
+      <img src="assets/icon.png" width="28" height="28" alt="">
       <span>AnimeciX</span>
     </a>
-    <nav aria-label="Primary">
-      <a href="#features" class="nav-link">Features</a>
-      <a href="#install" class="nav-link">Install</a>
-      <a href="#faq" class="nav-link">FAQ</a>
-      <a href="index.html" hreflang="tr">TR</a>
-      <a href="https://github.com/veilzon/animecix-linux" class="btn flat" rel="noopener">GitHub</a>
-    </nav>
-  </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#themes">Themes</a>
+      <a href="#install">Install</a>
+      <a href="#faq">FAQ</a>
+    </div>
+    <div class="nav-actions">
+      <a class="lang" href="index.html" hreflang="tr" lang="tr">TR</a>
+      <a class="icon-link" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener" aria-label="GitHub repository">
+        <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#github-logo"></use></svg>
+      </a>
+      <a class="btn btn-primary btn-small" href="#install">
+        <span>Download</span>
+        <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+      </a>
+      <button class="menu-button" type="button" aria-label="Open menu" aria-controls="mobile-menu" aria-expanded="false" data-menu-open>
+        <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#list"></use></svg>
+      </button>
+    </div>
+  </nav>
 </header>
 
-<main id="main" class="content">
-
-<section class="hero">
-  <span class="section-eyebrow">v1.2.1</span>
-  <h1>AnimeciX</h1>
-  <p class="subtitle">A desktop client for anime, series and movies on Linux. Built with GTK4/libadwaita, distributed as a single AppImage.</p>
-  <div class="actions">
-    <a href="https://github.com/veilzon/animecix-linux/releases/latest" class="btn suggested-action large" rel="noopener">Download AppImage</a>
-    <a href="https://github.com/veilzon/animecix-linux" class="btn outlined large" rel="noopener">Source</a>
+<dialog id="mobile-menu" class="mobile-menu" aria-label="Mobile menu">
+  <div class="mobile-menu-head">
+    <a class="brand" href="en.html" aria-label="AnimeciX home">
+      <img src="assets/icon.png" width="28" height="28" alt="">
+      <span>AnimeciX</span>
+    </a>
+    <button class="icon-button" type="button" aria-label="Close menu" data-menu-close>
+      <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#x"></use></svg>
+    </button>
   </div>
-  <p class="meta">Linux x86_64 · 13.7 MB · MIT License</p>
-</section>
-
-<section id="features">
-  <p class="section-eyebrow">Features</p>
-  <h2 class="section-title">What it does</h2>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/home.png" alt="Home screen" width="1030" height="770" loading="eager" fetchpriority="high"></div>
-    <div class="text">
-      <h2>Home</h2>
-      <p>Categorized lists for anime, series and movies. Centered pill search bar (<kbd>Ctrl</kbd>+<kbd>S</kbd>), a <kbd>‹ Back</kbd> button in the header and a Pages menu on <kbd>Ctrl</kbd>+<kbd>T</kbd>. Click for details.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/episodes.png" alt="Episode list with intro skipping" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Episodes and player</h2>
-      <p>MPV-based player. Skips intros/outros using official data (<kbd>S</kbd>/<kbd>E</kbd>, no third-party service). The playing song shows top-right, open it in a browser with <kbd>Shift</kbd>+<kbd>M</kbd>. Optional per-episode quality picker. Anime4K upscaling, auto fullscreen.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/film.png" alt="Movie page" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Movies</h2>
-      <p>Movies get their own page: one click to play, one click to download. All sources resolve in parallel and the best one wins. Dead sources are filtered; failures fall through to the next one.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/downloads.png" alt="Downloads" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Downloads</h2>
-      <p>Episode and movie download manager: fast multi-connection downloads, resume where you left off, batch download wizard. The queue runs in order with live per-row progress.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/favorites.png" alt="Favorites" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Favorites</h2>
-      <p>Star the titles you like. All favorites in a single list, with poster and the last episode watched.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/marathon.png" alt="Marathon" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Marathon</h2>
-      <p>Your watch-list. Drag-and-drop to reorder, per-episode progress bar. One click to resume the next episode.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/history.png" alt="History" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>History</h2>
-      <p>Watched episodes are saved automatically. Pick up where you left off, or reopen an old episode.</p>
-    </div>
-  </article>
-
-  <article class="feature">
-    <div class="visual"><img src="assets/screenshots/temalar.png" alt="Five dark themes" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>5 dark themes</h2>
-      <p>Dark, Claret, Forest, Navy, Purple. Try them live on the welcome screen, switch with one click. Episode rows take on the theme color.</p>
-    </div>
-  </article>
-
-  <article class="feature reverse">
-    <div class="visual"><img src="assets/screenshots/settings.png" alt="Settings" width="1030" height="770" loading="lazy"></div>
-    <div class="text">
-      <h2>Settings</h2>
-      <p>Themes, shortcuts (search, Pages menu), playback quality picker, download folder, desktop launcher setup, data reset and update checks. All on one screen.</p>
-    </div>
-  </article>
-</section>
-
-<hr class="divider">
-
-<section id="install" class="content-narrow">
-  <p class="section-eyebrow">Install</p>
-  <h2 class="section-title">Three ways to install</h2>
-
-  <h3 class="title-2">AppImage (recommended)</h3>
-  <p>Single file, portable, no install required.</p>
-  <div class="frame">
-<pre><code>wget https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage
-chmod +x AnimeciX-x86_64.AppImage
-./AnimeciX-x86_64.AppImage</code></pre>
+  <nav class="mobile-links" aria-label="Mobile menu links">
+    <a href="#features">Features <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#themes">Themes <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#install">Install <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="#faq">FAQ <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-right"></use></svg></a>
+    <a href="index.html" hreflang="tr" lang="tr">Türkçe <span class="lang">TR</span></a>
+  </nav>
+  <div class="mobile-menu-foot">
+    <a class="btn btn-primary" href="#install">Download</a>
+    <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
   </div>
+</dialog>
 
-  <h3 class="title-2">Desktop launcher</h3>
-  <p>Open the app, then Settings → "Install to desktop" to add a <code>.desktop</code> file and app icon. Distribution is currently AppImage-only.</p>
-
-  <h3 class="title-2">Dependencies (manual install)</h3>
-  <div class="boxed-list">
-    <div><h3>Fedora</h3><p><code>sudo dnf install gtk4 libadwaita mpv</code></p></div>
-    <div><h3>Ubuntu / Debian</h3><p><code>sudo apt install libgtk-4-1 libadwaita-1-0 mpv</code></p></div>
-    <div><h3>Arch</h3><p><code>sudo pacman -S gtk4 libadwaita mpv</code></p></div>
-  </div>
-
-  <p class="caption" style="margin-top:24px">The app checks for new versions on each launch. The AppImage build can self-update.</p>
-</section>
-
-<hr class="divider">
-
-<section id="faq" class="content-narrow">
-  <p class="section-eyebrow">FAQ</p>
-  <h2 class="section-title">Common questions</h2>
-
-  <details class="expander">
-    <summary>How do downloads work?</summary>
-    <div class="body">
-      <p>Hit download on an episode or movie page. Files download over 6 parallel connections and resume if interrupted. The batch wizard queues a whole season. Change the location under Settings → download folder.</p>
+<main id="main">
+  <section class="hero" aria-labelledby="hero-title">
+    <div class="wrap hero-grid">
+      <div class="hero-copy">
+        <p class="version-line"><span class="status-dot" aria-hidden="true"></span> Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.2.7</p>
+        <h1 id="hero-title">Anime, one window.</h1>
+        <p class="hero-lead">Discover, watch, download. Your library stays ready.</p>
+        <div class="hero-actions">
+          <a class="btn btn-primary" href="#install">
+            <span>Download</span>
+            <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">
+            <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#github-logo"></use></svg>
+            <span>Source code</span>
+          </a>
+        </div>
+      </div>
+      <div class="hero-stage" data-spotlight>
+        <div class="stage-shell">
+          <div class="stage-core">
+            <img src="assets/screenshots/home.webp" width="1280" height="800" alt="AnimeciX home screen: continue watching row and featured anime" fetchpriority="high" decoding="async">
+          </div>
+        </div>
+        <div class="hero-callout hero-resume" aria-hidden="true">
+          <span class="resume-label">Continue</span>
+          <div class="resume-top">
+            <span class="resume-mark">H</span>
+            <span class="resume-meta">
+              <strong>Horimiya</strong>
+              <span>S01E06 · 22:11</span>
+            </span>
+          </div>
+          <div class="progress"><span style="width:93%"></span></div>
+        </div>
+        <div class="hero-callout hero-download" aria-hidden="true">
+          <span class="download-ring"><svg class="icon"><use href="assets/icons.svg#download-simple"></use></svg></span>
+          <span class="download-text">
+            <strong>Horimiya S01E02</strong>
+            <span>72% · 158.6 MB / 220.3 MB</span>
+          </span>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>How do the Anime4K shaders work?</summary>
-    <div class="body">
-      <p>Settings → Display: pick from five modes — Off, Sharp (ewa_lanczossharp), Light (DTD), Ultra (CNN UL), and Light + Sharpening (DTD + unsharp filter). Light uses low GPU; Ultra maximizes quality.</p>
+  <section class="stats" aria-label="Product details">
+    <div class="wrap stats-grid">
+      <div class="stat">
+        <span class="stat-value">05</span>
+        <span class="stat-label">themes</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">06</span>
+        <span class="stat-label">connections</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">Anime4K</span>
+        <span class="stat-label">upscaling</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value">MPV</span>
+        <span class="stat-label">player</span>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Does it auto-update?</summary>
-    <div class="body">
-      <p>The AppImage build checks GitHub Releases on each launch. If a new version is available, a notification asks for confirmation. Disable via Settings → Auto-update.</p>
+  <section class="section discover" id="features" aria-labelledby="discover-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="discover-title">Thousands of titles. One search.</h2>
+        <p>Filter by genre, score and popularity. Find what you want in seconds.</p>
+      </div>
+      <div class="media-frame discover-frame" data-reveal>
+        <div class="media-shell">
+          <div class="media-core">
+            <img src="assets/screenshots/discover.webp" width="1280" height="800" alt="AnimeciX Discover screen: anime list with genre and popularity filters" loading="lazy" decoding="async">
+          </div>
+        </div>
+        <div class="shortcut-card" aria-hidden="true">
+          <span class="key">Ctrl</span>
+          <span class="key">S</span>
+          <span>Search from anywhere</span>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Is this official?</summary>
-    <div class="body">
-      <p>No. AnimeciX is an unofficial third-party client. It uses a public API; use at your own responsibility, without harming the service provider.</p>
+  <section class="section watch-section" aria-labelledby="watch-title">
+    <div class="wrap">
+      <div class="watch-panel">
+        <div class="watch-copy">
+          <h2 id="watch-title">Episodes, at your pace.</h2>
+          <p>MPV player, official intro/outro skip and Anime4K. Pick a quality, resume where you left off.</p>
+          <ul class="feature-list">
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#subtitles"></use></svg></span>
+              <div>
+                <strong>Official intro/outro skip</strong>
+                <span>With S and E.</span>
+              </div>
+            </li>
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#sparkle"></use></svg></span>
+              <div>
+                <strong>Anime4K</strong>
+                <span>Light, Ultra, Sharpening.</span>
+              </div>
+            </li>
+            <li>
+              <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#sliders-horizontal"></use></svg></span>
+              <div>
+                <strong>Quality selection</strong>
+                <span>Per episode.</span>
+              </div>
+            </li>
+          </ul>
+        </div>
+        <div class="watch-media" data-reveal>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/episodes.webp" width="1280" height="800" alt="Horimiya episode list: watched episodes and progress" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
-  </details>
+  </section>
 
-  <details class="expander">
-    <summary>Which distros are supported?</summary>
-    <div class="body">
-      <p>Any modern Linux with GTK4, libadwaita and MPV. Tested: Fedora 40+, Ubuntu 24.04+, Arch, openSUSE Tumbleweed, EndeavourOS.</p>
+  <section class="section collection" aria-labelledby="collection-title">
+    <div class="wrap">
+      <div class="section-head">
+        <h2 id="collection-title">Your library. Always ready.</h2>
+        <p>History, favorites, calendar and movies. All in one place, all yours.</p>
+      </div>
+      <div class="bento">
+        <article class="bento-card bento-wide" data-reveal>
+          <div class="bento-copy">
+            <h3>History</h3>
+            <p>Pick up where you left off.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/history.webp" width="1280" height="800" alt="Watch history: recently watched anime and the last episode" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-narrow" data-reveal>
+          <div class="bento-copy">
+            <h3>Favorites</h3>
+            <p>Star it, keep it close.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/favorites.webp" width="1280" height="800" alt="Favorites: a list of six anime" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-narrow" data-reveal>
+          <div class="bento-copy">
+            <h3>Calendar</h3>
+            <p>Never miss a new episode.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/calendar.webp" width="1280" height="800" alt="Release calendar: daily new episode times" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+        <article class="bento-card bento-wide" data-reveal>
+          <div class="bento-copy">
+            <h3>Movies</h3>
+            <p>One click to watch.</p>
+          </div>
+          <div class="media-shell">
+            <div class="media-core">
+              <img src="assets/screenshots/film.webp" width="1280" height="800" alt="Suzume no Tojimari movie page" loading="lazy" decoding="async">
+            </div>
+          </div>
+        </article>
+      </div>
     </div>
-  </details>
-</section>
+  </section>
 
+  <section class="section themes" id="themes" aria-labelledby="themes-title">
+    <div class="wrap themes-grid">
+      <div class="themes-copy">
+        <h2 id="themes-title">Five themes. One character.</h2>
+        <p>Dark, Claret, Forest, Navy, Purple. Switch instantly, rows follow the theme.</p>
+        <div class="theme-controls" role="group" aria-label="Theme selection">
+          <button class="theme-button" type="button" data-theme="koyu" data-theme-label="Dark" aria-pressed="true"><span class="theme-dot" style="--dot:#3584E4" aria-hidden="true"></span>Dark</button>
+          <button class="theme-button" type="button" data-theme="bordo" data-theme-label="Claret" aria-pressed="false"><span class="theme-dot" style="--dot:#E5484D" aria-hidden="true"></span>Claret</button>
+          <button class="theme-button" type="button" data-theme="orman" data-theme-label="Forest" aria-pressed="false"><span class="theme-dot" style="--dot:#2EC27E" aria-hidden="true"></span>Forest</button>
+          <button class="theme-button" type="button" data-theme="lacivert" data-theme-label="Navy" aria-pressed="false"><span class="theme-dot" style="--dot:#62A0EA" aria-hidden="true"></span>Navy</button>
+          <button class="theme-button" type="button" data-theme="mor" data-theme-label="Purple" aria-pressed="false"><span class="theme-dot" style="--dot:#7C3AED" aria-hidden="true"></span>Purple</button>
+        </div>
+        <p class="theme-status" aria-live="polite">Now: <strong data-theme-name>Dark</strong></p>
+        <p class="theme-note">Theme changes apply instantly.</p>
+      </div>
+      <div class="theme-stage" data-reveal>
+        <div class="media-shell">
+          <div class="media-core theme-previews">
+            <img class="theme-preview is-active" data-theme-preview="koyu" src="assets/screenshots/theme-koyu.webp" width="1280" height="800" alt="AnimeciX home screen, Dark theme" loading="lazy" decoding="async">
+            <img class="theme-preview" data-theme-preview="bordo" src="assets/screenshots/theme-bordo.webp" width="1280" height="800" alt="AnimeciX home screen, Claret theme" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="orman" src="assets/screenshots/theme-orman.webp" width="1280" height="800" alt="AnimeciX home screen, Forest theme" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="lacivert" src="assets/screenshots/theme-lacivert.webp" width="1280" height="800" alt="AnimeciX home screen, Navy theme" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="mor" src="assets/screenshots/theme-mor.webp" width="1280" height="800" alt="AnimeciX home screen, Purple theme" loading="lazy" decoding="async" aria-hidden="true">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section downloads" aria-labelledby="downloads-title">
+    <div class="wrap downloads-grid">
+      <div class="downloads-copy">
+        <h2 id="downloads-title">Watch offline, too.</h2>
+        <p>Six connections, resume and batch download. Ready for the road.</p>
+        <ul class="feature-list">
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#lightning"></use></svg></span>
+            <div>
+              <strong>Six connections</strong>
+              <span>Fast downloads.</span>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-clockwise"></use></svg></span>
+            <div>
+              <strong>Resume</strong>
+              <span>Continue after a drop.</span>
+            </div>
+          </li>
+          <li>
+            <span class="feature-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#stack"></use></svg></span>
+            <div>
+              <strong>Batch download</strong>
+              <span>The whole season.</span>
+            </div>
+          </li>
+        </ul>
+      </div>
+      <div class="downloads-media" data-reveal>
+        <div class="media-shell">
+          <div class="media-core">
+            <img src="assets/screenshots/downloads.webp" width="1280" height="800" alt="Downloads: Horimiya episode at 72 percent" loading="lazy" decoding="async">
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="section install" id="install" aria-labelledby="install-title">
+    <div class="wrap">
+      <div class="install-panel">
+        <div class="install-head">
+          <h2 id="install-title">Install. Watch. Continue.</h2>
+          <p>AppImage, deb or rpm. Pick your distro, start with one command.</p>
+        </div>
+        <div class="tabs" role="tablist" aria-label="Install packages">
+          <button class="tab" type="button" role="tab" id="tab-appimage" aria-selected="true" aria-controls="panel-appimage" tabindex="0">AppImage</button>
+          <button class="tab" type="button" role="tab" id="tab-debian" aria-selected="false" aria-controls="panel-debian" tabindex="-1">Debian / Ubuntu</button>
+          <button class="tab" type="button" role="tab" id="tab-fedora" aria-selected="false" aria-controls="panel-fedora" tabindex="-1">Fedora</button>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-appimage" aria-labelledby="tab-appimage">
+          <div class="install-meta">
+            <span class="install-size">13 MB</span>
+            <span class="install-note">One file. Uses your system GTK4, libadwaita and MPV.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Command</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Copied" data-failed-label="Copy failed">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre><code>curl -L -o AnimeciX.AppImage \
+  https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage
+chmod +x AnimeciX.AppImage
+./AnimeciX.AppImage</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/latest/download/AnimeciX-x86_64.AppImage">
+              <span>Direct download</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-debian" aria-labelledby="tab-debian" hidden>
+          <div class="install-meta">
+            <span class="install-size">3.5 MB</span>
+            <span class="install-note">Ships with its dependencies.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Command</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Copied" data-failed-label="Copy failed">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre><code>curl -L -O \
+  https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix_1.2.7_amd64.deb
+sudo apt install ./animecix_1.2.7_amd64.deb</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix_1.2.7_amd64.deb">
+              <span>Direct download</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-fedora" aria-labelledby="tab-fedora" hidden>
+          <div class="install-meta">
+            <span class="install-size">3.8 MB</span>
+            <span class="install-note">Ships with its dependencies.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Command</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Copied" data-failed-label="Copy failed">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Copy</span>
+              </button>
+            </div>
+            <pre><code>curl -L -O \
+  https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix-1.2.7-1.fc40.x86_64.rpm
+sudo dnf install ./animecix-1.2.7-1.fc40.x86_64.rpm</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.2.7/animecix-1.2.7-1.fc40.x86_64.rpm">
+              <span>Direct download</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <a class="install-all" href="https://github.com/veilzon/animecix-linux/releases" target="_blank" rel="noopener">
+          All releases
+          <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg>
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section faq" id="faq" aria-labelledby="faq-title">
+    <div class="wrap faq-grid">
+      <div class="faq-copy">
+        <h2 id="faq-title">Short answers.</h2>
+        <p>More on GitHub.</p>
+        <a class="text-link" href="https://github.com/veilzon/animecix-linux/issues" target="_blank" rel="noopener">
+          Ask a question
+          <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg>
+        </a>
+      </div>
+      <div class="faq-list">
+        <details>
+          <summary>
+            <span>Is the AppImage enough on its own?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>You need GTK4, libadwaita and MPV on your system. The deb and rpm packages install those dependencies for you.</p>
+        </details>
+        <details>
+          <summary>
+            <span>How do downloads work?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>Six connections, resume and batch download. Choose the folder in Settings.</p>
+        </details>
+        <details>
+          <summary>
+            <span>What does Anime4K do?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>Real-time upscaling in MPV. Light, Ultra and Sharpening modes.</p>
+        </details>
+        <details>
+          <summary>
+            <span>Does it auto-update?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>The AppImage checks on every launch. You can turn it off in Settings.</p>
+        </details>
+        <details>
+          <summary>
+            <span>Is this official?</span>
+            <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
+          </summary>
+          <p>No. It is a third-party client. It uses a public API. Use it at your own responsibility.</p>
+        </details>
+      </div>
+    </div>
+  </section>
+
+  <section class="section final-cta" aria-labelledby="cta-title">
+    <div class="wrap">
+      <div class="cta-panel">
+        <div class="cta-copy">
+          <h2 id="cta-title">The next episode is waiting.</h2>
+          <p class="cta-meta">Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.2.7 <span class="dot-sep" aria-hidden="true">·</span> 13 MB</p>
+        </div>
+        <div class="cta-actions">
+          <a class="btn btn-primary" href="#install">
+            <span>Download</span>
+            <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#arrow-up-right"></use></svg></span>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
+        </div>
+      </div>
+    </div>
+  </section>
 </main>
 
-<footer class="footer">
-  <span>© 2026 veilzon · <a href="https://github.com/veilzon/animecix-linux/blob/main/LICENSE">MIT</a> </span>
-  <ul>
-    <li><a href="https://github.com/veilzon/animecix-linux" rel="noopener">GitHub</a></li>
-    <li><a href="https://github.com/veilzon/animecix-linux/releases" rel="noopener">Releases</a></li>
-    <li><a href="https://github.com/veilzon/animecix-linux/issues" rel="noopener">Report issue</a></li>
-    <li><a href="index.html" hreflang="tr">Türkçe</a></li>
-  </ul>
+<footer class="site-footer">
+  <div class="wrap footer-grid">
+    <div class="footer-brand">
+      <a class="brand" href="en.html" aria-label="AnimeciX home">
+        <img src="assets/icon.png" width="28" height="28" alt="">
+        <span>AnimeciX</span>
+      </a>
+      <p>Third-party client. Not official.</p>
+    </div>
+    <nav class="footer-links" aria-label="Footer menu">
+      <a href="https://github.com/veilzon/animecix-linux/blob/main/LICENSE" target="_blank" rel="noopener">MIT</a>
+      <a href="https://github.com/veilzon/animecix-linux" target="_blank" rel="noopener">GitHub</a>
+      <a href="https://github.com/veilzon/animecix-linux/releases" target="_blank" rel="noopener">Releases</a>
+      <a href="https://github.com/veilzon/animecix-linux/issues" target="_blank" rel="noopener">Issues</a>
+      <a href="index.html" hreflang="tr" lang="tr">Türkçe</a>
+    </nav>
+  </div>
 </footer>
 
-</div>
+<script src="script.js" defer></script>
 </body>
 </html>
