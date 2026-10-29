@@ -181,6 +181,7 @@ pub fn ensure_daemon() -> Result<(u16, String), String> {
         }
     }
     let bin = find_aria2c().ok_or_else(|| "aria2c bulunamadı".to_string())?;
+    let appdir = std::env::var("APPDIR").ok();
     let secret = random_secret();
     for port in PORT_FIRST..=PORT_LAST {
         let mut cmd = Command::new(&bin);
@@ -204,6 +205,14 @@ pub fn ensure_daemon() -> Result<(u16, String), String> {
             "--console-log-level=warn",
             "--quiet=true",
         ]);
+        // Yalnızca AppImage içindeki aria2c'ye kendi lib dizinini ver.
+        // Global LD_LIBRARY_PATH, GTK'nın sistem araçlarına sızıp SELinux
+        // ihlaline yol açıyordu (ffmpegthumbnailer / fusefs_t).
+        if let Some(appdir) = appdir.as_ref() {
+            if bin == Path::new(appdir).join("usr/bin/aria2c") {
+                cmd.env("LD_LIBRARY_PATH", Path::new(appdir).join("usr/lib"));
+            }
+        }
         cmd.stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null());

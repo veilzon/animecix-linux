@@ -69,7 +69,7 @@ pub struct CoverManager {
 /// Çözümlü kapak üst sınırı (adet).
 const MAX_L1_COVERS: usize = 250;
 /// Çözümlü kapak dokularının toplam bellek bütçesi.
-const MAX_L1_BYTES: usize = 48 * 1024 * 1024;
+const MAX_L1_BYTES: usize = 32 * 1024 * 1024;
 
 fn texture_bytes_for(w: i32, h: i32) -> usize {
     (w.max(0) as usize)

@@ -222,7 +222,7 @@ if command -v aria2c >/dev/null 2>&1; then
     for lib in $(ldd "$(command -v aria2c)" 2>/dev/null | awk '{print $3}' | grep '^/'); do
         base="$(basename "$lib")"
         case "$base" in
-            libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|libnss*|libresolv.so*) continue ;;
+            libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|libnss*|libresolv.so*|libstdc++.so*|libgcc_s.so*) continue ;;
         esac
         cp -n "$lib" "$APPDIR/usr/lib/" 2>/dev/null || true
     done
@@ -236,7 +236,9 @@ cat > "$APPDIR/AppRun" <<'EOF'
 #!/usr/bin/env bash
 HERE="$(dirname "$(readlink -f "${0}")")"
 export PATH="${HERE}/usr/bin:${PATH}"
-export LD_LIBRARY_PATH="${HERE}/usr/lib:${LD_LIBRARY_PATH:-}"
+# LD_LIBRARY_PATH BURADA VERİLMEZ: GTK'nın başlattığı ffmpegthumbnailer gibi
+# sistem araçları AppImage içindeki C++ runtime'ını yükleyip SELinux'a takılıyordu.
+# Yalnızca paketlenmiş aria2c, kendi başlatıldığı yerde bu değişkeni alır.
 export APPDIR="${HERE}"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 # glibc malloc arena tavanı: çok thread'li ayırmalarda RAM şişmesini sınırlar

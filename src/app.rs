@@ -43,6 +43,8 @@ pub enum Page {
 /// Gezinme geçmişi üst sınırı: uzun oturumlarda bölüm listelerinin
 /// sınırsız klonlanmasını önler.
 const MAX_PAGE_HISTORY: usize = 30;
+/// Sezon çubuğunda doğrudan gösterilen sezon sayısı; kalanı `…` popover'ına.
+const MAX_VISIBLE_SEASONS: usize = 5;
 
 fn push_page_history(st: &mut Vec<Page>, page: Page) {
     if st.last() == Some(&page) {
@@ -52,6 +54,40 @@ fn push_page_history(st: &mut Vec<Page>, page: Page) {
     if st.len() > MAX_PAGE_HISTORY {
         st.remove(0);
     }
+}
+
+fn split_seasons(seasons: &[u64]) -> (Vec<u64>, Vec<u64>) {
+    let split = seasons.len().min(MAX_VISIBLE_SEASONS);
+    (seasons[..split].to_vec(), seasons[split..].to_vec())
+}
+
+/// Bölüm filtresi: arama doluysa tüm sezonlarda arar; boşsa sezon filtresi
+/// uygulanır. İzlenme filtresi her iki durumda da geçerlidir.
+fn episode_filter_matches(
+    q: &str,
+    ep_season: u64,
+    ep_episode: u64,
+    ep_name: &str,
+    season_filter: u64,
+    watched: bool,
+    watched_filter: i8,
+) -> bool {
+    let mut show = true;
+    if !q.is_empty() {
+        let name_match = ep_name.to_lowercase().contains(q);
+        let ep_num_match = ep_episode.to_string() == q
+            || format!("e{ep_episode}") == q
+            || format!("s{ep_season:02}e{ep_episode:02}") == q;
+        show &= name_match || ep_num_match;
+    } else if season_filter != 0 {
+        show &= ep_season == season_filter;
+    }
+    match watched_filter {
+        1 => show &= watched,
+        2 => show &= !watched,
+        _ => {}
+    }
+    show
 }
 
 /// Çözüm paketi: oynatma adayları + video öncesi çözülmüş atlama planı.
@@ -778,6 +814,10 @@ impl App {
             // İndirme pompası: kuyruk olaylarını arayüze taşır.
             let pump = app_inst.clone_ref();
             let pump_rm = pump.remove_hint_cb();
+            let pump_play: Rc<dyn Fn(crate::download::DownloadRecord)> = {
+                let pump = pump.clone_ref();
+                Rc::new(move |rec| pump.play_local(&rec))
+            };
             let rx = std::sync::Arc::new(std::sync::Mutex::new(dl_rx));
             glib::timeout_add_local(std::time::Duration::from_millis(1500), move || {
                 pump.ops.tick();
@@ -812,6 +852,7 @@ impl App {
                                         rec,
                                         &pump.dl_manager,
                                         &pump_rm,
+                                        &pump_play,
                                     );
                                 }
                             }
@@ -1614,6 +1655,38 @@ impl App {
         self.create_title_card_sub(t, w, None)
     }
 
+    /// Kapak yalnızca kart görünür olduğunda istenir. İlk aşamada unmap'te
+    /// doku bırakılmaz; böylece pager'da gizli kartlar kapak yüklemez ama
+    /// bir kez yüklenen kapak asla kaybolmaz.
+    fn lazy_cover_picture(&self, url: Option<&str>, w: i32, h: i32) -> gtk::Picture {
+        let pic = crate::covers::new_sized_picture(w, h);
+        let Some(url) = url.map(str::to_string) else {
+            return pic;
+        };
+        let covers = self.covers.clone_ref();
+        let loaded = Rc::new(Cell::new(false));
+        let load: Rc<dyn Fn()> = {
+            let covers = covers.clone_ref();
+            let pic_c = pic.clone();
+            let loaded = loaded.clone();
+            let url = url.clone();
+            Rc::new(move || {
+                if !loaded.replace(true) {
+                    covers.load_cover(Some(&url), &pic_c, w, h);
+                }
+            })
+        };
+        {
+            let load = load.clone();
+            pic.connect_map(move |_| load());
+        }
+        // Nadir de olsa sinyal bağlanmadan önce mapped olmuşsa kaçırma.
+        if pic.is_mapped() {
+            load();
+        }
+        pic
+    }
+
     /// Alt yazısı ezilebilir kart: devam rafı SxxExx rozetini buradan verir,
     /// geometri normal kartla birebir aynı kalır (hiza kayması olmaz).
     fn create_title_card_sub(&self, t: &Title, w: i32, sub_override: Option<String>) -> gtk::Box {
@@ -1627,7 +1700,7 @@ impl App {
         box_.set_halign(gtk::Align::Start);
         box_.set_valign(gtk::Align::Start);
 
-        let pic = self.covers.cover_picture(t.poster.as_deref(), w, h);
+        let pic = self.lazy_cover_picture(t.poster.as_deref(), w, h);
         pic.set_size_request(w, h);
         pic.set_can_shrink(false);
         pic.set_hexpand(false);
@@ -1689,7 +1762,7 @@ impl App {
         carousel.set_allow_scroll_wheel(false);
         carousel.set_hexpand(true);
         let mut count = 0u32;
-        for t in picks.iter().take(8) {
+        for t in picks.iter().take(5) {
             let Some(url) = t.backdrop.clone().or_else(|| t.poster.clone()) else {
                 continue;
             };
@@ -2342,10 +2415,15 @@ impl App {
     }
 
     fn build_downloads_view(&self) -> gtk::ScrolledWindow {
+        let on_play: Rc<dyn Fn(crate::download::DownloadRecord)> = {
+            let this = self.clone_ref();
+            Rc::new(move |rec| this.play_local(&rec))
+        };
         let (scroll, rows) = crate::ui::downloads_view::DownloadsView::build(
             &self.dl_manager,
             self.effective_download_dir(),
             self.remove_hint_cb(),
+            on_play,
         );
         *self.dl_rows.borrow_mut() = rows;
         scroll
@@ -3039,6 +3117,7 @@ impl App {
                                 ));
                                 crate::download::DownloadRecord {
                                     id: format!("film:{}:{quality}", title3.id),
+                                    title_id: title3.id,
                                     title: series,
                                     season: 1,
                                     episode: 1,
@@ -3660,62 +3739,115 @@ impl App {
                 Rc::new(move || {
                     let (q, season, w) = f_state.borrow().clone();
                     for (ep_data, row_widget, watched) in rows.iter() {
-                        let mut show = true;
-                        if !q.is_empty() {
-                            let name_match = ep_data.name.to_lowercase().contains(&q);
-                            let ep_num_match = ep_data.episode.to_string() == q
-                                || format!("e{}", ep_data.episode) == q
-                                || format!("s{:02}e{:02}", ep_data.season, ep_data.episode) == q;
-                            show &= name_match || ep_num_match;
-                        }
-                        if season != 0 {
-                            show &= ep_data.season == season;
-                        }
-                        match w {
-                            1 => show &= *watched.borrow(),
-                            2 => show &= !*watched.borrow(),
-                            _ => {}
-                        }
+                        let show = episode_filter_matches(
+                            &q,
+                            ep_data.season,
+                            ep_data.episode,
+                            &ep_data.name,
+                            season,
+                            *watched.borrow(),
+                            w,
+                        );
                         set_ep_row_visible(row_widget, show);
                     }
                 })
             };
-            // Sezon hapları (çok sezonluysa).
+            let season_pills: Rc<RefCell<Vec<(u64, gtk::Button)>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            let overflow_season_btn: Rc<RefCell<Option<gtk::Button>>> = Rc::new(RefCell::new(None));
+            // Sezon hapları: ilk 5 doğrudan, kalanı `…` popover'ında.
             if seasons.len() > 1 {
                 let lbl = gtk::Label::new(Some("Sezon:"));
                 lbl.add_css_class("dim-label");
                 lbl.set_valign(gtk::Align::Center);
                 filter_bar.append(&lbl);
-                let pills: Rc<RefCell<Vec<(u64, gtk::Button)>>> = Rc::new(RefCell::new(Vec::new()));
-                for s in &seasons {
+                let (visible_seasons, overflow_seasons) = split_seasons(&seasons);
+                let select_season: Rc<dyn Fn(u64)> = {
+                    let pills = season_pills.clone();
+                    let f_state = f_state.clone();
+                    let apply = apply_ep_filter.clone();
+                    let overflow_btn = overflow_season_btn.clone();
+                    let visible = visible_seasons.clone();
+                    Rc::new(move |s: u64| {
+                        {
+                            let mut st = f_state.borrow_mut();
+                            st.1 = if st.1 == s { 0 } else { s };
+                        }
+                        let selected = f_state.borrow().1;
+                        for (season, btn) in pills.borrow().iter() {
+                            if *season == selected {
+                                btn.add_css_class("suggested-action");
+                            } else {
+                                btn.remove_css_class("suggested-action");
+                            }
+                        }
+                        if let Some(btn) = overflow_btn.borrow().as_ref() {
+                            if selected != 0 && !visible.contains(&selected) {
+                                btn.add_css_class("suggested-action");
+                            } else {
+                                btn.remove_css_class("suggested-action");
+                            }
+                        }
+                        apply();
+                    })
+                };
+                for s in &visible_seasons {
                     let b = gtk::Button::with_label(&format!("S{s}"));
                     b.add_css_class("pill");
                     if *s == seasons[0] {
                         b.add_css_class("suggested-action");
                     }
                     b.set_valign(gtk::Align::Center);
-                    {
-                        let pills = pills.clone();
-                        let f_state = f_state.clone();
-                        let apply = apply_ep_filter.clone();
-                        let ss = *s;
-                        b.connect_clicked(move |btn| {
-                            // Aktif hapa tekrar dokun → seçim kalkar (tümü).
-                            if f_state.borrow().1 == ss {
-                                btn.remove_css_class("suggested-action");
-                                f_state.borrow_mut().1 = 0;
-                            } else {
-                                for (_, p) in pills.borrow().iter() {
-                                    p.remove_css_class("suggested-action");
-                                }
-                                btn.add_css_class("suggested-action");
-                                f_state.borrow_mut().1 = ss;
-                            }
-                            apply();
-                        });
-                    }
-                    pills.borrow_mut().push((*s, b.clone()));
+                    let select = select_season.clone();
+                    let ss = *s;
+                    b.connect_clicked(move |_| select(ss));
+                    season_pills.borrow_mut().push((*s, b.clone()));
                     filter_bar.append(&b);
+                }
+                if !overflow_seasons.is_empty() {
+                    let btn = gtk::Button::with_label("…");
+                    btn.add_css_class("pill");
+                    btn.set_valign(gtk::Align::Center);
+                    btn.set_tooltip_text(Some("Diğer sezonlar"));
+                    let pop = gtk::Popover::new();
+                    pop.set_has_arrow(false);
+                    pop.set_autohide(true);
+                    pop.set_size_request(160, -1);
+                    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 4);
+                    box_.set_margin_top(8);
+                    box_.set_margin_bottom(8);
+                    box_.set_margin_start(8);
+                    box_.set_margin_end(8);
+                    for s in &overflow_seasons {
+                        let b = gtk::Button::with_label(&format!("S{s}"));
+                        b.add_css_class("flat");
+                        b.add_css_class("pill");
+                        b.set_halign(gtk::Align::Fill);
+                        let select = select_season.clone();
+                        let pop_c = pop.clone();
+                        let ss = *s;
+                        b.connect_clicked(move |_| {
+                            select(ss);
+                            pop_c.popdown();
+                        });
+                        season_pills.borrow_mut().push((*s, b.clone()));
+                        box_.append(&b);
+                    }
+                    let scroll = gtk::ScrolledWindow::new();
+                    scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+                    scroll.set_max_content_height(320);
+                    scroll.set_propagate_natural_height(true);
+                    scroll.set_child(Some(&box_));
+                    pop.set_child(Some(&scroll));
+                    pop.connect_closed(|p| p.unparent());
+                    let btn_c = btn.clone();
+                    let pop_c = pop.clone();
+                    btn.connect_clicked(move |_| {
+                        pop_c.set_parent(&btn_c);
+                        pop_c.popup();
+                    });
+                    *overflow_season_btn.borrow_mut() = Some(btn.clone());
+                    filter_bar.append(&btn);
                 }
             }
             // İzlenme filtresi: Tümü / İzlendi / İzlenmemiş.
@@ -3763,8 +3895,26 @@ impl App {
             {
                 let f_state = f_state.clone();
                 let apply = apply_ep_filter.clone();
+                let season_pills = season_pills.clone();
+                let overflow_btn = overflow_season_btn.clone();
                 ep_search_entry.connect_search_changed(move |e| {
-                    f_state.borrow_mut().0 = e.text().trim().to_lowercase();
+                    let q = e.text().trim().to_lowercase();
+                    {
+                        let mut st = f_state.borrow_mut();
+                        st.0 = q.clone();
+                        // Arama tüm sezonlarda çalışsın: sezon seçimini bırak.
+                        if !q.is_empty() {
+                            st.1 = 0;
+                        }
+                    }
+                    if !q.is_empty() {
+                        for (_, b) in season_pills.borrow().iter() {
+                            b.remove_css_class("suggested-action");
+                        }
+                        if let Some(b) = overflow_btn.borrow().as_ref() {
+                            b.remove_css_class("suggested-action");
+                        }
+                    }
                     apply();
                 });
             }
@@ -4039,7 +4189,7 @@ impl App {
                         let mut skipped = Vec::new();
                         for (ep, fs) in &auto {
                             match crate::download::resolve_for_download(
-                                &c, &dir, &series, ep, fs, &quality_c,
+                                &c, &dir, title_c.id, &series, ep, fs, &quality_c,
                             ) {
                                 Ok(rec) => recs.push(rec),
                                 Err(e) => {
@@ -4068,6 +4218,7 @@ impl App {
                         let dir_c = dir.clone();
                         let series_c = series.clone();
                         let quality_cc = quality_c.clone();
+                        let title_id_c = title.id;
                         this_c.spawn(move |c| {
                             let mut recs = Vec::new();
                             let mut skipped = Vec::new();
@@ -4075,6 +4226,7 @@ impl App {
                                 match crate::download::resolve_for_download(
                                     &c,
                                     &dir_c,
+                                    title_id_c,
                                     &series_c,
                                     ep,
                                     fs,
@@ -4564,6 +4716,63 @@ impl App {
 
     fn socket_timeout_hit(elapsed_secs: u64, socket_seen: bool) -> bool {
         !socket_seen && elapsed_secs >= Self::SOCKET_TIMEOUT_SECS
+    }
+
+    /// Yerel indirilmiş dosyayı mevcut mpv/RPC supervisor'ıyla oynatır.
+    fn play_local(&self, rec: &crate::download::DownloadRecord) {
+        if !rec.dest.is_file() {
+            self.ops.error(
+                "Dosya bulunamadı",
+                &rec.dest.display().to_string(),
+                std::time::Duration::from_secs(6),
+            );
+            return;
+        }
+        let title_id = self.download_title_id(rec);
+        if title_id == 0 {
+            self.ops.info(
+                "Eski indirme",
+                "Başlık kimliği bulunamadı; ilerleme kaydı sınırlı olabilir.",
+                std::time::Duration::from_secs(4),
+            );
+        }
+        let title = Title {
+            id: title_id,
+            name: rec.title.clone(),
+            ..Default::default()
+        };
+        let ep = Episode {
+            season: rec.season,
+            episode: rec.episode,
+            name: rec.ep_name.clone(),
+        };
+        let path = rec.dest.to_string_lossy().into_owned();
+        self.play_candidates(&title, &ep, std::slice::from_ref(&path), &[], &[], None);
+    }
+
+    /// Eski indirme kayıtlarında başlık kimliğini yerel verilerden çözer.
+    fn download_title_id(&self, rec: &crate::download::DownloadRecord) -> u64 {
+        if rec.title_id != 0 {
+            return rec.title_id;
+        }
+        let name = rec.title.trim();
+        if let Some(t) = self
+            .cats
+            .borrow()
+            .iter()
+            .flat_map(|c| c.items.iter())
+            .find(|t| t.name == name)
+        {
+            return t.id;
+        }
+        let st = self.client.load_state();
+        st.saved
+            .iter()
+            .chain(st.history.iter().map(|h| &h.title))
+            .chain(st.marathon.iter().map(|m| &m.title))
+            .find(|t| t.name == name)
+            .map(|t| t.id)
+            .unwrap_or(0)
     }
 
     fn play_candidates(
@@ -6065,6 +6274,31 @@ mod decide_retry_tests {
         }
         assert_eq!(st.len(), super::MAX_PAGE_HISTORY);
         assert_eq!(st.last(), Some(&super::Page::Favs));
+    }
+
+    #[test]
+    fn season_parts_show_five_then_overflow() {
+        let (visible, overflow) = super::split_seasons(&[1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(visible, vec![1, 2, 3, 4, 5]);
+        assert_eq!(overflow, vec![6, 7]);
+        let (visible, overflow) = super::split_seasons(&[3, 4]);
+        assert_eq!(visible, vec![3, 4]);
+        assert!(overflow.is_empty());
+    }
+
+    #[test]
+    fn episode_search_ignores_season_filter() {
+        // Arama varken sezon 1 seçili olsa da sezon 3'teki bölüm bulunur.
+        assert!(super::episode_filter_matches("2", 3, 2, "Ad", 1, false, 0));
+        assert!(super::episode_filter_matches(
+            "s03e02", 3, 2, "Ad", 1, false, 0
+        ));
+        // Arama boşken sezon filtresi uygulanır.
+        assert!(!super::episode_filter_matches("", 3, 2, "Ad", 1, false, 0));
+        assert!(super::episode_filter_matches("", 1, 2, "Ad", 1, false, 0));
+        // İzlenme filtresi aramadan bağımsız.
+        assert!(super::episode_filter_matches("2", 3, 2, "Ad", 1, true, 1));
+        assert!(!super::episode_filter_matches("2", 3, 2, "Ad", 1, false, 1));
     }
 
     #[test]

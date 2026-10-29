@@ -644,6 +644,7 @@ mod tests {
     fn record(status: DownloadStatus) -> DownloadRecord {
         DownloadRecord {
             id: "abc".into(),
+            title_id: 0,
             title: "Anime".into(),
             season: 1,
             episode: 1,

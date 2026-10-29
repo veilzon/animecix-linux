@@ -4,6 +4,7 @@ mod aria;
 mod auth;
 mod covers;
 mod download;
+mod download_folders;
 mod font;
 mod http;
 mod music;

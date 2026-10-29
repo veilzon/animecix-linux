@@ -20,9 +20,12 @@ pub enum DownloadStatus {
     Error(String),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct DownloadRecord {
     pub id: String,
+    /// Yerel oynatmada ilerleme/geçmiş kaydı için başlık kimliği.
+    /// Eski kuyruk kayıtlarında 0'dır; izleme sırasında isimle çözülmeye çalışılır.
+    pub title_id: u64,
     pub title: String,
     pub season: u64,
     pub episode: u64,
@@ -312,6 +315,7 @@ pub fn sibnet_referer(mp4_url: &str) -> Option<String> {
 /// `label` görünen kalite, `url` indirilen adres olmalıdır.
 pub fn build_record(
     base_dir: &Path,
+    title_id: u64,
     series: &str,
     ep: &crate::api::Episode,
     fs: &crate::api::FansubInfo,
@@ -331,6 +335,7 @@ pub fn build_record(
             "{series}:S{:02}E{:02}:{}",
             ep.season, ep.episode, fs.template_id
         ),
+        title_id,
         title: series.to_string(),
         season: ep.season,
         episode: ep.episode,
@@ -351,6 +356,7 @@ pub fn build_record(
 pub fn resolve_for_download(
     client: &crate::api::Client,
     base_dir: &Path,
+    title_id: u64,
     series: &str,
     ep: &crate::api::Episode,
     fs: &crate::api::FansubInfo,
@@ -365,7 +371,9 @@ pub fn resolve_for_download(
                 } else {
                     label
                 };
-                return Ok(build_record(base_dir, series, ep, fs, &label, &url));
+                return Ok(build_record(
+                    base_dir, title_id, series, ep, fs, &label, &url,
+                ));
             }
             Err(e) => last_err = e,
         }
@@ -386,7 +394,8 @@ pub fn save_queue(path: &Path, items: &[DownloadRecord]) -> Result<(), String> {
                 DownloadStatus::Error(e) => format!("error:{e}"),
             };
             serde_json::json!({
-                "id": r.id, "title": r.title, "season": r.season, "episode": r.episode,
+                "id": r.id, "title_id": r.title_id,
+                "title": r.title, "season": r.season, "episode": r.episode,
                 "ep_name": r.ep_name,
                 "fansub": r.fansub, "quality": r.quality, "url": r.url,
                 "referer": r.referer, "dest": r.dest.to_string_lossy(),
@@ -433,6 +442,7 @@ pub fn load_queue(path: &Path) -> Vec<DownloadRecord> {
             }
             Some(DownloadRecord {
                 id: r["id"].as_str().unwrap_or("").to_string(),
+                title_id: r["title_id"].as_u64().unwrap_or(0),
                 title: r["title"].as_str().unwrap_or("").to_string(),
                 season: r["season"].as_u64().unwrap_or(0),
                 episode: r["episode"].as_u64().unwrap_or(0),
@@ -876,6 +886,7 @@ mod tests {
         // etiket düşer ve indirme "builder error" verir.
         let r = build_record(
             Path::new("/tmp/x"),
+            1,
             "Dizi",
             &test_ep(),
             &test_fs(),
@@ -891,6 +902,7 @@ mod tests {
         );
         let r2 = build_record(
             Path::new("/tmp/x"),
+            1,
             "Dizi",
             &test_ep(),
             &test_fs(),
@@ -905,6 +917,7 @@ mod tests {
     fn build_record_fills_ep_name() {
         let r = build_record(
             Path::new("/tmp/x"),
+            1,
             "Dizi",
             &test_ep(),
             &test_fs(),
@@ -999,6 +1012,7 @@ mod tests {
         let path = dir.join("downloads.json");
         let rec = DownloadRecord {
             id: "t1".into(),
+            title_id: 42,
             title: "Frieren".into(),
             season: 1,
             episode: 7,
@@ -1016,6 +1030,7 @@ mod tests {
         let back = load_queue(&path);
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].episode, 7);
+        assert_eq!(back[0].title_id, 42, "başlık kimliği korunmalı");
         // Devam eden, kuyruğa döner.
         assert_eq!(back[0].status, DownloadStatus::Queued);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1308,6 +1323,7 @@ mod tests {
     fn test_record(id: &str, dest: PathBuf) -> DownloadRecord {
         DownloadRecord {
             id: id.into(),
+            title_id: 0,
             title: "T".into(),
             season: 1,
             episode: 1,

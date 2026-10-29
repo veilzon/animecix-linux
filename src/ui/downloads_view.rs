@@ -14,6 +14,8 @@ pub struct DlRow {
     pub bar: gtk::ProgressBar,
     pub status: gtk::Label,
     pub foot: gtk::Box,
+    /// Klasör başlığı; durum değişince toplam ilerleme tazelenir.
+    pub folder_header: gtk::Label,
 }
 
 pub struct DownloadsView;
@@ -112,6 +114,17 @@ impl DownloadsView {
         t
     }
 
+    /// Klasör başlığı: `{Seri} · {tamamlanan}/{toplam} tamamlandı · {boyut}`.
+    pub fn folder_header_text(folder: &crate::download_folders::DownloadFolder) -> String {
+        format!(
+            "{} · {}/{} tamamlandı · {}",
+            folder.title,
+            folder.done_count(),
+            folder.episodes.len(),
+            crate::download::fmt_bytes(folder.total_bytes())
+        )
+    }
+
     /// Filtre havuzu (küçük harf): başlık + bölüm adı + fansub + kalite.
     fn filter_text(rec: &DownloadRecord) -> String {
         format!(
@@ -137,6 +150,7 @@ impl DownloadsView {
         rec: &DownloadRecord,
         manager: &DownloadManager,
         on_remove: &Rc<dyn Fn()>,
+        on_play: &Rc<dyn Fn(DownloadRecord)>,
     ) {
         while let Some(c) = foot.first_child() {
             foot.remove(&c);
@@ -158,6 +172,16 @@ impl DownloadsView {
                 foot.append(&b);
             }
             DownloadStatus::Done => {
+                let play = Self::icon_btn("media-playback-start-symbolic", "İzle");
+                if !rec.dest.is_file() {
+                    play.set_sensitive(false);
+                    play.set_tooltip_text(Some("Dosya bulunamadı"));
+                }
+                let rec_c = rec.clone();
+                let on_play_c = on_play.clone();
+                play.connect_clicked(move |_| on_play_c(rec_c.clone()));
+                foot.append(&play);
+
                 let open = Self::icon_btn("folder-open-symbolic", "Klasörde Göster");
                 let dest = rec.dest.clone();
                 open.connect_clicked(move |_| {
@@ -186,13 +210,22 @@ impl DownloadsView {
         rec: &DownloadRecord,
         manager: &DownloadManager,
         on_remove: &Rc<dyn Fn()>,
+        on_play: &Rc<dyn Fn(DownloadRecord)>,
     ) {
+        let folders = crate::download_folders::group_downloads(&manager.snapshot());
+        if let Some(folder) = folders
+            .iter()
+            .find(|f| f.title_id == rec.title_id && f.title == rec.title)
+        {
+            row.folder_header
+                .set_text(&Self::folder_header_text(folder));
+        }
         row.title.set_text(&Self::row_title(rec));
         let (frac, txt, stxt) = Self::row_state(rec);
         row.bar.set_fraction(frac);
         row.bar.set_text(Some(&txt));
         row.status.set_text(&stxt);
-        Self::fill_foot(&row.foot, &row.status, rec, manager, on_remove);
+        Self::fill_foot(&row.foot, &row.status, rec, manager, on_remove, on_play);
     }
 
     /// Sayfayı kurar; ilerleme Tick'lerinde + yapısal pompa güncellemelerinde
@@ -201,6 +234,7 @@ impl DownloadsView {
         manager: &DownloadManager,
         open_dir: PathBuf,
         on_remove: Rc<dyn Fn()>,
+        on_play: Rc<dyn Fn(DownloadRecord)>,
     ) -> (gtk::ScrolledWindow, HashMap<String, DlRow>) {
         let mut rows: HashMap<String, DlRow> = HashMap::new();
         let scroll = gtk::ScrolledWindow::new();
@@ -271,72 +305,102 @@ impl DownloadsView {
         head.append(&open_btn);
         root.append(&head);
 
-        let mut cards: Vec<(gtk::Widget, String)> = Vec::new();
-        for rec in items {
-            let card = gtk::Box::new(gtk::Orientation::Vertical, 2);
-            card.add_css_class("card");
-            card.set_margin_top(4);
-            card.set_margin_bottom(4);
-            card.set_margin_start(8);
-            card.set_margin_end(8);
+        let folders = crate::download_folders::group_downloads(&items);
+        let mut cards: Vec<(gtk::Widget, String, usize)> = Vec::new();
+        let mut folder_views: Vec<gtk::Expander> = Vec::new();
+        for (folder_idx, folder) in folders.iter().enumerate() {
+            let expander = gtk::Expander::new(None);
+            let folder_header = gtk::Label::new(Some(&Self::folder_header_text(folder)));
+            folder_header.set_xalign(0.0);
+            folder_header.set_hexpand(true);
+            folder_header.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            folder_header.set_single_line_mode(true);
+            expander.set_label_widget(Some(&folder_header));
+            expander.set_expanded(false);
+            expander.add_css_class("download-folder");
+            let folder_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
+            folder_box.set_margin_top(4);
+            folder_box.set_margin_bottom(4);
 
-            let title = gtk::Label::new(Some(&Self::row_title(&rec)));
-            title.add_css_class("title-4");
-            title.set_xalign(0.0);
-            title.set_max_width_chars(48);
-            title.set_lines(1);
-            title.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            title.set_margin_start(8);
-            title.set_margin_end(8);
-            title.set_margin_top(6);
-            card.append(&title);
+            for rec in &folder.episodes {
+                let card = gtk::Box::new(gtk::Orientation::Vertical, 2);
+                card.add_css_class("card");
+                card.set_margin_top(4);
+                card.set_margin_bottom(4);
+                card.set_margin_start(8);
+                card.set_margin_end(8);
 
-            let bar = gtk::ProgressBar::new();
-            bar.set_show_text(true);
-            let (frac, txt, stxt) = Self::row_state(&rec);
-            bar.set_fraction(frac);
-            bar.set_text(Some(&txt));
-            bar.set_margin_start(8);
-            bar.set_margin_end(8);
-            card.append(&bar);
+                let title = gtk::Label::new(Some(&Self::row_title(rec)));
+                title.add_css_class("title-4");
+                title.set_xalign(0.0);
+                title.set_max_width_chars(48);
+                title.set_lines(1);
+                title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                title.set_margin_start(8);
+                title.set_margin_end(8);
+                title.set_margin_top(6);
+                card.append(&title);
 
-            let foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            foot.set_margin_start(8);
-            foot.set_margin_end(8);
-            foot.set_margin_bottom(6);
-            let status = gtk::Label::new(Some(&stxt));
-            status.add_css_class("dim-label");
-            status.set_xalign(0.0);
-            status.set_hexpand(true);
-            status.set_ellipsize(gtk::pango::EllipsizeMode::End);
-            Self::fill_foot(&foot, &status, &rec, manager, &on_remove);
-            card.append(&foot);
+                let bar = gtk::ProgressBar::new();
+                bar.set_show_text(true);
+                let (frac, txt, stxt) = Self::row_state(rec);
+                bar.set_fraction(frac);
+                bar.set_text(Some(&txt));
+                bar.set_margin_start(8);
+                bar.set_margin_end(8);
+                card.append(&bar);
 
-            let filter = Self::filter_text(&rec);
-            cards.push((card.clone().upcast(), filter.clone()));
-            rows.insert(
-                rec.id.clone(),
-                DlRow {
-                    title: title.clone(),
-                    bar: bar.clone(),
-                    status: status.clone(),
-                    foot: foot.clone(),
-                },
-            );
-            root.append(&card);
+                let foot = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+                foot.set_margin_start(8);
+                foot.set_margin_end(8);
+                foot.set_margin_bottom(6);
+                let status = gtk::Label::new(Some(&stxt));
+                status.add_css_class("dim-label");
+                status.set_xalign(0.0);
+                status.set_hexpand(true);
+                status.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                Self::fill_foot(&foot, &status, rec, manager, &on_remove, &on_play);
+                card.append(&foot);
+
+                cards.push((card.clone().upcast(), Self::filter_text(rec), folder_idx));
+                rows.insert(
+                    rec.id.clone(),
+                    DlRow {
+                        title: title.clone(),
+                        bar: bar.clone(),
+                        status: status.clone(),
+                        foot: foot.clone(),
+                        folder_header: folder_header.clone(),
+                    },
+                );
+                folder_box.append(&card);
+            }
+            expander.set_child(Some(&folder_box));
+            folder_views.push(expander.clone());
+            root.append(&expander);
         }
 
         let total = rows.len();
         let cards_rc = std::rc::Rc::new(std::cell::RefCell::new(cards));
+        let folders_rc = std::rc::Rc::new(folder_views);
         let count_c = count.clone();
         search.connect_search_changed(move |e| {
             let query = e.text().trim().to_lowercase();
             let mut vis = 0;
-            for (card, hay) in cards_rc.borrow().iter() {
+            let mut folder_show = vec![false; folders_rc.len()];
+            for (card, hay, folder_idx) in cards_rc.borrow().iter() {
                 let show = query.is_empty() || hay.contains(&query);
                 card.set_visible(show);
                 if show {
                     vis += 1;
+                    folder_show[*folder_idx] = true;
+                }
+            }
+            for (i, expander) in folders_rc.iter().enumerate() {
+                let show = query.is_empty() || folder_show[i];
+                expander.set_visible(show);
+                if !query.is_empty() && show {
+                    expander.set_expanded(true);
                 }
             }
             if query.is_empty() {
@@ -366,6 +430,7 @@ mod tests {
     ) -> DownloadRecord {
         DownloadRecord {
             id: "t".into(),
+            title_id: 0,
             title: "Frieren".into(),
             season: 1,
             episode: 7,
