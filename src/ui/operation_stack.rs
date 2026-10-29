@@ -28,7 +28,6 @@ pub struct Operation {
     pub detail: String,
     pub state: OperationState,
     pub progress: Option<f64>,
-    pub started_at: Instant,
     pub expires_at: Option<Instant>,
     pub seq: u64,
 }
@@ -69,7 +68,6 @@ impl OperationQueue {
                 detail: detail.to_string(),
                 state: OperationState::Running,
                 progress: None,
-                started_at: Instant::now(),
                 expires_at: None,
                 seq,
             },
@@ -198,7 +196,6 @@ impl OperationQueue {
                 detail: detail.to_string(),
                 state,
                 progress: None,
-                started_at: now,
                 expires_at: Some(now + ttl),
                 seq,
             },
