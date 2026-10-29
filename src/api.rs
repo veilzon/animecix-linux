@@ -510,8 +510,9 @@ pub struct Episode {
 
 /// HTML entity'lerini tek geçişte çözer.
 ///
-/// Sayısal entity'ler önce, isimli entity'ler sonra, `&amp;` en son çözülür;
-/// böylece `&amp;lt;` girdisi `&lt;` üretir ve ikinci kez decode edilmez.
+/// Sayısal entity'ler önce, isimli entity'ler sonra denenir; `&amp;` da aynı
+/// taramada tüketilir, böylece `&amp;lt;` girdisi `&lt;` üretir ve ikinci kez
+/// decode edilmez.
 pub(crate) fn decode_html_entities(input: &str) -> String {
     fn numeric(tail: &str) -> Option<(char, usize)> {
         let after_amp = tail.strip_prefix('&')?;
@@ -548,18 +549,19 @@ pub(crate) fn decode_html_entities(input: &str) -> String {
             ("&gt;", '>'),
             ("&quot;", '"'),
             ("&apos;", '\''),
+            ("&amp;", '&'),
         ];
         if let Some((pat, ch)) = named.iter().find(|(pat, _)| tail.starts_with(pat)) {
             out.push(*ch);
             rest = &tail[pat.len()..];
             continue;
         }
-        // `&amp;` en sonda çözülür (tek geçiş garantisi için).
+        // Tanınmayan `&`: olduğu gibi bırak.
         out.push('&');
         rest = &tail[1..];
     }
     out.push_str(rest);
-    out.replace("&amp;", "&")
+    out
 }
 
 /// `name` alanı bölüm numarasından başka bir şey taşımıyorsa `true`.
@@ -578,8 +580,8 @@ pub(crate) fn is_generic_episode_name(name: &str, episode: u64) -> bool {
 
 /// Bölüm için gösterilecek adı seçer: gerçek `name` > `description` > numara.
 pub(crate) fn episode_display_name(raw_name: &str, description: &str, episode: u64) -> String {
-    let raw = decode_html_entities(raw_name.trim());
-    let desc = decode_html_entities(description.trim());
+    let raw = decode_html_entities(raw_name).trim().to_string();
+    let desc = decode_html_entities(description).trim().to_string();
     if !raw.is_empty() && !is_generic_episode_name(&raw, episode) {
         raw
     } else if !desc.is_empty() {
@@ -3838,7 +3840,14 @@ mod tests {
         assert_eq!(episode_display_name("A &amp; B", "", 1), "A & B");
         assert_eq!(decode_html_entities("&#39;"), "'");
         assert_eq!(decode_html_entities("&#x27;"), "'");
+        assert_eq!(decode_html_entities("&#38;amp;"), "&amp;");
         assert_eq!(decode_html_entities("&amp;lt;"), "&lt;");
+    }
+
+    #[test]
+    fn episode_name_decodes_then_trims() {
+        assert_eq!(episode_display_name("&#32;", "", 2), "Bölüm 2");
+        assert_eq!(episode_display_name("&#32;Ad ", "", 2), "Ad");
     }
 
     #[test]

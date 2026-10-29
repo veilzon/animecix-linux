@@ -139,13 +139,14 @@ impl OperationQueue {
             .retain(|op| op.expires_at.is_none_or(|at| at > now));
     }
 
-    /// Görünür kayıtlar: önce Running, sonra Error, sonra Done; her grupta
-    /// en yeni önce. Toplam `max_visible` ile sınırlıdır.
+    /// Görünür kayıtlar: önce Error, sonra Running, sonra Done; her grupta
+    /// en yeni önce. Toplam `max_visible` ile sınırlıdır; böylece hata
+    /// satırları çalışan indirmelerin arkasında gizlenmez.
     pub fn visible(&self) -> Vec<&Operation> {
         let mut out: Vec<&Operation> = Vec::new();
         for state in [
-            OperationState::Running,
             OperationState::Error,
+            OperationState::Running,
             OperationState::Done,
         ] {
             let mut group: Vec<&Operation> =
@@ -302,7 +303,7 @@ impl OperationStack {
         revealer.set_transition_duration(180);
         revealer.set_halign(gtk::Align::Center);
         revealer.set_valign(gtk::Align::End);
-        revealer.set_margin_bottom(24);
+        revealer.set_margin_bottom(84);
         revealer.set_margin_start(16);
         revealer.set_margin_end(16);
         revealer.set_can_target(false);
@@ -612,6 +613,15 @@ mod tests {
         assert_eq!(stack.row_count(), 3);
     }
 
+    #[gtk::test]
+    fn stack_clears_download_pill() {
+        let stack = OperationStack::new();
+        assert!(
+            stack.widget().margin_bottom() >= 80,
+            "işlem yığını alt indirme hapının üstünde kalmalı"
+        );
+    }
+
     #[test]
     fn download_operation_maps_status() {
         let downloading = record(DownloadStatus::Downloading);
@@ -712,6 +722,19 @@ mod tests {
         }
         assert_eq!(q.visible().len(), 3);
         assert_eq!(q.overflow_count(), 1);
+    }
+
+    #[test]
+    fn queue_error_outranks_running() {
+        let mut q = OperationQueue::new(3);
+        for i in 0..3 {
+            q.begin(&format!("op{i}"), "Çalışıyor", "");
+        }
+        q.error("Hata", "başarısız", Duration::from_secs(6));
+        let visible = q.visible();
+        assert_eq!(visible.len(), 3);
+        assert_eq!(visible[0].state, OperationState::Error);
+        assert!(visible.iter().any(|op| op.state == OperationState::Error));
     }
 
     #[test]

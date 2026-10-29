@@ -55,6 +55,31 @@ enum PlayEvent {
     Failed(u64, String),
 }
 
+/// Oynatma sonunda açılış satırının terminal durumu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum PlayTerminal {
+    Done,
+    Failed,
+}
+
+fn play_terminal(ever_media: bool) -> PlayTerminal {
+    if ever_media {
+        PlayTerminal::Done
+    } else {
+        PlayTerminal::Failed
+    }
+}
+
+/// 10 saniyelik açılış minimumu için kalan süre; süre dolduysa `None`.
+fn opening_finish_delay(elapsed: std::time::Duration) -> Option<std::time::Duration> {
+    let minimum = std::time::Duration::from_secs(10);
+    if elapsed < minimum {
+        Some(minimum - elapsed)
+    } else {
+        None
+    }
+}
+
 pub enum Msg {
     Cats(Result<Vec<api::Category>, String>),
     Search(Result<Vec<Title>, String>),
@@ -4718,15 +4743,14 @@ impl App {
                                     // zamanlayıcı zaten kuruldu.
                                     None => continue,
                                 };
-                                let minimum = std::time::Duration::from_secs(10);
-                                if elapsed < minimum {
+                                if let Some(remain) = opening_finish_delay(elapsed) {
                                     ops_h.begin(&op_id_h, "Oynatılıyor", &media_title_h);
                                     let ops_later = ops_h.clone();
                                     let id_later = op_id_h.clone();
                                     let play_gen_later = play_gen_h.clone();
                                     let opening_op_id_later = opening_op_id_h.clone();
                                     let opening_op_shown_at_later = opening_op_shown_at_h.clone();
-                                    glib::timeout_add_local(minimum - elapsed, move || {
+                                    glib::timeout_add_local(remain, move || {
                                         if play_gen_later.get() == gen_play {
                                             ops_later.finish(
                                                 &id_later,
@@ -5268,17 +5292,20 @@ impl App {
                     }
                 }
                 if !terminal_sent {
-                    if ever_media {
-                        // Kullanıcı mpv'yi kapattıysa veya oynatma sessizce
-                        // sonlandıysa açılış satırı asılı kalmasın.
-                        let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
-                    } else {
-                        // Hiçbir kaynak mpv'yi bile başlatamadıysa bu bir
-                        // toplam başarısızlıktır; Done değil Error göster.
-                        let _ = play_tx_c.send(PlayEvent::Failed(
-                            gen,
-                            "Bölüm hiçbir kaynakta açılamadı.".to_string(),
-                        ));
+                    match play_terminal(ever_media) {
+                        PlayTerminal::Done => {
+                            // Kullanıcı mpv'yi kapattıysa veya oynatma
+                            // sessizce sonlandıysa açılış satırı asılı kalmasın.
+                            let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
+                        }
+                        PlayTerminal::Failed => {
+                            // Hiçbir kaynak mpv'yi bile başlatamadıysa bu bir
+                            // toplam başarısızlıktır; Done değil Error göster.
+                            let _ = play_tx_c.send(PlayEvent::Failed(
+                                gen,
+                                "Bölüm hiçbir kaynakta açılamadı.".to_string(),
+                            ));
+                        }
                     }
                 }
                 alive.store(false, std::sync::atomic::Ordering::SeqCst);
@@ -6009,5 +6036,39 @@ mod search_caret_tests {
         let entry = gtk::SearchEntry::new();
         set_search_text_caret_end(&entry, "");
         assert_eq!(entry.position(), 0);
+    }
+}
+
+#[cfg(test)]
+mod play_lifecycle_tests {
+    use super::{opening_finish_delay, play_terminal, PlayTerminal};
+    use std::time::Duration;
+
+    #[test]
+    fn play_terminal_media_is_done() {
+        assert_eq!(play_terminal(true), PlayTerminal::Done);
+    }
+
+    #[test]
+    fn play_terminal_no_media_is_failed() {
+        assert_eq!(play_terminal(false), PlayTerminal::Failed);
+    }
+
+    #[test]
+    fn opening_finish_delay_boundaries() {
+        assert_eq!(
+            opening_finish_delay(Duration::ZERO),
+            Some(Duration::from_secs(10))
+        );
+        assert_eq!(
+            opening_finish_delay(Duration::from_secs(5)),
+            Some(Duration::from_secs(5))
+        );
+        assert_eq!(
+            opening_finish_delay(Duration::from_millis(9_999)),
+            Some(Duration::from_millis(1))
+        );
+        assert_eq!(opening_finish_delay(Duration::from_secs(10)), None);
+        assert_eq!(opening_finish_delay(Duration::from_secs(11)), None);
     }
 }
