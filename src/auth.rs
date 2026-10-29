@@ -188,6 +188,16 @@ pub fn merged_history(
     local: &[crate::api::HistoryEntry],
     remote: &[crate::api::ServerEntry],
 ) -> Vec<crate::api::HistoryEntry> {
+    let local_names: HashMap<(u64, u64, u64), String> = local
+        .iter()
+        .filter(|h| !h.episode.name.trim().is_empty())
+        .map(|h| {
+            (
+                (h.title.id, h.episode.season, h.episode.episode),
+                h.episode.name.clone(),
+            )
+        })
+        .collect();
     let mut rows: Vec<(u64, u64, crate::api::HistoryEntry)> = Vec::new();
     for h in local {
         rows.push((h.title.id, h.ts.saturating_mul(1000), h.clone()));
@@ -196,7 +206,10 @@ pub fn merged_history(
         let ep = crate::api::Episode {
             season: e.season,
             episode: e.episode,
-            name: String::new(),
+            name: local_names
+                .get(&(e.title.id, e.season, e.episode))
+                .cloned()
+                .unwrap_or_default(),
         };
         rows.push((
             e.title.id,
@@ -464,6 +477,33 @@ mod tests {
         let only_local = super::merged_history(&local, &[]);
         assert_eq!(only_local.len(), 1);
         assert_eq!(super::merged_history(&[], &[]).len(), 0);
+    }
+
+    #[test]
+    fn merged_history_fills_remote_name_from_local() {
+        use crate::api::{Episode, HistoryEntry, ServerEntry, Title};
+        let t = |id: u64| Title {
+            id,
+            name: format!("t{id}"),
+            ..Default::default()
+        };
+        let local = vec![HistoryEntry {
+            title: t(1),
+            episode: Episode {
+                season: 1,
+                episode: 1,
+                name: "Yerel Ad".into(),
+            },
+            ts: 100,
+        }];
+        let remote = vec![ServerEntry {
+            title: t(1),
+            season: 1,
+            episode: 1,
+            date: 200_000,
+        }];
+        let merged = super::merged_history(&local, &remote);
+        assert_eq!(merged[0].episode.name, "Yerel Ad");
     }
 
     #[test]

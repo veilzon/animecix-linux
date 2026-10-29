@@ -591,6 +591,30 @@ pub(crate) fn episode_display_name(raw_name: &str, description: &str, episode: u
     }
 }
 
+/// Aynı `(sezon, bölüm)` kayıtlarından gerçek adlı olanı korur (saf).
+///
+/// Sonuç `(sezon, bölüm)` sırasına göre sıralanır; eşit derecede iyi
+/// adaylarda (ikisi de gerçek ya da ikisi de genel) ilk kayıt kalır.
+pub(crate) fn dedup_episodes(mut eps: Vec<Episode>) -> Vec<Episode> {
+    eps.sort_by_key(|e| (e.season, e.episode));
+    let mut out: Vec<Episode> = Vec::with_capacity(eps.len());
+    for ep in eps {
+        match out.last_mut() {
+            Some(kept) if (kept.season, kept.episode) == (ep.season, ep.episode) => {
+                let kept_generic = kept.name.trim().is_empty()
+                    || is_generic_episode_name(&kept.name, kept.episode);
+                let new_generic =
+                    ep.name.trim().is_empty() || is_generic_episode_name(&ep.name, ep.episode);
+                if kept_generic && !new_generic {
+                    *kept = ep;
+                }
+            }
+            _ => out.push(ep),
+        }
+    }
+    out
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub title: Title,
@@ -1862,12 +1886,6 @@ impl Client {
                             if ep == 0 || sez != s {
                                 continue;
                             }
-                            if season_eps
-                                .iter()
-                                .any(|x: &Episode| x.season == sez && x.episode == ep)
-                            {
-                                continue;
-                            }
                             let raw_name = v["name"].as_str().unwrap_or("");
                             let desc = v["description"].as_str().unwrap_or("");
                             season_eps.push(Episode {
@@ -1887,8 +1905,7 @@ impl Client {
         for eps in results.into_iter().flatten() {
             all.extend(eps);
         }
-        all.sort_by_key(|e| (e.season, e.episode));
-        all.dedup_by_key(|e| (e.season, e.episode));
+        let all = dedup_episodes(all);
 
         if all.is_empty() {
             return self.movie_episodes(t.id);
@@ -3822,6 +3839,25 @@ mod tests {
         assert_eq!(decode_html_entities("&#39;"), "'");
         assert_eq!(decode_html_entities("&#x27;"), "'");
         assert_eq!(decode_html_entities("&amp;lt;"), "&lt;");
+    }
+
+    #[test]
+    fn dedup_prefers_real_episode_name() {
+        let eps = vec![
+            Episode {
+                season: 1,
+                episode: 1,
+                name: "1. Bölüm".into(),
+            },
+            Episode {
+                season: 1,
+                episode: 1,
+                name: "Gerçek Ad".into(),
+            },
+        ];
+        let out = dedup_episodes(eps);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].name, "Gerçek Ad");
     }
 
     #[test]
