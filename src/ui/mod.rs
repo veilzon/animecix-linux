@@ -4,6 +4,7 @@ pub mod downloads_view;
 pub mod episodes_view;
 pub mod fansub_dialog;
 pub mod flashcard;
+pub mod operation_stack;
 pub mod play_quality_dialog;
 pub mod row_menu;
 pub mod shortcuts;
