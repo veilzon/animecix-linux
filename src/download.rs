@@ -492,7 +492,6 @@ pub enum UiEvent {
     Tick,
     /// Yapısal kir (ekle/duraklat/devam/kaldır/başla/bit/hata): sayfa yeniden kurulur.
     Changed,
-    Toast(String),
 }
 
 /// Aynı anda en fazla kaç bölüm indirilir (1-32). Dosya-başı bağlantı
@@ -566,8 +565,7 @@ impl DownloadManager {
     }
 
     /// Kuyruğa ekler (aynı hedef zaten sıradaysa tekrar eklemez).
-    /// `quiet`: toplu eklemelerde pompa bildirimini susturur.
-    pub fn enqueue(&self, mut rec: DownloadRecord, quiet: bool) {
+    pub fn enqueue(&self, mut rec: DownloadRecord, _quiet: bool) {
         let mut q = match self.inner.queue.lock() {
             Ok(g) => g,
             Err(_) => return,
@@ -587,9 +585,6 @@ impl DownloadManager {
         drop(q);
         self.save();
         self.emit(UiEvent::Changed);
-        if !quiet {
-            self.emit(UiEvent::Toast("Kuyruğa eklendi".to_string()));
-        }
         self.ensure_worker();
     }
 
@@ -771,13 +766,6 @@ impl DownloadManager {
                         }
                         this.save();
                         this.emit(UiEvent::Changed);
-                        this.emit(UiEvent::Toast(format!(
-                            "İndi: {}",
-                            rec.dest
-                                .file_name()
-                                .map(|n| n.to_string_lossy().into_owned())
-                                .unwrap_or_default()
-                        )));
                         break;
                     }
                     DownloadEvent::Cancelled => {
@@ -797,7 +785,6 @@ impl DownloadManager {
                         this.set_status(&rec.id, DownloadStatus::Error(e.clone()));
                         this.save();
                         this.emit(UiEvent::Changed);
-                        this.emit(UiEvent::Toast(format!("İndirme hatası: {e}")));
                         break;
                     }
                 }

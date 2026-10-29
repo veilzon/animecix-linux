@@ -10,6 +10,7 @@ use crate::covers::CoverManager;
 
 use crate::ui::components;
 use crate::ui::episodes_view;
+use crate::ui::operation_stack::{OperationStack, OperationState};
 use crate::ui::views;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -45,6 +46,13 @@ pub struct PlaySources {
     pub fast_embeds: Vec<String>,
     pub fallback_embeds: Vec<String>,
     pub plan: Option<crate::skip::SkipPlan>,
+}
+
+/// Oynatma açılış satırına gönderilen olaylar (yalnızca ana iş parçacığı işler).
+enum PlayEvent {
+    DismissOpening,
+    Info(String),
+    Failed(String),
 }
 
 pub enum Msg {
@@ -84,7 +92,7 @@ pub struct App {
     pub back_btn: gtk::Button,
     pub title_label: gtk::Label,
     pub loading: gtk::Box,
-    pub toast: adw::ToastOverlay,
+    pub ops: OperationStack,
     pub client: Arc<Client>,
     pub covers: CoverManager,
     pub page_history: Rc<RefCell<Vec<Page>>>,
@@ -94,10 +102,8 @@ pub struct App {
     pub progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
     pub progress_bars: Rc<RefCell<HashMap<String, (gtk::ProgressBar, gtk::Label)>>>,
     pub dl_rows: Rc<RefCell<HashMap<String, crate::ui::downloads_view::DlRow>>>,
-    pub loading_toast: Rc<RefCell<Option<adw::Toast>>>,
-    pub opening_toast: Rc<RefCell<Option<adw::Toast>>>,
-    pub opening_toast_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
-    pub loading_gen: Rc<Cell<u32>>,
+    pub opening_op_id: Rc<RefCell<Option<String>>>,
+    pub opening_op_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
     pub home_acts: Rc<RefCell<Vec<Option<usize>>>>,
     pub dl_manager: crate::download::DownloadManager,
     /// Bölüm hızlı-arama tuşu: sayfa başına tek controller (birikmeyi önler).
@@ -524,15 +530,18 @@ impl App {
         body.append(&sep);
         body.append(&content);
 
-        let toast = adw::ToastOverlay::new();
-        toast.set_child(Some(&body));
+        let ops = OperationStack::new();
+
+        let root_overlay = gtk::Overlay::new();
+        root_overlay.set_child(Some(&body));
+        root_overlay.add_overlay(ops.widget());
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
             .title("AnimeciX")
             .default_width(1280)
             .default_height(800)
-            .content(&toast)
+            .content(&root_overlay)
             .build();
 
         let initial_page = if welcome_seen {
@@ -555,7 +564,7 @@ impl App {
             back_btn,
             title_label,
             loading,
-            toast,
+            ops,
             client: client.clone(),
             covers,
             page_history: Rc::new(RefCell::new(vec![initial_page.clone()])),
@@ -565,10 +574,8 @@ impl App {
             progress: Rc::new(RefCell::new(init_progress)),
             progress_bars: Rc::new(RefCell::new(HashMap::new())),
             dl_rows: Rc::new(RefCell::new(HashMap::new())),
-            loading_toast: Rc::new(RefCell::new(None)),
-            opening_toast: Rc::new(RefCell::new(None)),
-            opening_toast_shown_at: Rc::new(RefCell::new(None)),
-            loading_gen: Rc::new(Cell::new(0)),
+            opening_op_id: Rc::new(RefCell::new(None)),
+            opening_op_shown_at: Rc::new(RefCell::new(None)),
             home_acts: Rc::new(RefCell::new(Vec::new())),
             dl_manager,
             ep_search_controller: Rc::new(RefCell::new(None)),
@@ -743,23 +750,18 @@ impl App {
             let pump_rm = pump.remove_hint_cb();
             let rx = std::sync::Arc::new(std::sync::Mutex::new(dl_rx));
             glib::timeout_add_local(std::time::Duration::from_millis(1500), move || {
+                pump.ops.tick();
+                pump.ops.sync_downloads(&pump.dl_manager.snapshot());
                 let mut progress_dirty = false;
                 let mut struct_dirty = false;
-                let mut toasts: Vec<String> = Vec::new();
                 loop {
                     let ev = rx.lock().unwrap().try_recv();
                     match ev {
                         Ok(crate::download::UiEvent::Tick) => progress_dirty = true,
                         Ok(crate::download::UiEvent::Changed) => struct_dirty = true,
-                        Ok(crate::download::UiEvent::Toast(m)) => toasts.push(m),
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
                     }
-                }
-                for m in toasts {
-                    let t = adw::Toast::new(&m);
-                    t.set_timeout(3);
-                    pump.toast.add_toast(t);
                 }
                 if pump.stack.visible_child_name().as_deref() == Some("downloads") {
                     if struct_dirty {
@@ -882,7 +884,7 @@ impl App {
             back_btn: self.back_btn.clone(),
             title_label: self.title_label.clone(),
             loading: self.loading.clone(),
-            toast: self.toast.clone(),
+            ops: self.ops.clone(),
             client: self.client.clone(),
             covers: self.covers.clone_ref(),
             page_history: self.page_history.clone(),
@@ -892,10 +894,8 @@ impl App {
             progress: self.progress.clone(),
             progress_bars: self.progress_bars.clone(),
             dl_rows: self.dl_rows.clone(),
-            loading_toast: self.loading_toast.clone(),
-            opening_toast: self.opening_toast.clone(),
-            opening_toast_shown_at: self.opening_toast_shown_at.clone(),
-            loading_gen: self.loading_gen.clone(),
+            opening_op_id: self.opening_op_id.clone(),
+            opening_op_shown_at: self.opening_op_shown_at.clone(),
             home_acts: self.home_acts.clone(),
             dl_manager: self.dl_manager.clone(),
             ep_search_controller: self.ep_search_controller.clone(),
@@ -1170,20 +1170,15 @@ impl App {
     }
 
     pub fn busy(&self, on: bool) {
-        let gen = self.loading_gen.get() + 1;
-        self.loading_gen.set(gen);
         self.loading.set_visible(false);
-
         if on {
-            if let Some(t) = self.loading_toast.borrow_mut().take() {
-                t.dismiss();
-            }
-            let t = adw::Toast::new("Yükleniyor…");
-            t.set_timeout(0);
-            self.toast.add_toast(t.clone());
-            *self.loading_toast.borrow_mut() = Some(t);
-        } else if let Some(t) = self.loading_toast.borrow_mut().take() {
-            t.dismiss();
+            self.ops.begin("loading", "Yükleniyor…", "");
+        } else {
+            self.ops.finish(
+                "loading",
+                OperationState::Done,
+                std::time::Duration::from_millis(400),
+            );
         }
     }
 
@@ -1572,9 +1567,7 @@ impl App {
                 this.fetch_home();
             },
             move |msg| {
-                let t = adw::Toast::new(&msg);
-                t.set_timeout(3);
-                this_t.toast.add_toast(t);
+                this_t.ops.info(&msg, "", std::time::Duration::from_secs(4));
             },
             move |theme_id| {
                 crate::theme::apply_theme(&this_p.window, &theme_id);
@@ -2060,9 +2053,11 @@ impl App {
                 if item.completed {
                     this_toggle.client.mark_title_unwatched(id);
                     this_toggle.client.set_marathon_completed(id, false);
-                    let toast = adw::Toast::new("⏳ Tüm bölümler izlenmedi olarak işaretlendi");
-                    toast.set_timeout(2);
-                    this_toggle.toast.add_toast(toast);
+                    this_toggle.ops.info(
+                        "⏳ Tüm bölümler izlenmedi olarak işaretlendi",
+                        "",
+                        std::time::Duration::from_secs(2),
+                    );
                     this_toggle.show_page(&Page::Marathon);
                     return;
                 }
@@ -2079,18 +2074,18 @@ impl App {
                         match msg {
                             Ok(Ok(n)) => {
                                 this_async.client.set_marathon_completed(id, true);
-                                let toast = adw::Toast::new(&format!(
-                                    "🏁 {n} bölüm izlendi olarak işaretlendi!"
-                                ));
-                                toast.set_timeout(2);
-                                this_async.toast.add_toast(toast);
+                                this_async.ops.info(
+                                    &format!("🏁 {n} bölüm izlendi olarak işaretlendi!"),
+                                    "",
+                                    std::time::Duration::from_secs(2),
+                                );
                             }
                             _ => {
-                                let toast = adw::Toast::new(
+                                this_async.ops.info(
                                     "❌ Bölüm listesi alınamadı (internete bağlı mısın?)",
+                                    "",
+                                    std::time::Duration::from_secs(3),
                                 );
-                                toast.set_timeout(3);
-                                this_async.toast.add_toast(toast);
                             }
                         }
                         this_async.show_page(&Page::Marathon);
@@ -2100,16 +2095,20 @@ impl App {
             },
             move |id| {
                 this_remove.client.remove_from_marathon(id);
-                let toast = adw::Toast::new("Maratondan kaldırıldı");
-                toast.set_timeout(2);
-                this_remove.toast.add_toast(toast);
+                this_remove.ops.info(
+                    "Maratondan kaldırıldı",
+                    "",
+                    std::time::Duration::from_secs(2),
+                );
                 this_remove.show_page(&Page::Marathon);
             },
             move || {
                 this_clear.client.clear_marathon();
-                let toast = adw::Toast::new("İzleme maratonu temizlendi");
-                toast.set_timeout(2);
-                this_clear.toast.add_toast(toast);
+                this_clear.ops.info(
+                    "İzleme maratonu temizlendi",
+                    "",
+                    std::time::Duration::from_secs(2),
+                );
                 this_clear.show_page(&Page::Marathon);
             },
             move |id, new_index| {
@@ -2336,9 +2335,11 @@ impl App {
             if this.settings.borrow().seen_remove_hint {
                 return;
             }
-            let toast = adw::Toast::new("Listeden silindi — tamamlanan video dosyası silinmez.");
-            toast.set_timeout(10);
-            this.toast.add_toast(toast);
+            this.ops.info(
+                "Listeden silindi — tamamlanan video dosyası silinmez.",
+                "",
+                std::time::Duration::from_secs(10),
+            );
             this.settings.borrow_mut().seen_remove_hint = true;
             let s = this.settings.borrow().clone();
             this.client.save_settings(&s);
@@ -2405,9 +2406,9 @@ impl App {
                 let elapsed = now.duration_since(*last_save_c.borrow()).as_millis();
                 *last_save_c.borrow_mut() = now;
                 if elapsed >= 400 {
-                    let toast = adw::Toast::new("Ayarlar kaydedildi");
-                    toast.set_timeout(2);
-                    this_save.toast.add_toast(toast);
+                    this_save
+                        .ops
+                        .info("Ayarlar kaydedildi", "", std::time::Duration::from_secs(2));
                 }
             },
             move |remove_app| {
@@ -2416,9 +2417,11 @@ impl App {
                     crate::uninstall_application();
                     std::process::exit(0);
                 } else {
-                    let toast = adw::Toast::new("Tüm veriler temizlendi ve sıfırlandı!");
-                    toast.set_timeout(3);
-                    this_wipe.toast.add_toast(toast);
+                    this_wipe.ops.info(
+                        "Tüm veriler temizlendi ve sıfırlandı!",
+                        "",
+                        std::time::Duration::from_secs(3),
+                    );
                     this_wipe.page_history.borrow_mut().clear();
                     this_wipe.page_history.borrow_mut().push(Page::Welcome);
                     this_wipe.show_page(&Page::Welcome);
@@ -2954,9 +2957,9 @@ impl App {
                 } else {
                     "İzleme Maratonundan çıkarıldı"
                 };
-                let toast = adw::Toast::new(msg);
-                toast.set_timeout(2);
-                this_mar.toast.add_toast(toast);
+                this_mar
+                    .ops
+                    .info(msg, "", std::time::Duration::from_secs(2));
             });
 
             let this_play = self.clone_ref();
@@ -3086,9 +3089,9 @@ impl App {
             } else {
                 "İzleme Maratonundan çıkarıldı"
             };
-            let toast = adw::Toast::new(msg);
-            toast.set_timeout(2);
-            this_mar.toast.add_toast(toast);
+            this_mar
+                .ops
+                .info(msg, "", std::time::Duration::from_secs(2));
         });
 
         // Toplu indirme modu durumu.
@@ -3562,9 +3565,9 @@ impl App {
                             } else {
                                 "✅ İzlendi olarak işaretlendi"
                             };
-                            let toast = adw::Toast::new(msg);
-                            toast.set_timeout(2);
-                            this_refresh.toast.add_toast(toast);
+                            this_refresh
+                                .ops
+                                .info(msg, "", std::time::Duration::from_secs(2));
                         });
                         let client_d = this_ctx.client.clone();
                         let title_d = title_ctx.clone();
@@ -3587,9 +3590,11 @@ impl App {
                             bar_d.set_visible(false);
                             lbl_d.set_text("");
                             lbl_d.set_visible(false);
-                            let toast = adw::Toast::new("🧹 Bölüm temizlendi");
-                            toast.set_timeout(2);
-                            this_refresh_d.toast.add_toast(toast);
+                            this_refresh_d.ops.info(
+                                "🧹 Bölüm temizlendi",
+                                "",
+                                std::time::Duration::from_secs(2),
+                            );
                         });
 
                         crate::ui::row_menu::RowMenu::build(vec![
@@ -3918,9 +3923,7 @@ impl App {
             Msg::NextEp(title, res) => match res {
                 Ok(ep) => self.play(&title, &ep),
                 Err(e) => {
-                    let t = adw::Toast::new(&e);
-                    t.set_timeout(3);
-                    self.toast.add_toast(t);
+                    self.ops.error(&e, "", std::time::Duration::from_secs(3));
                 }
             },
             Msg::FansubsLoaded {
@@ -3990,9 +3993,11 @@ impl App {
                 let with_subs: Vec<(Episode, Vec<api::FansubInfo>)> =
                     items.into_iter().filter(|(_, l)| !l.is_empty()).collect();
                 if with_subs.is_empty() {
-                    let t = adw::Toast::new("⚠️ Seçili bölümlerde çeviri bulunamadı");
-                    t.set_timeout(3);
-                    self.toast.add_toast(t);
+                    self.ops.error(
+                        "Uyarı",
+                        "⚠️ Seçili bölümlerde çeviri bulunamadı",
+                        std::time::Duration::from_secs(6),
+                    );
                     return;
                 }
                 // "Her bölümde sor" kapalıysa ilk çevirmenle sessizce devam.
@@ -4075,9 +4080,11 @@ impl App {
                 }
                 // Sayaç yalnızca topluda; tekilde pompa bildirimi yeter.
                 if !is_single && n > 0 {
-                    let t = adw::Toast::new(&format!("{n} bölüm kuyruğa eklendi"));
-                    t.set_timeout(3);
-                    self.toast.add_toast(t);
+                    self.ops.info(
+                        &format!("{n} bölüm kuyruğa eklendi"),
+                        "",
+                        std::time::Duration::from_secs(3),
+                    );
                 }
                 if !skipped.is_empty() {
                     let shown: Vec<&str> = skipped.iter().take(3).map(|s| s.as_str()).collect();
@@ -4086,9 +4093,11 @@ impl App {
                     } else {
                         String::new()
                     };
-                    let t = adw::Toast::new(&format!("Atlanan: {}{more}", shown.join(", ")));
-                    t.set_timeout(5);
-                    self.toast.add_toast(t);
+                    self.ops.info(
+                        &format!("Atlanan: {}{more}", shown.join(", ")),
+                        "",
+                        std::time::Duration::from_secs(5),
+                    );
                 }
             }
         }
@@ -4316,14 +4325,14 @@ impl App {
         rest: Vec<api::FansubInfo>,
         forced: Option<crate::play_quality::PlayQuality>,
     ) {
-        let toast = adw::Toast::new(&format!(
-            "🎬 {} hazırlanıyor ({} · {:.1}★)…",
-            glib::markup_escape_text(&title.name),
-            glib::markup_escape_text(&fs.name),
-            fs.rating
-        ));
-        toast.set_timeout(2);
-        self.toast.add_toast(toast);
+        self.ops.info(
+            &format!(
+                "🎬 {} hazırlanıyor ({} · {:.1}★)…",
+                title.name, fs.name, fs.rating
+            ),
+            "",
+            std::time::Duration::from_secs(2),
+        );
         eprintln!(
             "[PLAY-FS] {} S{:02}E{:02} → {} ({:.2}★, {} mirror)",
             title.name, ep.season, ep.episode, fs.name, fs.rating, fs.mirror_count
@@ -4413,12 +4422,11 @@ impl App {
     }
 
     fn play_resolved(&self, title: &Title, ep: &Episode, _fansub_template: Option<i64>) {
-        let toast = adw::Toast::new(&format!(
-            "🎬 {} hazırlanıyor…",
-            glib::markup_escape_text(&title.name)
-        ));
-        toast.set_timeout(2);
-        self.toast.add_toast(toast);
+        self.ops.info(
+            &format!("🎬 {} hazırlanıyor…", title.name),
+            "",
+            std::time::Duration::from_secs(2),
+        );
         let title = title.clone();
         let ep = ep.clone();
         let manual_r = self.settings.borrow().official_skip_secret.clone();
@@ -4481,9 +4489,11 @@ impl App {
     /// (filmde liste boşsa da aynı yol). `dir`: +1 sonraki, -1 önceki.
     fn request_neighbor(&self, title: &Title, cur: &Episode, dir: i8) {
         if title.title_type.as_deref() == Some("movie") {
-            let t = adw::Toast::new("Filmde sonraki bölüm yok");
-            t.set_timeout(3);
-            self.toast.add_toast(t);
+            self.ops.info(
+                "Filmde sonraki bölüm yok",
+                "",
+                std::time::Duration::from_secs(3),
+            );
             return;
         }
         let label = if dir > 0 {
@@ -4491,9 +4501,7 @@ impl App {
         } else {
             "⏮ Önceki bölüm açılıyor…"
         };
-        let t = adw::Toast::new(label);
-        t.set_timeout(2);
-        self.toast.add_toast(t);
+        self.ops.info(label, "", std::time::Duration::from_secs(2));
         let title_c = title.clone();
         let cur_c = cur.clone();
         self.spawn(move |c| {
@@ -4642,81 +4650,98 @@ impl App {
         let progress = self.progress.clone();
         let progress_bars = self.progress_bars.clone();
         let client = self.client.clone();
-        let toast = self.toast.clone();
+        let ops = self.ops.clone();
+        let op_id = format!("play:{tid}:{season}:{episode}");
 
-        if let Some(old) = self.opening_toast.borrow_mut().take() {
-            old.dismiss();
+        if let Some(previous) = self.opening_op_id.borrow_mut().take() {
+            if previous != op_id {
+                ops.finish(&previous, OperationState::Done, std::time::Duration::ZERO);
+            }
         }
-        let t = adw::Toast::new(&format!(
-            "▶ {} açılıyor…{}",
-            glib::markup_escape_text(&media_title),
-            saved_pos
-                .map(|p| {
-                    let s = p as u64;
-                    if s >= 3600 {
-                        format!(" ({}:{:02}:{:02}'den)", s / 3600, (s % 3600) / 60, s % 60)
-                    } else {
-                        format!(" ({}:{:02}'den)", s / 60, s % 60)
-                    }
-                })
-                .unwrap_or_default()
-        ));
-        t.set_timeout(0);
-        self.opening_toast.borrow_mut().replace(t.clone());
-        self.opening_toast_shown_at
+        ops.begin(&op_id, "Açılıyor", &media_title);
+        self.opening_op_id.borrow_mut().replace(op_id.clone());
+        self.opening_op_shown_at
             .borrow_mut()
             .replace(std::time::Instant::now());
-        self.toast.add_toast(t);
 
         let alive = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
         let current_shared = std::sync::Arc::new(std::sync::Mutex::new((episode, season)));
 
         let mpv_child = std::sync::Arc::new(std::sync::Mutex::new(None::<std::process::Child>));
 
-        let (toast_tx, toast_rx) = std::sync::mpsc::channel::<String>();
-        const DISMISS_OPENING: &str = "__animecix_dismiss_opening__";
+        let (play_tx, play_rx) = std::sync::mpsc::channel::<PlayEvent>();
         {
-            let toast_rx = std::sync::Arc::new(std::sync::Mutex::new(toast_rx));
-            let alive_toast = alive.clone();
-            let toast_h = toast.clone();
-            let opening_toast_h = self.opening_toast.clone();
-            let opening_toast_shown_at_h = self.opening_toast_shown_at.clone();
+            let play_rx = std::sync::Arc::new(std::sync::Mutex::new(play_rx));
+            let alive_play = alive.clone();
+            let ops_h = ops.clone();
+            let op_id_h = op_id.clone();
+            let opening_op_id_h = self.opening_op_id.clone();
+            let opening_op_shown_at_h = self.opening_op_shown_at.clone();
             glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-                let rx = toast_rx.lock().unwrap();
-                let mut msg: Option<String> = None;
+                let rx = play_rx.lock().unwrap();
+                let mut events: Vec<PlayEvent> = Vec::new();
                 loop {
                     match rx.try_recv() {
-                        Ok(m) => msg = Some(m),
+                        Ok(ev) => events.push(ev),
                         Err(std::sync::mpsc::TryRecvError::Empty) => break,
                         Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
                     }
                 }
                 drop(rx);
-                if let Some(m) = msg {
-                    if m == DISMISS_OPENING {
-                        if let Some(t) = opening_toast_h.borrow_mut().take() {
-                            let elapsed = opening_toast_shown_at_h
-                                .borrow()
+                for ev in events {
+                    match ev {
+                        PlayEvent::DismissOpening => {
+                            let current =
+                                opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
+                            if !current {
+                                continue;
+                            }
+                            opening_op_id_h.borrow_mut().take();
+                            let elapsed = opening_op_shown_at_h
+                                .borrow_mut()
+                                .take()
                                 .map(|i| i.elapsed())
                                 .unwrap_or_default();
-                            if elapsed < std::time::Duration::from_secs(10) {
-                                let remain = std::time::Duration::from_secs(10) - elapsed;
-                                let t2 = t.clone();
-                                glib::timeout_add_local(remain, move || {
-                                    t2.dismiss();
+                            let minimum = std::time::Duration::from_secs(10);
+                            if elapsed < minimum {
+                                let ops_later = ops_h.clone();
+                                let id_later = op_id_h.clone();
+                                glib::timeout_add_local(minimum - elapsed, move || {
+                                    ops_later.finish(
+                                        &id_later,
+                                        OperationState::Done,
+                                        std::time::Duration::ZERO,
+                                    );
                                     glib::ControlFlow::Break
                                 });
                             } else {
-                                t.dismiss();
+                                ops_h.finish(
+                                    &op_id_h,
+                                    OperationState::Done,
+                                    std::time::Duration::ZERO,
+                                );
                             }
                         }
-                    } else {
-                        let tt = adw::Toast::new(&m);
-                        tt.set_timeout(3);
-                        toast_h.add_toast(tt);
+                        PlayEvent::Info(msg) => {
+                            ops_h.update(&op_id_h, &msg, None);
+                        }
+                        PlayEvent::Failed(msg) => {
+                            let current =
+                                opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
+                            if current {
+                                opening_op_id_h.borrow_mut().take();
+                                opening_op_shown_at_h.borrow_mut().take();
+                            }
+                            ops_h.update(&op_id_h, &msg, None);
+                            ops_h.finish(
+                                &op_id_h,
+                                OperationState::Error,
+                                std::time::Duration::from_secs(6),
+                            );
+                        }
                     }
                 }
-                if !alive_toast.load(std::sync::atomic::Ordering::Relaxed) {
+                if !alive_play.load(std::sync::atomic::Ordering::Relaxed) {
                     glib::ControlFlow::Break
                 } else {
                     glib::ControlFlow::Continue
@@ -4724,25 +4749,24 @@ impl App {
             });
         }
 
-        // Plan bildirimleri (GTK): hazır + şarkılar, ya da dürüst yokluk.
+        // Plan bildirimleri: hazır + şarkılar, ya da dürüst yokluk.
         match &plan {
             Some(p) => {
-                let t = adw::Toast::new(&format!(
-                    "⏩ Atlama hazır ({} · 's' intro, 'e' outro)",
-                    glib::markup_escape_text(&p.source)
-                ));
-                t.set_timeout(3);
-                self.toast.add_toast(t);
+                self.ops.info(
+                    &format!("⏩ Atlama hazır ({} · 's' intro, 'e' outro)", p.source),
+                    "",
+                    std::time::Duration::from_secs(3),
+                );
                 for m in [&p.music_op, &p.music_ed].into_iter().flatten() {
-                    let tm = adw::Toast::new(&glib::markup_escape_text(m));
-                    tm.set_timeout(4);
-                    self.toast.add_toast(tm);
+                    self.ops.info(m, "", std::time::Duration::from_secs(4));
                 }
             }
             None => {
-                let t = adw::Toast::new("⚠️ İntro/outro zamanları bulunamadı");
-                t.set_timeout(3);
-                self.toast.add_toast(t);
+                self.ops.info(
+                    "⚠️ İntro/outro zamanları bulunamadı",
+                    "",
+                    std::time::Duration::from_secs(3),
+                );
             }
         }
 
@@ -4890,7 +4914,7 @@ impl App {
             let sock_path_c = sock_path.clone();
             let input_conf_path_c = input_conf_path.clone();
             let media_title_c = media_title.clone();
-            let toast_tx_c = toast_tx.clone();
+            let play_tx_c = play_tx.clone();
             let saved_pos_c = saved_pos;
             let auto_fullscreen_c = auto_fullscreen;
             let upscale_c = upscale;
@@ -4945,6 +4969,7 @@ impl App {
                 });
             }
             std::thread::spawn(move || {
+                let mut terminal_sent = false;
                 'supervisor: for i in 0..total {
                     let url: String = if i < candidates.len() {
                         candidates[i].clone()
@@ -5073,7 +5098,7 @@ impl App {
                                     "[SUP] socket belirdi, oynatma başladı (ep={}, kaynak={})",
                                     episode, i
                                 );
-                                let _ = toast_tx_c.send(DISMISS_OPENING.to_string());
+                                let _ = play_tx_c.send(PlayEvent::DismissOpening);
                             }
                             playing = true;
                         }
@@ -5094,10 +5119,10 @@ impl App {
                                 patience_c,
                             ) {
                                 eprintln!("[SUP] kaynak hiç yüklemedi (idle+duration=0, {}sn), sonraki kaynağa geçiliyor (ep={}, kaynak={})", elapsed_secs, episode, i);
-                                let _ = toast_tx_c.send(
+                                let _ = play_tx_c.send(PlayEvent::Info(
                                     "Kaynak açıldı ama oynatamadı, diğer kaynağa geçiliyor…"
                                         .to_string(),
-                                );
+                                ));
                                 if let Some(c) = mpv_child_c.lock().unwrap().as_mut() {
                                     let _ = c.kill();
                                 }
@@ -5166,14 +5191,23 @@ impl App {
                             let _ = c.wait();
                         }
                         if i + 1 < total {
-                            let _ = toast_tx_c
-                                .send("Kaynak açılamadı, diğer kaynağa geçiliyor…".to_string());
+                            let _ = play_tx_c.send(PlayEvent::Info(
+                                "Kaynak açılamadı, diğer kaynağa geçiliyor…".to_string(),
+                            ));
                             continue;
                         } else {
-                            let _ = toast_tx_c.send("Bölüm hiçbir kaynakta açılamadı.".to_string());
+                            let _ = play_tx_c.send(PlayEvent::Failed(
+                                "Bölüm hiçbir kaynakta açılamadı.".to_string(),
+                            ));
+                            terminal_sent = true;
                             break;
                         }
                     }
+                }
+                if !terminal_sent {
+                    // Kullanıcı mpv'yi kapattıysa veya oynatma sessizce
+                    // sonlandıysa açılış satırı asılı kalmasın.
+                    let _ = play_tx_c.send(PlayEvent::DismissOpening);
                 }
                 alive.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = std::fs::remove_file(&sock_path_c);
@@ -5616,9 +5650,8 @@ impl App {
 
     fn show_error(&self, msg: &str) {
         eprintln!("animecix hatası: {msg}");
-        let t = adw::Toast::new(&format!("Hata: {}", glib::markup_escape_text(msg)));
-        t.set_timeout(4);
-        self.toast.add_toast(t);
+        self.ops
+            .error("Hata", msg, std::time::Duration::from_secs(6));
     }
 }
 
@@ -5694,14 +5727,6 @@ mod decide_retry_tests {
         let (retry, playing) = App::decide_retry(true, false, false);
         assert!(!retry);
         assert!(!playing);
-    }
-
-    #[test]
-    fn toast_text_escapes_markup_breakers() {
-        // Rose&Night vakası: ham & bildirimi sessizce öldürüyordu.
-        let esc = glib::markup_escape_text("Rose&Night Subs");
-        assert!(esc.contains("&amp;"), "ham & kaçırılmalı: {esc}");
-        assert!(!esc.contains(" & "), "çıplak & kalmamalı");
     }
 
     #[test]
