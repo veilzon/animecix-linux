@@ -4709,18 +4709,23 @@ impl App {
                                 if !current {
                                     continue;
                                 }
-                                opening_op_id_h.borrow_mut().take();
-                                let elapsed = opening_op_shown_at_h
-                                    .borrow_mut()
-                                    .take()
-                                    .map(|i| i.elapsed())
-                                    .unwrap_or_default();
+                                // `opening_op_id` terminal olana kadar korunur;
+                                // hızlı bölüm değişiminde yeni oynatma eski
+                                // satırı Done yapabilsin.
+                                let elapsed = match opening_op_shown_at_h.borrow_mut().take() {
+                                    Some(shown_at) => shown_at.elapsed(),
+                                    // Aynı oynatma için ikinci Dismiss (failover):
+                                    // zamanlayıcı zaten kuruldu.
+                                    None => continue,
+                                };
                                 let minimum = std::time::Duration::from_secs(10);
                                 if elapsed < minimum {
                                     ops_h.begin(&op_id_h, "Oynatılıyor", &media_title_h);
                                     let ops_later = ops_h.clone();
                                     let id_later = op_id_h.clone();
                                     let play_gen_later = play_gen_h.clone();
+                                    let opening_op_id_later = opening_op_id_h.clone();
+                                    let opening_op_shown_at_later = opening_op_shown_at_h.clone();
                                     glib::timeout_add_local(minimum - elapsed, move || {
                                         if play_gen_later.get() == gen_play {
                                             ops_later.finish(
@@ -4728,6 +4733,13 @@ impl App {
                                                 OperationState::Done,
                                                 std::time::Duration::ZERO,
                                             );
+                                            let is_current =
+                                                opening_op_id_later.borrow().as_deref()
+                                                    == Some(id_later.as_str());
+                                            if is_current {
+                                                opening_op_id_later.borrow_mut().take();
+                                                opening_op_shown_at_later.borrow_mut().take();
+                                            }
                                         }
                                         glib::ControlFlow::Break
                                     });
@@ -4737,6 +4749,12 @@ impl App {
                                         OperationState::Done,
                                         std::time::Duration::ZERO,
                                     );
+                                    let is_current = opening_op_id_h.borrow().as_deref()
+                                        == Some(op_id_h.as_str());
+                                    if is_current {
+                                        opening_op_id_h.borrow_mut().take();
+                                        opening_op_shown_at_h.borrow_mut().take();
+                                    }
                                 }
                             }
                             PlayEvent::Info(ev_gen, msg) => {
@@ -5114,6 +5132,10 @@ impl App {
                                 if let Some(c) = mpv_child_c.lock().unwrap().as_mut() {
                                     let _ = c.wait();
                                 }
+                                // Kullanıcı bilinçli geçti: toplam hata değil,
+                                // açılış satırı en kısa sürede Done olsun.
+                                let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
+                                terminal_sent = true;
                                 playing = true;
                                 break;
                             }
@@ -5121,6 +5143,11 @@ impl App {
                             if retry {
                                 eprintln!("[SUP] kaynak hatalı çıktı, sonraki kaynağa geçiliyor (ep={}, kaynak={})", episode, i);
                                 playing = false;
+                            } else if playing {
+                                // Kullanıcı mpv'yi kapatmış: toplam başarısızlık
+                                // değil, normal bitiş.
+                                let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
+                                terminal_sent = true;
                             }
                             break;
                         }
