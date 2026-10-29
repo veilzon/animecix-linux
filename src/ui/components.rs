@@ -77,7 +77,12 @@ pub fn episode_name_suffix(name: &str) -> String {
 }
 
 pub fn episode_label_spaced(season: u64, episode: u64, name: &str) -> String {
-    format!("S{:02} E{:02}{}", season, episode, episode_name_suffix(name))
+    format!(
+        "S{:02} E{:02}{}",
+        season,
+        episode,
+        episode_name_suffix(name)
+    )
 }
 
 pub fn episode_label_compact(season: u64, episode: u64, name: &str) -> String {
