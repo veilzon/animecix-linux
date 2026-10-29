@@ -404,10 +404,8 @@ impl HistoryView {
             name.set_ellipsize(gtk::pango::EllipsizeMode::End);
             name.add_css_class("title-3");
 
-            let sub = gtk::Label::new(Some(&format!(
-                "S{:02} E{:02} · {}",
-                h.episode.season, h.episode.episode, h.episode.name
-            )));
+            let sub_text = crate::ui::components::episode_label_spaced(h.episode.season, h.episode.episode, &h.episode.name);
+            let sub = gtk::Label::new(Some(&sub_text));
             sub.set_xalign(0.0);
             sub.set_wrap(false);
             sub.set_single_line_mode(true);

@@ -66,3 +66,37 @@ pub fn switch_row(title: &str, subtitle: &str, active: bool) -> (adw::ActionRow,
     row.set_activatable_widget(Some(&sw));
     (row, sw)
 }
+
+pub fn episode_name_suffix(name: &str) -> String {
+    let n = name.trim();
+    if n.is_empty() {
+        String::new()
+    } else {
+        format!(" · {n}")
+    }
+}
+
+pub fn episode_label_spaced(season: u64, episode: u64, name: &str) -> String {
+    format!("S{:02} E{:02}{}", season, episode, episode_name_suffix(name))
+}
+
+pub fn episode_label_compact(season: u64, episode: u64, name: &str) -> String {
+    format!("S{:02}E{:02}{}", season, episode, episode_name_suffix(name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{episode_label_compact, episode_label_spaced};
+
+    #[test]
+    fn episode_labels_skip_empty_names() {
+        assert_eq!(episode_label_spaced(1, 2, ""), "S01 E02");
+        assert_eq!(episode_label_compact(1, 2, "  "), "S01E02");
+    }
+
+    #[test]
+    fn episode_labels_append_real_names() {
+        assert_eq!(episode_label_spaced(1, 2, "Ad"), "S01 E02 · Ad");
+        assert_eq!(episode_label_compact(1, 2, "Ad"), "S01E02 · Ad");
+    }
+}

@@ -453,10 +453,15 @@ fn build_summary(
         let (ep, _) = &items[t];
         let txt = match choice.get(pos).and_then(|c| c.as_ref()) {
             Some(fs) => format!(
-                "S{:02}E{:02} → {} ({:.1}★)",
-                ep.season, ep.episode, fs.name, fs.rating
+                "{} → {} ({:.1}★)",
+                crate::ui::components::episode_label_compact(ep.season, ep.episode, &ep.name),
+                fs.name,
+                fs.rating
             ),
-            None => format!("S{:02}E{:02} → atlanacak", ep.season, ep.episode),
+            None => format!(
+                "{} → atlanacak",
+                crate::ui::components::episode_label_compact(ep.season, ep.episode, &ep.name)
+            ),
         };
         let lbl = gtk::Label::new(Some(&txt));
         lbl.set_xalign(0.0);

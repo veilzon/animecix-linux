@@ -1899,7 +1899,7 @@ impl App {
         // Normal kart şablonu + SxxExx alt yazısı: hover-play overlay
         // kalktı (tıklama zaten detaya gider), geometri raflarla eşit.
         for (t, ep) in items {
-            let sub = format!("S{:02}E{:02}", ep.season, ep.episode);
+            let sub = components::episode_label_compact(ep.season, ep.episode, &ep.name);
             flow.append(&self.create_title_card_sub(&t, cw, Some(sub)));
         }
         wire(&flow);
@@ -3346,13 +3346,16 @@ impl App {
                 .map(|e| {
                     let key = format!("{}:{}:{}", title.id, e.season, e.episode);
 
-                    let name = gtk::Label::new(Some(&format!(
-                        "S{:02} E{:02}   {}",
-                        e.season, e.episode, e.name
-                    )));
+                    let label = components::episode_label_spaced(e.season, e.episode, &e.name);
+                    let name = gtk::Label::new(Some(&label));
                     name.set_xalign(0.0);
                     name.add_css_class("title-4");
                     name.set_hexpand(true);
+                    name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+                    name.set_single_line_mode(true);
+                    name.set_wrap(false);
+                    name.set_max_width_chars(70);
+                    name.set_tooltip_text(Some(&label));
 
                     let time_lbl = gtk::Label::new(None);
                     time_lbl.set_xalign(1.0);
@@ -3946,7 +3949,11 @@ impl App {
                         let this_c = self.clone_ref();
                         crate::ui::play_quality_dialog::show_play_quality_dialog(
                             &self.window,
-                            &title.name,
+                            &format!(
+                                "{} — {}",
+                                title.name,
+                                components::episode_label_compact(ep.season, ep.episode, &ep.name)
+                            ),
                             &labels,
                             move |choice| match choice {
                                 crate::ui::play_quality_dialog::PlayChoice::Cancelled => {}
@@ -4207,7 +4214,11 @@ impl App {
         let fansubs_for_rest = fansubs.clone();
         crate::ui::fansub_dialog::show_fansub_dialog(
             &self.window,
-            &format!("{} — S{:02}E{:02}", title.name, ep.season, ep.episode),
+            &format!(
+                "{} — {}",
+                title.name,
+                components::episode_label_compact(ep.season, ep.episode, &ep.name)
+            ),
             fansubs,
             move |chosen: api::FansubInfo| {
                 let rest: Vec<api::FansubInfo> = fansubs_for_rest
@@ -4558,7 +4569,11 @@ impl App {
             plan.as_ref().map(|p| p.source.as_str()).unwrap_or("yok"),
         );
 
-        let media_title = format!("{} | S{:02}E{:02}", title.name, ep.season, ep.episode);
+        let media_title = format!(
+            "{} | {}",
+            title.name,
+            components::episode_label_compact(ep.season, ep.episode, &ep.name)
+        );
         let tid = title.id;
         let season = ep.season;
         let episode = ep.episode;
