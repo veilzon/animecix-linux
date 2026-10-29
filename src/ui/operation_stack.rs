@@ -1,7 +1,7 @@
 //! İşlem yığını: ekranın alt ortasında gösterilen en fazla üç satırlık işlem
 //! kuyruğunun modeli ve GTK widget'ı.
 
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
@@ -288,6 +288,8 @@ struct Inner {
     /// Terminal durumu bir kez duyurulan indirme kimlikleri; TTL sonrası
     /// aynı kayıt yeniden satır açmasın diye `tick` boyunca korunur.
     announced: RefCell<HashSet<String>>,
+    /// İlk senkron tamamlandı mı? Geçmiş terminal kayıtlar açılışta duyurulmaz.
+    seeded: Cell<bool>,
 }
 
 /// Alt ortada beliren, en fazla üç satırlık işlem yığını widget'ı.
@@ -328,6 +330,7 @@ impl OperationStack {
                 queue: RefCell::new(OperationQueue::new(3)),
                 rows: RefCell::new(HashMap::new()),
                 announced: RefCell::new(HashSet::new()),
+                seeded: Cell::new(false),
             }),
         }
     }
@@ -381,6 +384,16 @@ impl OperationStack {
         {
             let mut announced = self.inner.announced.borrow_mut();
             announced.retain(|id| ids.contains(id));
+            if !self.inner.seeded.get() {
+                // Önceki oturumdan kalan terminal indirmeler açılışta satır
+                // açmasın; yalnızca bu oturumdaki geçişler duyurulur.
+                for rec in records {
+                    if matches!(rec.status, DownloadStatus::Done | DownloadStatus::Error(_)) {
+                        announced.insert(format!("dl:{}", rec.id));
+                    }
+                }
+                self.inner.seeded.set(true);
+            }
             let mut queue = self.inner.queue.borrow_mut();
             queue.retain_prefix_ids("dl:", &ids);
             for rec in records {
@@ -648,15 +661,31 @@ mod tests {
     #[gtk::test]
     fn stack_does_not_retoast_expired_terminal() {
         let stack = OperationStack::new();
-        let done = record(DownloadStatus::Done);
-        stack.sync_downloads(&[done.clone()]);
+        let mut rec = record(DownloadStatus::Downloading);
+        stack.sync_downloads(&[rec.clone()]);
+        assert_eq!(stack.row_count(), 1);
+
+        rec.status = DownloadStatus::Done;
+        stack.sync_downloads(&[rec.clone()]);
         assert_eq!(stack.row_count(), 1);
 
         stack.tick_at(Instant::now() + Duration::from_secs(5));
         assert_eq!(stack.row_count(), 0);
 
+        stack.sync_downloads(&[rec]);
+        assert_eq!(stack.row_count(), 0);
+    }
+
+    #[gtk::test]
+    fn stack_first_sync_skips_historical_terminal() {
+        let stack = OperationStack::new();
+        let done = record(DownloadStatus::Done);
         stack.sync_downloads(&[done]);
         assert_eq!(stack.row_count(), 0);
+
+        let downloading = record(DownloadStatus::Downloading);
+        stack.sync_downloads(&[downloading]);
+        assert_eq!(stack.row_count(), 1);
     }
 
     #[test]

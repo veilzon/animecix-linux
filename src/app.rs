@@ -50,9 +50,9 @@ pub struct PlaySources {
 
 /// Oynatma açılış satırına gönderilen olaylar (yalnızca ana iş parçacığı işler).
 enum PlayEvent {
-    DismissOpening,
-    Info(String),
-    Failed(String),
+    DismissOpening(u64),
+    Info(u64, String),
+    Failed(u64, String),
 }
 
 pub enum Msg {
@@ -104,6 +104,7 @@ pub struct App {
     pub dl_rows: Rc<RefCell<HashMap<String, crate::ui::downloads_view::DlRow>>>,
     pub opening_op_id: Rc<RefCell<Option<String>>>,
     pub opening_op_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
+    pub play_gen: Rc<Cell<u64>>,
     pub home_acts: Rc<RefCell<Vec<Option<usize>>>>,
     pub dl_manager: crate::download::DownloadManager,
     /// Bölüm hızlı-arama tuşu: sayfa başına tek controller (birikmeyi önler).
@@ -576,6 +577,7 @@ impl App {
             dl_rows: Rc::new(RefCell::new(HashMap::new())),
             opening_op_id: Rc::new(RefCell::new(None)),
             opening_op_shown_at: Rc::new(RefCell::new(None)),
+            play_gen: Rc::new(Cell::new(0)),
             home_acts: Rc::new(RefCell::new(Vec::new())),
             dl_manager,
             ep_search_controller: Rc::new(RefCell::new(None)),
@@ -896,6 +898,7 @@ impl App {
             dl_rows: self.dl_rows.clone(),
             opening_op_id: self.opening_op_id.clone(),
             opening_op_shown_at: self.opening_op_shown_at.clone(),
+            play_gen: self.play_gen.clone(),
             home_acts: self.home_acts.clone(),
             dl_manager: self.dl_manager.clone(),
             ep_search_controller: self.ep_search_controller.clone(),
@@ -4552,6 +4555,8 @@ impl App {
         fallback_embeds: &[String],
         plan: Option<crate::skip::SkipPlan>,
     ) {
+        let gen = self.play_gen.get().wrapping_add(1);
+        self.play_gen.set(gen);
         let w = api::Watched {
             title_id: title.id,
             episode: ep.episode,
@@ -4675,76 +4680,102 @@ impl App {
             let alive_play = alive.clone();
             let ops_h = ops.clone();
             let op_id_h = op_id.clone();
+            let media_title_h = media_title.clone();
+            let gen_play = gen;
+            let play_gen_h = self.play_gen.clone();
             let opening_op_id_h = self.opening_op_id.clone();
             let opening_op_shown_at_h = self.opening_op_shown_at.clone();
             glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
-                let rx = play_rx.lock().unwrap();
-                let mut events: Vec<PlayEvent> = Vec::new();
+                let mut final_pass = false;
                 loop {
-                    match rx.try_recv() {
-                        Ok(ev) => events.push(ev),
-                        Err(std::sync::mpsc::TryRecvError::Empty) => break,
-                        Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                    let rx = play_rx.lock().unwrap();
+                    let mut events: Vec<PlayEvent> = Vec::new();
+                    loop {
+                        match rx.try_recv() {
+                            Ok(ev) => events.push(ev),
+                            Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                            Err(std::sync::mpsc::TryRecvError::Disconnected) => break,
+                        }
                     }
-                }
-                drop(rx);
-                for ev in events {
-                    match ev {
-                        PlayEvent::DismissOpening => {
-                            let current =
-                                opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
-                            if !current {
-                                continue;
-                            }
-                            opening_op_id_h.borrow_mut().take();
-                            let elapsed = opening_op_shown_at_h
-                                .borrow_mut()
-                                .take()
-                                .map(|i| i.elapsed())
-                                .unwrap_or_default();
-                            let minimum = std::time::Duration::from_secs(10);
-                            if elapsed < minimum {
-                                let ops_later = ops_h.clone();
-                                let id_later = op_id_h.clone();
-                                glib::timeout_add_local(minimum - elapsed, move || {
-                                    ops_later.finish(
-                                        &id_later,
+                    drop(rx);
+                    for ev in events {
+                        match ev {
+                            PlayEvent::DismissOpening(ev_gen) => {
+                                if play_gen_h.get() != ev_gen {
+                                    continue;
+                                }
+                                let current =
+                                    opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
+                                if !current {
+                                    continue;
+                                }
+                                opening_op_id_h.borrow_mut().take();
+                                let elapsed = opening_op_shown_at_h
+                                    .borrow_mut()
+                                    .take()
+                                    .map(|i| i.elapsed())
+                                    .unwrap_or_default();
+                                let minimum = std::time::Duration::from_secs(10);
+                                if elapsed < minimum {
+                                    ops_h.begin(&op_id_h, "Oynatılıyor", &media_title_h);
+                                    let ops_later = ops_h.clone();
+                                    let id_later = op_id_h.clone();
+                                    let play_gen_later = play_gen_h.clone();
+                                    glib::timeout_add_local(minimum - elapsed, move || {
+                                        if play_gen_later.get() == gen_play {
+                                            ops_later.finish(
+                                                &id_later,
+                                                OperationState::Done,
+                                                std::time::Duration::ZERO,
+                                            );
+                                        }
+                                        glib::ControlFlow::Break
+                                    });
+                                } else {
+                                    ops_h.finish(
+                                        &op_id_h,
                                         OperationState::Done,
                                         std::time::Duration::ZERO,
                                     );
-                                    glib::ControlFlow::Break
-                                });
-                            } else {
+                                }
+                            }
+                            PlayEvent::Info(ev_gen, msg) => {
+                                if play_gen_h.get() != ev_gen {
+                                    continue;
+                                }
+                                ops_h.update(&op_id_h, &msg, None);
+                            }
+                            PlayEvent::Failed(ev_gen, msg) => {
+                                if play_gen_h.get() != ev_gen {
+                                    continue;
+                                }
+                                let current =
+                                    opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
+                                if current {
+                                    opening_op_id_h.borrow_mut().take();
+                                    opening_op_shown_at_h.borrow_mut().take();
+                                }
+                                // Eski satır Done/silinmiş olsa bile toplam
+                                // başarısızlık görünür bir hata satırı açar.
+                                ops_h.begin(&op_id_h, "Açılamadı", &msg);
                                 ops_h.finish(
                                     &op_id_h,
-                                    OperationState::Done,
-                                    std::time::Duration::ZERO,
+                                    OperationState::Error,
+                                    std::time::Duration::from_secs(6),
                                 );
                             }
                         }
-                        PlayEvent::Info(msg) => {
-                            ops_h.update(&op_id_h, &msg, None);
-                        }
-                        PlayEvent::Failed(msg) => {
-                            let current =
-                                opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
-                            if current {
-                                opening_op_id_h.borrow_mut().take();
-                                opening_op_shown_at_h.borrow_mut().take();
-                            }
-                            ops_h.update(&op_id_h, &msg, None);
-                            ops_h.finish(
-                                &op_id_h,
-                                OperationState::Error,
-                                std::time::Duration::from_secs(6),
-                            );
-                        }
                     }
-                }
-                if !alive_play.load(std::sync::atomic::Ordering::Relaxed) {
-                    glib::ControlFlow::Break
-                } else {
-                    glib::ControlFlow::Continue
+                    if alive_play.load(std::sync::atomic::Ordering::Relaxed) {
+                        return glib::ControlFlow::Continue;
+                    }
+                    if final_pass {
+                        return glib::ControlFlow::Break;
+                    }
+                    // Supervisor son olayı gönderdikten hemen sonra `alive`i
+                    // düşürebilir; son Dismiss/Failed kaybolmasın diye bir kez
+                    // daha boşalt.
+                    final_pass = true;
                 }
             });
         }
@@ -4970,6 +5001,7 @@ impl App {
             }
             std::thread::spawn(move || {
                 let mut terminal_sent = false;
+                let mut ever_media = false;
                 'supervisor: for i in 0..total {
                     let url: String = if i < candidates.len() {
                         candidates[i].clone()
@@ -5098,7 +5130,7 @@ impl App {
                                     "[SUP] socket belirdi, oynatma başladı (ep={}, kaynak={})",
                                     episode, i
                                 );
-                                let _ = play_tx_c.send(PlayEvent::DismissOpening);
+                                let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
                             }
                             playing = true;
                         }
@@ -5109,6 +5141,7 @@ impl App {
                                 .unwrap_or(0.0);
                             if dur > 0.0 {
                                 media_loaded = true;
+                                ever_media = true;
                             }
                             let elapsed_secs = start.elapsed().as_secs();
                             if Self::source_is_dead(
@@ -5120,6 +5153,7 @@ impl App {
                             ) {
                                 eprintln!("[SUP] kaynak hiç yüklemedi (idle+duration=0, {}sn), sonraki kaynağa geçiliyor (ep={}, kaynak={})", elapsed_secs, episode, i);
                                 let _ = play_tx_c.send(PlayEvent::Info(
+                                    gen,
                                     "Kaynak açıldı ama oynatamadı, diğer kaynağa geçiliyor…"
                                         .to_string(),
                                 ));
@@ -5192,11 +5226,13 @@ impl App {
                         }
                         if i + 1 < total {
                             let _ = play_tx_c.send(PlayEvent::Info(
+                                gen,
                                 "Kaynak açılamadı, diğer kaynağa geçiliyor…".to_string(),
                             ));
                             continue;
                         } else {
                             let _ = play_tx_c.send(PlayEvent::Failed(
+                                gen,
                                 "Bölüm hiçbir kaynakta açılamadı.".to_string(),
                             ));
                             terminal_sent = true;
@@ -5205,9 +5241,18 @@ impl App {
                     }
                 }
                 if !terminal_sent {
-                    // Kullanıcı mpv'yi kapattıysa veya oynatma sessizce
-                    // sonlandıysa açılış satırı asılı kalmasın.
-                    let _ = play_tx_c.send(PlayEvent::DismissOpening);
+                    if ever_media {
+                        // Kullanıcı mpv'yi kapattıysa veya oynatma sessizce
+                        // sonlandıysa açılış satırı asılı kalmasın.
+                        let _ = play_tx_c.send(PlayEvent::DismissOpening(gen));
+                    } else {
+                        // Hiçbir kaynak mpv'yi bile başlatamadıysa bu bir
+                        // toplam başarısızlıktır; Done değil Error göster.
+                        let _ = play_tx_c.send(PlayEvent::Failed(
+                            gen,
+                            "Bölüm hiçbir kaynakta açılamadı.".to_string(),
+                        ));
+                    }
                 }
                 alive.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = std::fs::remove_file(&sock_path_c);
