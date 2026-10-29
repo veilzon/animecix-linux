@@ -5402,9 +5402,10 @@ impl App {
         }
         dlg.present();
         if !initial.trim().is_empty() {
-            entry.set_text(initial);
+            set_search_text_caret_end(&entry, initial);
         }
         entry.grab_focus();
+        entry.set_position(-1);
     }
 
     fn do_search(&self, q: String) {
@@ -5604,6 +5605,13 @@ impl App {
         t.set_timeout(4);
         self.toast.add_toast(t);
     }
+}
+
+/// Arama kutusuna metni yazar ve imleci metnin sonuna taşır.
+/// `-1`, `GtkEditable` için son karakterden sonraki konumdur.
+fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
+    entry.set_text(text);
+    entry.set_position(-1);
 }
 
 /// Sürüm yenilik maddeleri (bilinmeyen sürüm → None, sessiz geçilir).
@@ -5869,5 +5877,25 @@ mod decide_retry_tests {
             p.is_some(),
             "normal modu için CNN_x2_M shader'ı bundle edilmiş olmalı"
         );
+    }
+}
+
+#[cfg(test)]
+mod search_caret_tests {
+    use super::set_search_text_caret_end;
+    use gtk::prelude::*;
+
+    #[gtk::test]
+    fn search_text_sets_caret_to_end() {
+        let entry = gtk::SearchEntry::new();
+        set_search_text_caret_end(&entry, "frieren");
+        assert_eq!(entry.position(), 7);
+    }
+
+    #[gtk::test]
+    fn search_text_empty_keeps_caret_at_zero() {
+        let entry = gtk::SearchEntry::new();
+        set_search_text_caret_end(&entry, "");
+        assert_eq!(entry.position(), 0);
     }
 }
