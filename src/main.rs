@@ -458,6 +458,41 @@ fn main() {
                     margin: 0;
                 }
 
+                /* === Alt ortadaki işlem yığını: en fazla üç satır === */
+                .op-stack {
+                    background-color: alpha(@card_bg_color, 0.96);
+                    color: @card_fg_color;
+                    border: 1px solid alpha(currentColor, 0.14);
+                    border-radius: 14px;
+                    padding: 8px;
+                    box-shadow: 0 8px 24px alpha(black, 0.45);
+                }
+                .op-row {
+                    padding: 8px 10px;
+                    border-radius: 10px;
+                }
+                .op-title {
+                    font-weight: 600;
+                }
+                .op-detail {
+                    font-size: 0.9em;
+                    opacity: 0.8;
+                }
+                .op-progress {
+                    min-height: 4px;
+                }
+                .op-error .op-title {
+                    color: #ff6b6b;
+                }
+                .op-done .op-title {
+                    color: @accent_color;
+                }
+                .op-overflow {
+                    font-size: 0.85em;
+                    opacity: 0.7;
+                    padding: 2px 6px;
+                }
+
                 /* === Bölüm kaydırıcısı: kenar gölgesi şeridi + hap altı boşluk === */
                 scrolledwindow.clear-scroll undershoot.top,
                 scrolledwindow.clear-scroll undershoot.bottom,
