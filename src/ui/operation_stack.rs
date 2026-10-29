@@ -232,7 +232,7 @@ pub(crate) fn download_operation(
 ) -> (String, String, OperationState, Option<f64>) {
     let detail = DownloadsView::row_title(rec);
     let progress = if rec.total > 0 {
-        Some((rec.have as f64 / rec.total as f64).clamp(0.0, 1.0))
+        Some(DownloadsView::row_state(rec).0.clamp(0.0, 1.0))
     } else {
         None
     };
@@ -285,6 +285,9 @@ struct Inner {
     overflow: gtk::Label,
     queue: RefCell<OperationQueue>,
     rows: RefCell<HashMap<String, RowWidgets>>,
+    /// Terminal durumu bir kez duyurulan indirme kimlikleri; TTL sonrası
+    /// aynı kayıt yeniden satır açmasın diye `tick` boyunca korunur.
+    announced: RefCell<HashSet<String>>,
 }
 
 /// Alt ortada beliren, en fazla üç satırlık işlem yığını widget'ı.
@@ -306,9 +309,9 @@ impl OperationStack {
         revealer.set_can_target(false);
         revealer.set_reveal_child(false);
 
-        let stack = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let stack = gtk::Box::new(gtk::Orientation::Vertical, 6);
         stack.add_css_class("op-stack");
-        let rows_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
+        let rows_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let overflow = gtk::Label::new(None);
         overflow.add_css_class("op-overflow");
         overflow.set_halign(gtk::Align::Start);
@@ -324,6 +327,7 @@ impl OperationStack {
                 overflow,
                 queue: RefCell::new(OperationQueue::new(3)),
                 rows: RefCell::new(HashMap::new()),
+                announced: RefCell::new(HashSet::new()),
             }),
         }
     }
@@ -358,13 +362,25 @@ impl OperationStack {
     }
 
     pub fn tick(&self) {
-        self.inner.queue.borrow_mut().tick(Instant::now());
+        self.tick_with(Instant::now());
+    }
+
+    /// Testlerde TTL'yi beklemeden süresi dolmuş satırları temizler.
+    #[cfg(test)]
+    pub fn tick_at(&self, now: Instant) {
+        self.tick_with(now);
+    }
+
+    fn tick_with(&self, now: Instant) {
+        self.inner.queue.borrow_mut().tick(now);
         self.render();
     }
 
     pub fn sync_downloads(&self, records: &[DownloadRecord]) {
         let ids: HashSet<String> = records.iter().map(|rec| format!("dl:{}", rec.id)).collect();
         {
+            let mut announced = self.inner.announced.borrow_mut();
+            announced.retain(|id| ids.contains(id));
             let mut queue = self.inner.queue.borrow_mut();
             queue.retain_prefix_ids("dl:", &ids);
             for rec in records {
@@ -374,11 +390,16 @@ impl OperationStack {
                     OperationState::Running => {
                         queue.begin(&id, &title, &detail);
                         queue.update(&id, &detail, progress);
+                        announced.remove(&id);
                     }
                     OperationState::Done | OperationState::Error => {
-                        // TTL her 1.5 sn'lik pump'ta sıfırlanmasın: kayıt
-                        // zaten terminal durumdaysa dokunma.
-                        if !matches!(queue.state_of(&id), None | Some(OperationState::Running)) {
+                        // Terminal satır bir kez duyurulur: TTL dolup satır
+                        // silinse bile sonraki pump'ta yeniden açılmaz.
+                        if matches!(
+                            queue.state_of(&id),
+                            Some(OperationState::Done | OperationState::Error)
+                        ) || announced.contains(&id)
+                        {
                             continue;
                         }
                         let ttl = if state == OperationState::Error {
@@ -389,6 +410,7 @@ impl OperationStack {
                         queue.begin(&id, &title, &detail);
                         queue.update(&id, &detail, progress);
                         queue.finish(&id, state, ttl);
+                        announced.insert(id);
                     }
                 }
             }
@@ -594,6 +616,47 @@ mod tests {
         assert_eq!(title, "Tamamlandı");
         assert_eq!(state, OperationState::Done);
         assert_eq!(progress, Some(1.0));
+
+        let queued = record(DownloadStatus::Queued);
+        let (title, _, state, progress) = download_operation(&queued);
+        assert_eq!(title, "Sırada");
+        assert_eq!(state, OperationState::Running);
+        assert_eq!(progress, Some(0.5));
+
+        let paused = record(DownloadStatus::Paused);
+        let (title, _, state, progress) = download_operation(&paused);
+        assert_eq!(title, "Duraklatıldı");
+        assert_eq!(state, OperationState::Running);
+        assert_eq!(progress, Some(0.5));
+
+        let error = record(DownloadStatus::Error("bağlantı koptu".into()));
+        let (title, detail, state, progress) = download_operation(&error);
+        assert_eq!(title, "Hata");
+        assert_eq!(state, OperationState::Error);
+        assert_eq!(progress, Some(0.0));
+        assert!(detail.contains("bağlantı koptu"));
+
+        let mut unknown_total = record(DownloadStatus::Downloading);
+        unknown_total.total = 0;
+        unknown_total.have = 0;
+        let (title, _, state, progress) = download_operation(&unknown_total);
+        assert_eq!(title, "İndiriliyor");
+        assert_eq!(state, OperationState::Running);
+        assert_eq!(progress, None);
+    }
+
+    #[gtk::test]
+    fn stack_does_not_retoast_expired_terminal() {
+        let stack = OperationStack::new();
+        let done = record(DownloadStatus::Done);
+        stack.sync_downloads(&[done.clone()]);
+        assert_eq!(stack.row_count(), 1);
+
+        stack.tick_at(Instant::now() + Duration::from_secs(5));
+        assert_eq!(stack.row_count(), 0);
+
+        stack.sync_downloads(&[done]);
+        assert_eq!(stack.row_count(), 0);
     }
 
     #[test]
