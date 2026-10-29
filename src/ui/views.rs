@@ -615,6 +615,57 @@ impl SettingsView {
             settings.auto_next,
         );
         player_group.add(&auto_next_row);
+
+        let cache_fwd_row = adw::ActionRow::new();
+        cache_fwd_row.set_title("mpv İleri Önbellek (MB)");
+        cache_fwd_row.set_subtitle(
+            "Varsayılan 64 MB. Yüksek değer daha akıcı tampon sağlar, daha fazla RAM kullanır.",
+        );
+        let cache_fwd_adj = gtk::Adjustment::new(
+            settings.mpv_cache_forward_mb.clamp(
+                crate::api::MPV_CACHE_FORWARD_MIN_MB,
+                crate::api::MPV_CACHE_FORWARD_MAX_MB,
+            ) as f64,
+            crate::api::MPV_CACHE_FORWARD_MIN_MB as f64,
+            crate::api::MPV_CACHE_FORWARD_MAX_MB as f64,
+            16.0,
+            64.0,
+            0.0,
+        );
+        let cache_fwd_spin = gtk::SpinButton::new(Some(&cache_fwd_adj), 16.0, 0);
+        cache_fwd_spin.set_numeric(true);
+        cache_fwd_spin.set_value(settings.mpv_cache_forward_mb.clamp(
+            crate::api::MPV_CACHE_FORWARD_MIN_MB,
+            crate::api::MPV_CACHE_FORWARD_MAX_MB,
+        ) as f64);
+        cache_fwd_row.add_suffix(&cache_fwd_spin);
+        player_group.add(&cache_fwd_row);
+
+        let cache_back_row = adw::ActionRow::new();
+        cache_back_row.set_title("mpv Geri Önbellek (MB)");
+        cache_back_row.set_subtitle(
+            "Varsayılan 16 MB. Geri sarma tamponu; yüksek değer daha iyi geri sarma, daha fazla RAM.",
+        );
+        let cache_back_adj = gtk::Adjustment::new(
+            settings.mpv_cache_back_mb.clamp(
+                crate::api::MPV_CACHE_BACK_MIN_MB,
+                crate::api::MPV_CACHE_BACK_MAX_MB,
+            ) as f64,
+            crate::api::MPV_CACHE_BACK_MIN_MB as f64,
+            crate::api::MPV_CACHE_BACK_MAX_MB as f64,
+            4.0,
+            16.0,
+            0.0,
+        );
+        let cache_back_spin = gtk::SpinButton::new(Some(&cache_back_adj), 4.0, 0);
+        cache_back_spin.set_numeric(true);
+        cache_back_spin.set_value(settings.mpv_cache_back_mb.clamp(
+            crate::api::MPV_CACHE_BACK_MIN_MB,
+            crate::api::MPV_CACHE_BACK_MAX_MB,
+        ) as f64);
+        cache_back_row.add_suffix(&cache_back_spin);
+        player_group.add(&cache_back_row);
+
         root.append(&player_group);
 
         let perf_group = adw::PreferencesGroup::new();
@@ -817,6 +868,8 @@ impl SettingsView {
             let light_r = light_sw.clone();
             let patience_spin_c = patience_spin.clone();
             let maxpar_spin_c = maxpar_spin.clone();
+            let cache_fwd_spin_c = cache_fwd_spin.clone();
+            let cache_back_spin_c = cache_back_spin.clone();
             let ask_r = ask_sw.clone();
             let s = s_base.clone();
             let on_save = on_save.clone();
@@ -864,6 +917,14 @@ impl SettingsView {
                 updated.source_patience_secs = patience_spin_c.value() as u64;
                 updated.max_parallel_downloads =
                     (maxpar_spin_c.value().round() as u64).clamp(1, 32);
+                updated.mpv_cache_forward_mb = (cache_fwd_spin_c.value().round() as u64).clamp(
+                    crate::api::MPV_CACHE_FORWARD_MIN_MB,
+                    crate::api::MPV_CACHE_FORWARD_MAX_MB,
+                );
+                updated.mpv_cache_back_mb = (cache_back_spin_c.value().round() as u64).clamp(
+                    crate::api::MPV_CACHE_BACK_MIN_MB,
+                    crate::api::MPV_CACHE_BACK_MAX_MB,
+                );
                 updated.fansub_ask_each_time = ask_r.is_active();
                 on_save(updated);
             })
@@ -908,6 +969,10 @@ impl SettingsView {
         light_sw.connect_active_notify(move |_| sa9());
         let sa10 = save_all.clone();
         patience_spin.connect_value_changed(move |_| sa10());
+        let sa_cache_fwd = save_all.clone();
+        cache_fwd_spin.connect_value_changed(move |_| sa_cache_fwd());
+        let sa_cache_back = save_all.clone();
+        cache_back_spin.connect_value_changed(move |_| sa_cache_back());
 
         let dl_group = adw::PreferencesGroup::new();
         dl_group.set_title("İndirilenler");

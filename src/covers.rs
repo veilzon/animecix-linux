@@ -57,6 +57,8 @@ pub fn new_sized_picture(w: i32, h: i32) -> gtk::Picture {
 pub struct CoverManager {
     client: Arc<Client>,
     cache: Rc<RefCell<HashMap<String, Option<gtk::gdk::Texture>>>>,
+    /// Anahtar → yaklaşık doku baytı (RGBA); LRU bayt bütçesi için.
+    bytes: Rc<RefCell<HashMap<String, usize>>>,
     waiters: Rc<RefCell<HashMap<String, Vec<gtk::Picture>>>>,
     queue: Arc<Mutex<VecDeque<String>>>,
     active: Rc<Cell<usize>>,
@@ -64,8 +66,20 @@ pub struct CoverManager {
     order: Rc<RefCell<VecDeque<String>>>,
 }
 
-/// Çözümlü kapak üst sınırı (~30MB; raf boyunda yeterli, çalkalanma yok).
+/// Çözümlü kapak üst sınırı (adet).
 const MAX_L1_COVERS: usize = 250;
+/// Çözümlü kapak dokularının toplam bellek bütçesi.
+const MAX_L1_BYTES: usize = 48 * 1024 * 1024;
+
+fn texture_bytes_for(w: i32, h: i32) -> usize {
+    (w.max(0) as usize)
+        .saturating_mul(h.max(0) as usize)
+        .saturating_mul(4)
+}
+
+fn texture_bytes(t: &gtk::gdk::Texture) -> usize {
+    texture_bytes_for(t.width(), t.height())
+}
 
 /// Aynı anda çalışan kapak işçisi (donma testi 1'di; 3 paralel + UI-dışı
 /// decode ile hem hızlı hem donmasız).
@@ -87,6 +101,7 @@ impl CoverManager {
         Self {
             client,
             cache: Rc::new(RefCell::new(HashMap::new())),
+            bytes: Rc::new(RefCell::new(HashMap::new())),
             waiters: Rc::new(RefCell::new(HashMap::new())),
             queue: Arc::new(Mutex::new(VecDeque::new())),
             active: Rc::new(Cell::new(0)),
@@ -98,6 +113,7 @@ impl CoverManager {
         Self {
             client: self.client.clone(),
             cache: self.cache.clone(),
+            bytes: self.bytes.clone(),
             waiters: self.waiters.clone(),
             queue: self.queue.clone(),
             active: self.active.clone(),
@@ -110,22 +126,29 @@ impl CoverManager {
     /// şekilde yeniden kuyruğa girer (anahtarlar kaliteye bağlı).
     pub fn reset(&self) {
         self.cache.borrow_mut().clear();
+        self.bytes.borrow_mut().clear();
         self.order.borrow_mut().clear();
         self.waiters.borrow_mut().clear();
         self.queue.lock().unwrap().clear();
         self.active.set(0);
     }
 
-    /// LRU dokunuşu: anahtarı sona al, taşanı at.
+    fn cache_bytes(&self) -> usize {
+        self.bytes.borrow().values().copied().sum()
+    }
+
+    /// LRU dokunuşu: anahtarı sona al; adet veya bayt bütçesi taşınca
+    /// en eski girdileri at.
     fn lru_touch(&self, key: &str) {
         let mut order = self.order.borrow_mut();
         if let Some(pos) = order.iter().position(|k| k == key) {
             order.remove(pos);
         }
         order.push_back(key.to_string());
-        while order.len() > MAX_L1_COVERS {
+        while order.len() > MAX_L1_COVERS || self.cache_bytes() > MAX_L1_BYTES {
             if let Some(old) = order.pop_front() {
                 self.cache.borrow_mut().remove(&old);
+                self.bytes.borrow_mut().remove(&old);
             } else {
                 break;
             }
@@ -296,10 +319,13 @@ impl CoverManager {
                     for p in &pics {
                         p.set_paintable(Some(&t));
                     }
+                    let b = texture_bytes(&t);
                     cache.insert(key.clone(), Some(t));
+                    self.bytes.borrow_mut().insert(key.clone(), b);
                 }
                 None => {
                     cache.insert(key.clone(), None);
+                    self.bytes.borrow_mut().remove(&key);
                 }
             }
             touched.push(key);
@@ -342,15 +368,24 @@ mod tests {
     }
 
     #[test]
+    fn texture_bytes_uses_rgba_size() {
+        assert_eq!(texture_bytes_for(10, 20), 800);
+        assert_eq!(texture_bytes_for(0, 20), 0);
+        assert_eq!(texture_bytes_for(-1, 20), 0);
+    }
+
+    #[test]
     fn reset_clears_mem_state() {
         let m = CoverManager::new(std::sync::Arc::new(Client::new()));
         m.cache.borrow_mut().insert("k".to_string(), None);
+        m.bytes.borrow_mut().insert("k".to_string(), 123);
         m.order.borrow_mut().push_back("k".to_string());
         m.waiters.borrow_mut().insert("k".to_string(), Vec::new());
         m.queue.lock().unwrap().push_back("u".to_string());
         m.active.set(1);
         m.reset();
         assert!(m.cache.borrow().is_empty(), "cache boşalmalı");
+        assert!(m.bytes.borrow().is_empty(), "bayt sayacı boşalmalı");
         assert!(m.order.borrow().is_empty(), "sıra boşalmalı");
         assert!(m.waiters.borrow().is_empty(), "bekleyenler boşalmalı");
         assert!(m.queue.lock().unwrap().is_empty(), "kuyruk boşalmalı");

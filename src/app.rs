@@ -40,6 +40,20 @@ pub enum Page {
     Shortcuts,
 }
 
+/// Gezinme geçmişi üst sınırı: uzun oturumlarda bölüm listelerinin
+/// sınırsız klonlanmasını önler.
+const MAX_PAGE_HISTORY: usize = 30;
+
+fn push_page_history(st: &mut Vec<Page>, page: Page) {
+    if st.last() == Some(&page) {
+        return;
+    }
+    st.push(page);
+    if st.len() > MAX_PAGE_HISTORY {
+        st.remove(0);
+    }
+}
+
 /// Çözüm paketi: oynatma adayları + video öncesi çözülmüş atlama planı.
 pub struct PlaySources {
     pub candidates: Vec<String>,
@@ -117,6 +131,8 @@ pub struct App {
     pub back_btn: gtk::Button,
     pub title_label: gtk::Label,
     pub ops: OperationStack,
+    /// Tek film tonu provider'ı; her sayfada yeni provider eklemeyi önler.
+    pub movie_tint_css: gtk::CssProvider,
     pub client: Arc<Client>,
     pub covers: CoverManager,
     pub page_history: Rc<RefCell<Vec<Page>>>,
@@ -128,7 +144,10 @@ pub struct App {
     pub dl_rows: Rc<RefCell<HashMap<String, crate::ui::downloads_view::DlRow>>>,
     pub opening_op_id: Rc<RefCell<Option<String>>>,
     pub opening_op_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
-    pub play_gen: Rc<Cell<u64>>,
+    pub play_gen: Arc<std::sync::atomic::AtomicU64>,
+    /// Son başlatılan mpv sürecinin PID'i (0 = yok). Yeni oynatmada eskisi
+    /// sonlandırılır; süreçler üst üste birikmez.
+    pub current_mpv_pid: Arc<std::sync::atomic::AtomicU64>,
     pub home_acts: Rc<RefCell<Vec<Option<usize>>>>,
     pub dl_manager: crate::download::DownloadManager,
     /// Bölüm hızlı-arama tuşu: sayfa başına tek controller (birikmeyi önler).
@@ -554,6 +573,13 @@ impl App {
 
         let covers = CoverManager::new(client.clone());
 
+        let movie_tint_css = gtk::CssProvider::new();
+        gtk::style_context_add_provider_for_display(
+            &gtk::prelude::WidgetExt::display(&window),
+            &movie_tint_css,
+            gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+        );
+
         let (dl_tx, dl_rx) = std::sync::mpsc::channel::<crate::download::UiEvent>();
         let dl_manager =
             crate::download::DownloadManager::new(crate::download::queue_file_path(), dl_tx);
@@ -566,6 +592,7 @@ impl App {
             back_btn,
             title_label,
             ops,
+            movie_tint_css,
             client: client.clone(),
             covers,
             page_history: Rc::new(RefCell::new(vec![initial_page.clone()])),
@@ -577,7 +604,8 @@ impl App {
             dl_rows: Rc::new(RefCell::new(HashMap::new())),
             opening_op_id: Rc::new(RefCell::new(None)),
             opening_op_shown_at: Rc::new(RefCell::new(None)),
-            play_gen: Rc::new(Cell::new(0)),
+            play_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            current_mpv_pid: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             home_acts: Rc::new(RefCell::new(Vec::new())),
             dl_manager,
             ep_search_controller: Rc::new(RefCell::new(None)),
@@ -886,6 +914,7 @@ impl App {
             back_btn: self.back_btn.clone(),
             title_label: self.title_label.clone(),
             ops: self.ops.clone(),
+            movie_tint_css: self.movie_tint_css.clone(),
             client: self.client.clone(),
             covers: self.covers.clone_ref(),
             page_history: self.page_history.clone(),
@@ -898,6 +927,7 @@ impl App {
             opening_op_id: self.opening_op_id.clone(),
             opening_op_shown_at: self.opening_op_shown_at.clone(),
             play_gen: self.play_gen.clone(),
+            current_mpv_pid: self.current_mpv_pid.clone(),
             home_acts: self.home_acts.clone(),
             dl_manager: self.dl_manager.clone(),
             ep_search_controller: self.ep_search_controller.clone(),
@@ -992,9 +1022,7 @@ impl App {
     pub fn navigate_to(&self, p: &Page) {
         {
             let mut st = self.page_history.borrow_mut();
-            if st.last() != Some(p) {
-                st.push(p.clone());
-            }
+            push_page_history(&mut st, p.clone());
         }
         self.show_page(p);
         if matches!(p, Page::Home) {
@@ -1229,6 +1257,7 @@ impl App {
             let _ = tx.send(client.cover_palette(&url));
         });
         let weak = target.downgrade();
+        let movie_tint_css = self.movie_tint_css.clone();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(pal) => {
                 let Some(root) = weak.upgrade() else {
@@ -1245,15 +1274,8 @@ impl App {
                      linear-gradient(135deg, rgba({r1},{g1},{b1},0.30), \
                      rgba({r2},{g2},{b2},0.20) 55%, rgba({r3},{g3},{b3},0.30)); }}"
                 );
-                let prov_a = gtk::CssProvider::new();
-                prov_a.load_from_data(&css_a);
+                movie_tint_css.load_from_data(&css_a);
                 root.set_widget_name("movie-tint-root");
-                let display = root.display();
-                gtk::style_context_add_provider_for_display(
-                    &display,
-                    &prov_a,
-                    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
-                );
                 glib::ControlFlow::Break
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
@@ -4553,8 +4575,28 @@ impl App {
         fallback_embeds: &[String],
         plan: Option<crate::skip::SkipPlan>,
     ) {
-        let gen = self.play_gen.get().wrapping_add(1);
-        self.play_gen.set(gen);
+        let gen = self
+            .play_gen
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+            + 1;
+        let old_pid = self
+            .current_mpv_pid
+            .swap(0, std::sync::atomic::Ordering::SeqCst);
+        if old_pid != 0 {
+            let _ = std::process::Command::new("kill")
+                .arg("-TERM")
+                .arg(old_pid.to_string())
+                .status();
+        }
+        let (mpv_cache_forward_mb, mpv_cache_back_mb) = {
+            let s = self.settings.borrow();
+            (
+                s.mpv_cache_forward_mb
+                    .clamp(api::MPV_CACHE_FORWARD_MIN_MB, api::MPV_CACHE_FORWARD_MAX_MB),
+                s.mpv_cache_back_mb
+                    .clamp(api::MPV_CACHE_BACK_MIN_MB, api::MPV_CACHE_BACK_MAX_MB),
+            )
+        };
         let w = api::Watched {
             title_id: title.id,
             episode: ep.episode,
@@ -4699,7 +4741,7 @@ impl App {
                     for ev in events {
                         match ev {
                             PlayEvent::DismissOpening(ev_gen) => {
-                                if play_gen_h.get() != ev_gen {
+                                if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) != ev_gen {
                                     continue;
                                 }
                                 let current =
@@ -4724,7 +4766,9 @@ impl App {
                                     let opening_op_id_later = opening_op_id_h.clone();
                                     let opening_op_shown_at_later = opening_op_shown_at_h.clone();
                                     glib::timeout_add_local(remain, move || {
-                                        if play_gen_later.get() == gen_play {
+                                        if play_gen_later.load(std::sync::atomic::Ordering::SeqCst)
+                                            == gen_play
+                                        {
                                             ops_later.finish(
                                                 &id_later,
                                                 OperationState::Done,
@@ -4755,13 +4799,13 @@ impl App {
                                 }
                             }
                             PlayEvent::Info(ev_gen, msg) => {
-                                if play_gen_h.get() != ev_gen {
+                                if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) != ev_gen {
                                     continue;
                                 }
                                 ops_h.update(&op_id_h, &msg, None);
                             }
                             PlayEvent::Failed(ev_gen, msg) => {
-                                if play_gen_h.get() != ev_gen {
+                                if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) != ev_gen {
                                     continue;
                                 }
                                 let current =
@@ -4966,6 +5010,8 @@ impl App {
             let upscale_c = upscale;
             let ass_path_c = ass_path.clone();
             let mpv_child_c = mpv_child.clone();
+            let play_gen_c = self.play_gen.clone();
+            let current_mpv_pid_c = self.current_mpv_pid.clone();
             let candidates: Vec<String> = candidates.to_vec();
             let fallback_embeds_c = fallback_embeds.to_vec();
             let fast_embeds_c = fast_embeds.to_vec();
@@ -5017,7 +5063,11 @@ impl App {
             std::thread::spawn(move || {
                 let mut terminal_sent = false;
                 let mut ever_media = false;
+                let mut active_pid: u64 = 0;
                 'supervisor: for i in 0..total {
+                    if play_gen_c.load(std::sync::atomic::Ordering::SeqCst) != gen {
+                        break;
+                    }
                     let url: String = if i < candidates.len() {
                         candidates[i].clone()
                     } else {
@@ -5054,8 +5104,8 @@ impl App {
                     }
                     cmd.args(saved_pos_c.map(|p| format!("--start={p:.1}")).as_slice())
                         .arg("--cache=yes")
-                        .arg("--demuxer-max-bytes=128MiB")
-                        .arg("--demuxer-max-back-bytes=32MiB")
+                        .arg(format!("--demuxer-max-bytes={mpv_cache_forward_mb}MiB"))
+                        .arg(format!("--demuxer-max-back-bytes={mpv_cache_back_mb}MiB"))
                         .arg("--demuxer-readahead-secs=120")
                         .arg("--cache-pause=yes")
                         .arg("--cache-pause-wait=3")
@@ -5088,6 +5138,9 @@ impl App {
                             referer
                         ));
                     }
+                    if play_gen_c.load(std::sync::atomic::Ordering::SeqCst) != gen {
+                        break;
+                    }
                     eprintln!(
                         "[SUP] mpv spawn deneniyor (ep={}, kaynak={}, url={:.80})",
                         episode, i, url
@@ -5102,7 +5155,15 @@ impl App {
                             continue;
                         }
                     };
+                    if play_gen_c.load(std::sync::atomic::Ordering::SeqCst) != gen {
+                        let mut stale = child;
+                        let _ = stale.kill();
+                        let _ = stale.wait();
+                        break;
+                    }
                     eprintln!("[SUP] mpv spawn edildi (ep={}, kaynak={})", episode, i);
+                    active_pid = child.id() as u64;
+                    current_mpv_pid_c.store(active_pid, std::sync::atomic::Ordering::SeqCst);
                     *mpv_child_c.lock().unwrap() = Some(child);
 
                     let start = std::time::Instant::now();
@@ -5280,6 +5341,14 @@ impl App {
                             ));
                         }
                     }
+                }
+                if active_pid != 0 {
+                    let _ = current_mpv_pid_c.compare_exchange(
+                        active_pid,
+                        0,
+                        std::sync::atomic::Ordering::SeqCst,
+                        std::sync::atomic::Ordering::SeqCst,
+                    );
                 }
                 alive.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = std::fs::remove_file(&sock_path_c);
@@ -5545,9 +5614,7 @@ impl App {
     fn show_search_results(&self, results: Vec<Title>) {
         *self.search_results.borrow_mut() = results;
         let mut st = self.page_history.borrow_mut();
-        if st.last() != Some(&Page::Search) {
-            st.push(Page::Search);
-        }
+        push_page_history(&mut st, Page::Search);
         drop(st);
         self.show_page(&Page::Search);
     }
@@ -5562,7 +5629,10 @@ impl App {
                 _ => Page::Episodes { title, eps },
             }
         };
-        self.page_history.borrow_mut().push(page.clone());
+        {
+            let mut st = self.page_history.borrow_mut();
+            push_page_history(&mut st, page.clone());
+        }
         self.show_page(&page);
     }
 
@@ -5980,6 +6050,21 @@ mod decide_retry_tests {
     fn changelog_known_and_unknown() {
         assert!(super::changelog_items("1.2.6").is_some());
         assert!(super::changelog_items("9.9.9").is_none());
+    }
+
+    #[test]
+    fn page_history_is_bounded() {
+        let mut st = Vec::new();
+        for i in 0..(super::MAX_PAGE_HISTORY + 10) {
+            let page = if i % 2 == 0 {
+                super::Page::Home
+            } else {
+                super::Page::Favs
+            };
+            super::push_page_history(&mut st, page);
+        }
+        assert_eq!(st.len(), super::MAX_PAGE_HISTORY);
+        assert_eq!(st.last(), Some(&super::Page::Favs));
     }
 
     #[test]

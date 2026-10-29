@@ -713,6 +713,13 @@ pub struct Settings {
     /// Aynı anda indirilen bölüm sayısı (1-32, varsayılan 1).
     #[serde(default = "default_max_parallel")]
     pub max_parallel_downloads: u64,
+    /// mpv ileri önbelleği (MB). Varsayılan 64; yüksek değer daha akıcı
+    /// tampon sağlar, daha fazla RAM kullanır.
+    #[serde(default = "default_mpv_cache_forward_mb")]
+    pub mpv_cache_forward_mb: u64,
+    /// mpv geri sarma önbelleği (MB). Varsayılan 16.
+    #[serde(default = "default_mpv_cache_back_mb")]
+    pub mpv_cache_back_mb: u64,
     /// Listeden silme ipucu gösterildi mi (bir kez, 10sn toast).
     #[serde(default)]
     pub seen_remove_hint: bool,
@@ -782,6 +789,17 @@ fn default_patience() -> u64 {
 fn default_max_parallel() -> u64 {
     1
 }
+fn default_mpv_cache_forward_mb() -> u64 {
+    64
+}
+fn default_mpv_cache_back_mb() -> u64 {
+    16
+}
+
+pub const MPV_CACHE_FORWARD_MIN_MB: u64 = 16;
+pub const MPV_CACHE_FORWARD_MAX_MB: u64 = 512;
+pub const MPV_CACHE_BACK_MIN_MB: u64 = 4;
+pub const MPV_CACHE_BACK_MAX_MB: u64 = 128;
 fn default_ui_scale() -> f32 {
     1.0
 }
@@ -1203,6 +1221,8 @@ impl Default for Settings {
             light_mode: false,
             source_patience_secs: default_patience(),
             max_parallel_downloads: default_max_parallel(),
+            mpv_cache_forward_mb: default_mpv_cache_forward_mb(),
+            mpv_cache_back_mb: default_mpv_cache_back_mb(),
             seen_remove_hint: false,
             default_fansub_template: None,
             fansub_ask_each_time: true,
@@ -2332,10 +2352,18 @@ impl Client {
 
     pub fn skip_cache_put(&self, slug: &str, cs: &CachedSkip) {
         if let Ok(mut map) = self.skip_plans.lock() {
-            map.insert(slug.to_string(), (now_secs(), cs.clone()));
-            if map.len() > 200 {
-                map.clear();
+            let now = now_secs();
+            map.retain(|_, (t, _)| now.saturating_sub(*t) < 6 * 3600);
+            if map.len() >= 64 {
+                if let Some(oldest) = map
+                    .iter()
+                    .min_by_key(|(_, (t, _))| *t)
+                    .map(|(k, _)| k.clone())
+                {
+                    map.remove(&oldest);
+                }
             }
+            map.insert(slug.to_string(), (now, cs.clone()));
         }
     }
 
@@ -4351,6 +4379,37 @@ mod tests {
         );
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.max_parallel_downloads, 4, "paralellik korunmalı");
+    }
+
+    #[test]
+    fn settings_mpv_cache_defaults_and_roundtrip() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.mpv_cache_forward_mb, 64, "eski ayar 64 MB almalı");
+        assert_eq!(old.mpv_cache_back_mb, 16, "eski ayar 16 MB almalı");
+
+        let mut s = Settings::default();
+        assert_eq!(s.mpv_cache_forward_mb, 64);
+        assert_eq!(s.mpv_cache_back_mb, 16);
+        s.mpv_cache_forward_mb = 96;
+        s.mpv_cache_back_mb = 24;
+        let json = serde_json::to_string_pretty(&s).expect("serialize");
+        assert!(json.contains("mpv_cache_forward_mb"), "alan JSON'da olmalı");
+        let back: Settings = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.mpv_cache_forward_mb, 96);
+        assert_eq!(back.mpv_cache_back_mb, 24);
+    }
+
+    #[test]
+    fn skip_cache_stays_bounded() {
+        use_isolated_state();
+        let c = Client::new();
+        for i in 0..80 {
+            c.skip_cache_put(&format!("s{i}"), &CachedSkip::default());
+        }
+        assert!(
+            c.skip_plans.lock().unwrap().len() <= 64,
+            "skip cache 64 kayıtla sınırlı olmalı"
+        );
     }
 
     #[test]
