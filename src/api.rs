@@ -508,6 +508,89 @@ pub struct Episode {
     pub name: String,
 }
 
+/// HTML entity'lerini tek geçişte çözer.
+///
+/// Sayısal entity'ler önce, isimli entity'ler sonra, `&amp;` en son çözülür;
+/// böylece `&amp;lt;` girdisi `&lt;` üretir ve ikinci kez decode edilmez.
+pub(crate) fn decode_html_entities(input: &str) -> String {
+    fn numeric(tail: &str) -> Option<(char, usize)> {
+        let after_amp = tail.strip_prefix('&')?;
+        let after_hash = after_amp.strip_prefix('#')?;
+        let (radix, digits, prefix_len) = if let Some(hex) = after_hash
+            .strip_prefix('x')
+            .or_else(|| after_hash.strip_prefix('X'))
+        {
+            (16, hex, 3)
+        } else {
+            (10, after_hash, 2)
+        };
+        let semi = digits.find(';')?;
+        if semi == 0 {
+            return None;
+        }
+        let code = u32::from_str_radix(&digits[..semi], radix).ok()?;
+        let ch = char::from_u32(code)?;
+        Some((ch, prefix_len + semi + 1))
+    }
+
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(amp) = rest.find('&') {
+        out.push_str(&rest[..amp]);
+        let tail = &rest[amp..];
+        if let Some((ch, consumed)) = numeric(tail) {
+            out.push(ch);
+            rest = &tail[consumed..];
+            continue;
+        }
+        let named = [
+            ("&lt;", '<'),
+            ("&gt;", '>'),
+            ("&quot;", '"'),
+            ("&apos;", '\''),
+        ];
+        if let Some((pat, ch)) = named.iter().find(|(pat, _)| tail.starts_with(pat)) {
+            out.push(*ch);
+            rest = &tail[pat.len()..];
+            continue;
+        }
+        // `&amp;` en sonda çözülür (tek geçiş garantisi için).
+        out.push('&');
+        rest = &tail[1..];
+    }
+    out.push_str(rest);
+    out.replace("&amp;", "&")
+}
+
+/// `name` alanı bölüm numarasından başka bir şey taşımıyorsa `true`.
+pub(crate) fn is_generic_episode_name(name: &str, episode: u64) -> bool {
+    let n = name.trim().to_lowercase();
+    let ep = episode.to_string();
+    [
+        format!("{ep}. Bölüm"),
+        format!("Bölüm {ep}"),
+        format!("{ep}. Episode"),
+        format!("Episode {ep}"),
+    ]
+    .iter()
+    .any(|p| n == p.to_lowercase())
+}
+
+/// Bölüm için gösterilecek adı seçer: gerçek `name` > `description` > numara.
+pub(crate) fn episode_display_name(raw_name: &str, description: &str, episode: u64) -> String {
+    let raw = decode_html_entities(raw_name.trim());
+    let desc = decode_html_entities(description.trim());
+    if !raw.is_empty() && !is_generic_episode_name(&raw, episode) {
+        raw
+    } else if !desc.is_empty() {
+        desc
+    } else if !raw.is_empty() {
+        raw
+    } else {
+        format!("Bölüm {episode}")
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct HistoryEntry {
     pub title: Title,
@@ -1785,13 +1868,12 @@ impl Client {
                             {
                                 continue;
                             }
+                            let raw_name = v["name"].as_str().unwrap_or("");
+                            let desc = v["description"].as_str().unwrap_or("");
                             season_eps.push(Episode {
                                 episode: ep,
                                 season: sez,
-                                name: v["name"]
-                                    .as_str()
-                                    .map(|s| s.to_string())
-                                    .unwrap_or_else(|| format!("Bölüm {ep}")),
+                                name: episode_display_name(raw_name, desc, ep),
                             });
                         }
                     }
@@ -3706,6 +3788,40 @@ mod tests {
             season_count: seasons,
             ..Default::default()
         }
+    }
+
+    #[test]
+    fn episode_name_prefers_description_when_name_is_generic() {
+        assert_eq!(
+            episode_display_name("1. Bölüm", "Yalnız Yuvarlanan Bocchi", 1),
+            "Yalnız Yuvarlanan Bocchi"
+        );
+        assert_eq!(
+            episode_display_name("Episode 2", "Gerçek Ad", 2),
+            "Gerçek Ad"
+        );
+    }
+
+    #[test]
+    fn episode_name_keeps_real_name() {
+        assert_eq!(
+            episode_display_name("Yalnız Yuvarlanan Bocchi", "özet", 1),
+            "Yalnız Yuvarlanan Bocchi"
+        );
+    }
+
+    #[test]
+    fn episode_name_falls_back_to_number() {
+        assert_eq!(episode_display_name("", "", 3), "Bölüm 3");
+        assert_eq!(episode_display_name("Bölüm 4", "", 4), "Bölüm 4");
+    }
+
+    #[test]
+    fn episode_name_decodes_html_entities() {
+        assert_eq!(episode_display_name("A &amp; B", "", 1), "A & B");
+        assert_eq!(decode_html_entities("&#39;"), "'");
+        assert_eq!(decode_html_entities("&#x27;"), "'");
+        assert_eq!(decode_html_entities("&amp;lt;"), "&lt;");
     }
 
     #[test]
