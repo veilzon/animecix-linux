@@ -458,7 +458,7 @@ fn main() {
                     margin: 0;
                 }
 
-                /* === Alt ortadaki işlem yığını: tek satır frosted haplar === */
+                /* === Alt ortadaki işlem yığını: siyah, tek satır haplar === */
                 .op-stack {
                     background-color: transparent;
                     border: none;
@@ -466,44 +466,29 @@ fn main() {
                     box-shadow: none;
                 }
                 .op-row {
-                    background-color: alpha(@card_bg_color, 0.98);
-                    color: @card_fg_color;
-                    border: 1px solid alpha(currentColor, 0.16);
+                    background-color: #000000;
+                    color: #ffffff;
+                    border: 1px solid alpha(#ffffff, 0.18);
                     border-radius: 9999px;
                     padding: 6px 12px;
                     box-shadow: 0 6px 18px alpha(black, 0.45);
                 }
                 .op-row.op-error {
-                    background-color: alpha(#ff6b6b, 0.14);
-                    border-color: alpha(#ff6b6b, 0.45);
+                    border-color: alpha(#ff6b6b, 0.85);
                 }
                 .op-row.op-done {
-                    border-color: alpha(@accent_color, 0.35);
+                    border-color: alpha(@accent_color, 0.7);
                 }
-                .op-title {
-                    font-weight: 600;
-                }
-                .op-detail {
-                    font-size: 0.9em;
-                    opacity: 0.82;
-                }
-                .op-sep {
-                    opacity: 0.5;
+                .op-text {
+                    color: #ffffff;
                 }
                 .op-status {
                     font-weight: 700;
-                }
-                .op-error .op-status,
-                .op-error .op-title {
-                    color: #ff6b6b;
-                }
-                .op-done .op-status,
-                .op-done .op-title {
-                    color: @accent_color;
+                    color: #ffffff;
                 }
                 .op-pct {
+                    color: #ffffff;
                     font-size: 0.85em;
-                    opacity: 0.85;
                 }
                 .op-progress {
                     min-height: 6px;
@@ -511,7 +496,7 @@ fn main() {
                 .op-progress trough {
                     min-height: 6px;
                     border-radius: 3px;
-                    background-color: alpha(currentColor, 0.15);
+                    background-color: alpha(#ffffff, 0.15);
                 }
                 .op-progress progress {
                     min-height: 6px;
@@ -519,13 +504,12 @@ fn main() {
                     background-color: @accent_color;
                 }
                 .op-overflow {
-                    background-color: alpha(@card_bg_color, 0.98);
-                    color: @card_fg_color;
-                    border: 1px solid alpha(currentColor, 0.16);
+                    background-color: #000000;
+                    color: #ffffff;
+                    border: 1px solid alpha(#ffffff, 0.18);
                     border-radius: 9999px;
                     padding: 3px 10px;
                     font-size: 0.85em;
-                    opacity: 0.8;
                 }
 
                 /* === Bölüm kaydırıcısı: kenar gölgesi şeridi + hap altı boşluk === */

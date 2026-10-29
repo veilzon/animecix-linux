@@ -6,6 +6,7 @@ use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use glib;
 use gtk::prelude::*;
 
 use crate::download::{DownloadRecord, DownloadStatus};
@@ -272,9 +273,7 @@ struct RowWidgets {
     container: gtk::Box,
     spinner: gtk::Spinner,
     status: gtk::Label,
-    title: gtk::Label,
-    sep: gtk::Label,
-    detail: gtk::Label,
+    text: gtk::Label,
     pct: gtk::Label,
     progress: gtk::ProgressBar,
 }
@@ -450,7 +449,7 @@ impl OperationStack {
             .values()
             .next()
             .and_then(|row| {
-                row.title
+                row.text
                     .parent()
                     .and_then(|p| p.downcast::<gtk::Box>().ok())
                     .map(|b| b.orientation() == gtk::Orientation::Horizontal)
@@ -458,16 +457,16 @@ impl OperationStack {
             .unwrap_or(false)
     }
 
-    /// İlk satırın başlık/ayrıntı genişlik sınırları (testler için).
+    /// İlk satırın metin genişlik sınırı (testler için).
     #[cfg(test)]
-    pub fn first_row_max_chars(&self) -> (i32, i32) {
+    pub fn first_row_max_chars(&self) -> i32 {
         self.inner
             .rows
             .borrow()
             .values()
             .next()
-            .map(|row| (row.title.max_width_chars(), row.detail.max_width_chars()))
-            .unwrap_or((-1, -1))
+            .map(|row| row.text.max_width_chars())
+            .unwrap_or(-1)
     }
 
     fn render(&self) {
@@ -536,15 +535,8 @@ impl OperationStack {
         status.set_valign(gtk::Align::Center);
         status.set_visible(false);
 
-        let title = Self::text_label("op-title");
-        title.set_max_width_chars(18);
-
-        let sep = gtk::Label::new(Some("·"));
-        sep.add_css_class("op-sep");
-        sep.set_visible(false);
-
-        let detail = Self::text_label("op-detail");
-        detail.set_max_width_chars(34);
+        let text = Self::text_label("op-text");
+        text.set_max_width_chars(56);
 
         let pct = gtk::Label::new(None);
         pct.add_css_class("op-pct");
@@ -560,9 +552,7 @@ impl OperationStack {
 
         container.append(&spinner);
         container.append(&status);
-        container.append(&title);
-        container.append(&sep);
-        container.append(&detail);
+        container.append(&text);
         container.append(&pct);
         container.append(&progress);
         self.inner.rows_box.append(&container);
@@ -571,9 +561,7 @@ impl OperationStack {
             container,
             spinner,
             status,
-            title,
-            sep,
-            detail,
+            text,
             pct,
             progress,
         }
@@ -591,11 +579,14 @@ impl OperationStack {
     }
 
     fn apply(row: &RowWidgets, op: &Operation) {
-        row.title.set_text(&op.title);
         let has_detail = !op.detail.trim().is_empty();
-        row.detail.set_text(&op.detail);
-        row.detail.set_visible(has_detail);
-        row.sep.set_visible(has_detail);
+        let title = glib::markup_escape_text(&op.title);
+        let text = if has_detail {
+            format!("<b>{title}</b> · {}", glib::markup_escape_text(&op.detail))
+        } else {
+            format!("<b>{title}</b>")
+        };
+        row.text.set_markup(&text);
         row.container.remove_css_class("op-done");
         row.container.remove_css_class("op-error");
         match op.state {
@@ -694,14 +685,10 @@ mod tests {
             stack.first_row_is_single_line(),
             "satır metni yatay tek satır olmalı"
         );
-        let (title, detail) = stack.first_row_max_chars();
+        let max_chars = stack.first_row_max_chars();
         assert!(
-            title > 0 && title <= 24,
-            "başlık genişliği sınırlı olmalı: {title}"
-        );
-        assert!(
-            detail > 0 && detail <= 40,
-            "ayrıntı genişliği sınırlı olmalı: {detail}"
+            max_chars > 0 && max_chars <= 56,
+            "metin genişliği sınırlı olmalı: {max_chars}"
         );
     }
 
