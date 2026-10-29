@@ -273,7 +273,9 @@ struct RowWidgets {
     spinner: gtk::Spinner,
     status: gtk::Label,
     title: gtk::Label,
+    sep: gtk::Label,
     detail: gtk::Label,
+    pct: gtk::Label,
     progress: gtk::ProgressBar,
 }
 
@@ -311,10 +313,14 @@ impl OperationStack {
 
         let stack = gtk::Box::new(gtk::Orientation::Vertical, 6);
         stack.add_css_class("op-stack");
+        stack.set_halign(gtk::Align::Center);
+        stack.set_hexpand(false);
         let rows_box = gtk::Box::new(gtk::Orientation::Vertical, 6);
+        rows_box.set_halign(gtk::Align::Center);
+        rows_box.set_hexpand(false);
         let overflow = gtk::Label::new(None);
         overflow.add_css_class("op-overflow");
-        overflow.set_halign(gtk::Align::Start);
+        overflow.set_halign(gtk::Align::Center);
         overflow.set_visible(false);
         stack.append(&rows_box);
         stack.append(&overflow);
@@ -435,6 +441,35 @@ impl OperationStack {
         self.inner.rows.borrow().len()
     }
 
+    /// İlk satırın metin kutusunun yatay (tek satır) olduğunu doğrular.
+    #[cfg(test)]
+    pub fn first_row_is_single_line(&self) -> bool {
+        self.inner
+            .rows
+            .borrow()
+            .values()
+            .next()
+            .and_then(|row| {
+                row.title
+                    .parent()
+                    .and_then(|p| p.downcast::<gtk::Box>().ok())
+                    .map(|b| b.orientation() == gtk::Orientation::Horizontal)
+            })
+            .unwrap_or(false)
+    }
+
+    /// İlk satırın başlık/ayrıntı genişlik sınırları (testler için).
+    #[cfg(test)]
+    pub fn first_row_max_chars(&self) -> (i32, i32) {
+        self.inner
+            .rows
+            .borrow()
+            .values()
+            .next()
+            .map(|row| (row.title.max_width_chars(), row.detail.max_width_chars()))
+            .unwrap_or((-1, -1))
+    }
+
     fn render(&self) {
         // Kuyruk ödünç alınırken GTK çağrısı yapmamak için önce kopyala.
         let (visible, overflow) = {
@@ -486,34 +521,50 @@ impl OperationStack {
     }
 
     fn create_row(&self) -> RowWidgets {
-        let container = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+        let container = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         container.add_css_class("op-row");
-        container.set_hexpand(true);
+        container.set_hexpand(false);
+        container.set_halign(gtk::Align::Center);
+        container.set_valign(gtk::Align::Center);
 
         let spinner = gtk::Spinner::new();
         spinner.set_valign(gtk::Align::Center);
         spinner.set_visible(false);
 
         let status = gtk::Label::new(None);
+        status.add_css_class("op-status");
         status.set_valign(gtk::Align::Center);
         status.set_visible(false);
 
-        let text = gtk::Box::new(gtk::Orientation::Vertical, 2);
-        text.set_hexpand(true);
-
         let title = Self::text_label("op-title");
+        title.set_max_width_chars(18);
+
+        let sep = gtk::Label::new(Some("·"));
+        sep.add_css_class("op-sep");
+        sep.set_visible(false);
+
         let detail = Self::text_label("op-detail");
+        detail.set_max_width_chars(34);
+
+        let pct = gtk::Label::new(None);
+        pct.add_css_class("op-pct");
+        pct.set_width_chars(4);
+        pct.set_xalign(1.0);
+        pct.set_visible(false);
 
         let progress = gtk::ProgressBar::new();
         progress.add_css_class("op-progress");
+        progress.set_size_request(48, -1);
+        progress.set_valign(gtk::Align::Center);
         progress.set_visible(false);
 
-        text.append(&title);
-        text.append(&detail);
-        text.append(&progress);
         container.append(&spinner);
         container.append(&status);
-        container.append(&text);
+        container.append(&title);
+        container.append(&sep);
+        container.append(&detail);
+        container.append(&pct);
+        container.append(&progress);
         self.inner.rows_box.append(&container);
 
         RowWidgets {
@@ -521,7 +572,9 @@ impl OperationStack {
             spinner,
             status,
             title,
+            sep,
             detail,
+            pct,
             progress,
         }
     }
@@ -530,7 +583,7 @@ impl OperationStack {
         let label = gtk::Label::new(None);
         label.add_css_class(class);
         label.set_xalign(0.0);
-        label.set_hexpand(true);
+        label.set_hexpand(false);
         label.set_ellipsize(gtk::pango::EllipsizeMode::End);
         label.set_single_line_mode(true);
         label.set_wrap(false);
@@ -539,7 +592,10 @@ impl OperationStack {
 
     fn apply(row: &RowWidgets, op: &Operation) {
         row.title.set_text(&op.title);
+        let has_detail = !op.detail.trim().is_empty();
         row.detail.set_text(&op.detail);
+        row.detail.set_visible(has_detail);
+        row.sep.set_visible(has_detail);
         row.container.remove_css_class("op-done");
         row.container.remove_css_class("op-error");
         match op.state {
@@ -563,13 +619,21 @@ impl OperationStack {
                 row.container.add_css_class("op-error");
             }
         }
-        match op.progress {
-            Some(progress) => {
-                row.progress.set_fraction(progress.clamp(0.0, 1.0));
-                row.progress.set_visible(true);
-            }
-            None => row.progress.set_visible(false),
+        let show_progress = op.state == OperationState::Running && op.progress.is_some();
+        if let Some(progress) = op.progress {
+            let fraction = progress.clamp(0.0, 1.0);
+            row.progress.set_fraction(fraction);
+            row.pct
+                .set_text(&format!("%{}", (fraction * 100.0).round() as u64));
         }
+        row.progress.set_visible(show_progress);
+        row.pct.set_visible(show_progress);
+        let tip = if has_detail {
+            format!("{} · {}", op.title, op.detail)
+        } else {
+            op.title.clone()
+        };
+        row.container.set_tooltip_text(Some(tip.as_str()));
     }
 }
 
@@ -619,6 +683,25 @@ mod tests {
         assert!(
             stack.widget().margin_bottom() >= 80,
             "işlem yığını alt indirme hapının üstünde kalmalı"
+        );
+    }
+
+    #[gtk::test]
+    fn stack_row_is_single_line_and_capped() {
+        let stack = OperationStack::new();
+        stack.begin("a", "İndiriliyor", "Uzun bir bölüm adı");
+        assert!(
+            stack.first_row_is_single_line(),
+            "satır metni yatay tek satır olmalı"
+        );
+        let (title, detail) = stack.first_row_max_chars();
+        assert!(
+            title > 0 && title <= 24,
+            "başlık genişliği sınırlı olmalı: {title}"
+        );
+        assert!(
+            detail > 0 && detail <= 40,
+            "ayrıntı genişliği sınırlı olmalı: {detail}"
         );
     }
 

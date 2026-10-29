@@ -116,7 +116,6 @@ pub struct App {
     pub stack: gtk::Stack,
     pub back_btn: gtk::Button,
     pub title_label: gtk::Label,
-    pub loading: gtk::Box,
     pub ops: OperationStack,
     pub client: Arc<Client>,
     pub covers: CoverManager,
@@ -512,29 +511,6 @@ impl App {
         main_stack.set_vexpand(true);
         main_stack.set_hexpand(true);
 
-        let loading = gtk::Box::new(gtk::Orientation::Horizontal, 10);
-        loading.add_css_class("card");
-        loading.set_halign(gtk::Align::Center);
-        loading.set_valign(gtk::Align::Start);
-        loading.set_margin_top(12);
-        loading.set_margin_bottom(12);
-        loading.set_margin_start(16);
-        loading.set_margin_end(16);
-
-        let spin = gtk::Spinner::new();
-        spin.start();
-        let l_lbl = gtk::Label::new(Some("Yükleniyor…"));
-        l_lbl.add_css_class("title-4");
-        loading.append(&spin);
-        loading.append(&l_lbl);
-        loading.set_visible(false);
-
-        let overlay = gtk::Overlay::new();
-        overlay.set_child(Some(&main_stack));
-        overlay.add_overlay(&loading);
-        overlay.set_vexpand(true);
-        overlay.set_hexpand(true);
-
         // Yan ray kabuğu (satırlar App::new sonunda dolar; Lowell uyarlaması).
         let sidebar_box = gtk::Box::new(gtk::Orientation::Vertical, 4);
         sidebar_box.set_margin_top(8);
@@ -549,7 +525,7 @@ impl App {
         let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
         content.set_hexpand(true);
         content.append(&header);
-        content.append(&overlay);
+        content.append(&main_stack);
         let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         body.append(&sidebar_box);
         let sep = gtk::Separator::new(gtk::Orientation::Vertical);
@@ -589,7 +565,6 @@ impl App {
             stack: main_stack,
             back_btn,
             title_label,
-            loading,
             ops,
             client: client.clone(),
             covers,
@@ -910,7 +885,6 @@ impl App {
             stack: self.stack.clone(),
             back_btn: self.back_btn.clone(),
             title_label: self.title_label.clone(),
-            loading: self.loading.clone(),
             ops: self.ops.clone(),
             client: self.client.clone(),
             covers: self.covers.clone_ref(),
@@ -1198,7 +1172,6 @@ impl App {
     }
 
     pub fn busy(&self, on: bool) {
-        self.loading.set_visible(false);
         if on {
             self.ops.begin("loading", "Yükleniyor…", "");
         } else {
