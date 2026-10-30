@@ -137,6 +137,20 @@ impl CoverManager {
         self.bytes.borrow().values().copied().sum()
     }
 
+    /// LRU önbelleğini verilen bayt bütçesine çeker. Görüntülenen
+    /// `Picture`'lar kendi texture referanslarını tuttuğu için ekrandaki
+    /// kapaklar bu işlemden etkilenmez.
+    pub fn trim_budget(&self, max_bytes: usize) {
+        let mut order = self.order.borrow_mut();
+        while self.cache_bytes() > max_bytes {
+            let Some(old) = order.pop_front() else {
+                break;
+            };
+            self.cache.borrow_mut().remove(&old);
+            self.bytes.borrow_mut().remove(&old);
+        }
+    }
+
     /// LRU dokunuşu: anahtarı sona al; adet veya bayt bütçesi taşınca
     /// en eski girdileri at.
     fn lru_touch(&self, key: &str) {

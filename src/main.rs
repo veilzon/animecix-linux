@@ -11,6 +11,7 @@ mod font;
 mod http;
 mod icons;
 mod local_playback;
+mod memory;
 mod music;
 mod play_quality;
 mod player;

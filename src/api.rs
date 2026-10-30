@@ -3784,6 +3784,16 @@ impl Client {
         self.save_state(&st);
     }
 
+    /// Oynatma sonrası geçici bellek önbelleklerini bırakır.
+    pub(crate) fn trim_transient_caches(&self) {
+        if let Ok(mut c) = self.cache.lock() {
+            c.clear();
+        }
+        if let Ok(mut s) = self.skip_plans.lock() {
+            s.clear();
+        }
+    }
+
     pub fn save_progress(&self, tid: u64, season: u64, episode: u64, pos: f64, dur: f64) {
         let key = format!("{tid}:{season}:{episode}");
         let mut st = self.load_state();

@@ -68,6 +68,7 @@ pub(crate) enum PlayEvent {
     DismissOpening(u64),
     Info(u64, String),
     Failed(u64, String),
+    Closed(u64),
 }
 
 /// Oynatma sonunda açılış satırının terminal durumu.

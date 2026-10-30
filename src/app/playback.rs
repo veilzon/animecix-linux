@@ -624,6 +624,8 @@ impl App {
         let progress = self.progress.clone();
         let progress_bars = self.progress_bars.clone();
         let client = self.client.clone();
+        let covers_h = self.covers.clone_ref();
+        let client_h = self.client.clone();
         let ops = self.ops.clone();
         let op_id = format!("play:{tid}:{season}:{episode}");
 
@@ -732,6 +734,11 @@ impl App {
                                     continue;
                                 }
                                 ops_h.update(&op_id_h, &msg, None);
+                            }
+                            PlayEvent::Closed(ev_gen) => {
+                                if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) == ev_gen {
+                                    crate::memory::trim_after_playback(&covers_h, &client_h);
+                                }
                             }
                             PlayEvent::Failed(ev_gen, msg) => {
                                 if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) != ev_gen {
@@ -1285,6 +1292,9 @@ impl App {
                         std::sync::atomic::Ordering::SeqCst,
                         std::sync::atomic::Ordering::SeqCst,
                     );
+                }
+                if play_gen_c.load(std::sync::atomic::Ordering::SeqCst) == gen {
+                    let _ = play_tx_c.send(PlayEvent::Closed(gen));
                 }
                 alive.store(false, std::sync::atomic::Ordering::SeqCst);
                 let _ = std::fs::remove_file(&sock_path_c);
