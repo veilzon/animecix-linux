@@ -18,6 +18,7 @@ mod player;
 mod segmented;
 mod skip;
 mod startup;
+mod stats;
 mod theme;
 mod ui;
 mod update;
