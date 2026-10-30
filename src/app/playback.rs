@@ -530,6 +530,7 @@ impl App {
             title_id: title.id,
             episode: ep.episode,
             season: ep.season,
+            ..Default::default()
         };
         self.client.set_current(&w);
         self.client.add_history(title, ep);
@@ -922,6 +923,7 @@ impl App {
                                 title_id: tid,
                                 episode: cur.0,
                                 season: cur.1,
+                                ..Default::default()
                             },
                             "",
                         );

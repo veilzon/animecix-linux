@@ -721,6 +721,7 @@ impl App {
                                     title_id: title_c.id,
                                     episode: ep_c.episode,
                                     season: ep_c.season,
+                                    ..Default::default()
                                 };
                                 client_c.save_watched(&w, &title_c.name);
                                 client_c.add_history(&title_c, &ep_c);

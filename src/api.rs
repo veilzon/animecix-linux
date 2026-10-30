@@ -653,6 +653,10 @@ pub struct Watched {
     pub title_id: u64,
     pub episode: u64,
     pub season: u64,
+    #[serde(default)]
+    pub title_name: Option<String>,
+    #[serde(default)]
+    pub watched_at: u64,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -3362,18 +3366,28 @@ impl Client {
 
     pub fn save_watched(&self, w: &Watched, name: &str) {
         let mut st = self.load_state();
-        st.current = Some(Watched {
-            title_id: w.title_id,
-            episode: w.episode,
-            season: w.season,
-        });
+        let mut entry = w.clone();
+        if entry.watched_at == 0 {
+            entry.watched_at = now_secs();
+        }
+        if !name.is_empty() {
+            entry.title_name = Some(name.to_string());
+        }
+        st.current = Some(entry.clone());
         let key = w.title_id.to_string();
         let list = st.watched.entry(key).or_default();
-        if !list
-            .iter()
-            .any(|x| x.episode == w.episode && x.season == w.season)
+        if let Some(existing) = list
+            .iter_mut()
+            .find(|x| x.episode == w.episode && x.season == w.season)
         {
-            list.push(w.clone());
+            if existing.watched_at == 0 {
+                existing.watched_at = entry.watched_at;
+            }
+            if existing.title_name.is_none() {
+                existing.title_name = entry.title_name.clone();
+            }
+        } else {
+            list.push(entry);
         }
         st.watched
             .get_mut(&w.title_id.to_string())
@@ -3384,7 +3398,6 @@ impl Client {
             std::fs::create_dir_all(parent).ok();
         }
         let _ = std::fs::write(&p, serde_json::to_string_pretty(&st).unwrap_or_default());
-        let _ = name; // (state dosyasındaki isim eski sistemle uyumluluk için)
     }
 
     pub fn is_watched(&self, title_id: u64, season: u64, episode: u64) -> bool {
@@ -3397,11 +3410,7 @@ impl Client {
 
     pub fn set_current(&self, w: &Watched) {
         let mut st = self.load_state();
-        st.current = Some(Watched {
-            title_id: w.title_id,
-            episode: w.episode,
-            season: w.season,
-        });
+        st.current = Some(w.clone());
         self.save_state(&st);
     }
 
@@ -3492,20 +3501,37 @@ impl Client {
         self.save_state(&st);
     }
 
+    #[allow(dead_code)] // Test/API yüzeyi; mark_title_watched isimli varyantı kullanıyor.
     pub fn apply_watched_list(&self, tid: u64, eps: &[Episode]) {
+        self.apply_watched_list_named(tid, "", eps);
+    }
+
+    fn apply_watched_list_named(&self, tid: u64, name: &str, eps: &[Episode]) {
         let mut st = self.load_state();
         let list = st.watched.entry(tid.to_string()).or_default();
+        let watched_at = now_secs();
         for e in eps {
-            if !list
-                .iter()
-                .any(|x| x.episode == e.episode && x.season == e.season)
+            if let Some(existing) = list
+                .iter_mut()
+                .find(|x| x.episode == e.episode && x.season == e.season)
             {
-                list.push(Watched {
-                    title_id: tid,
-                    episode: e.episode,
-                    season: e.season,
-                });
+                if existing.title_name.is_none() && !name.is_empty() {
+                    existing.title_name = Some(name.to_string());
+                }
+                continue;
             }
+            list.push(Watched {
+                title_id: tid,
+                episode: e.episode,
+                season: e.season,
+                title_name: if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
+                },
+                watched_at,
+                ..Default::default()
+            });
         }
         list.sort_by_key(|x| x.season * 10000 + x.episode);
         self.save_state(&st);
@@ -3516,7 +3542,7 @@ impl Client {
         if eps.is_empty() {
             return Err("bölüm listesi alınamadı".into());
         }
-        self.apply_watched_list(t.id, &eps);
+        self.apply_watched_list_named(t.id, &t.name, &eps);
         if t.title_type.as_deref() == Some("movie") {
             self.save_progress(t.id, 1, 1, 1.0, 1.0);
         }
@@ -4489,6 +4515,39 @@ mod tests {
     }
 
     #[test]
+    fn watched_legacy_json_defaults_new_fields() {
+        let w: Watched = serde_json::from_str(r#"{"title_id":1,"episode":2,"season":3}"#).unwrap();
+        assert_eq!(w.title_name, None);
+        assert_eq!(w.watched_at, 0);
+    }
+
+    #[test]
+    fn save_watched_records_name_and_timestamp() {
+        use_isolated_state();
+        let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let c = Client::new();
+        let tid: u64 = 999_990;
+        c.save_watched(
+            &Watched {
+                title_id: tid,
+                episode: 1,
+                season: 1,
+                ..Default::default()
+            },
+            "Test Anime",
+        );
+        let st = c.load_state();
+        let entry = st
+            .watched
+            .get(&tid.to_string())
+            .and_then(|l| l.iter().find(|w| w.episode == 1 && w.season == 1))
+            .expect("watched kaydı");
+        assert_eq!(entry.title_name.as_deref(), Some("Test Anime"));
+        assert!(entry.watched_at > 0, "izlenme zamanı yazılmalı");
+        c.mark_title_unwatched(tid);
+    }
+
+    #[test]
     fn next_episode_not_marked_watched_before_playing() {
         use_isolated_state();
         let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -4498,11 +4557,13 @@ mod tests {
             title_id: tid,
             episode: 1,
             season: 0,
+            ..Default::default()
         };
         let w2 = Watched {
             title_id: tid,
             episode: 2,
             season: 0,
+            ..Default::default()
         };
 
         c.set_current(&w1);
@@ -4567,6 +4628,7 @@ mod tests {
                 title_id: tid,
                 episode: 1,
                 season: 0,
+                ..Default::default()
             },
             "",
         );
@@ -5263,6 +5325,7 @@ mod tests {
                 title_id: other,
                 episode: 1,
                 season: 1,
+                ..Default::default()
             },
             "",
         );
@@ -5302,6 +5365,7 @@ mod tests {
                 title_id: tid,
                 episode: 1,
                 season: 1,
+                ..Default::default()
             },
             "",
         );
@@ -5311,6 +5375,7 @@ mod tests {
                 title_id: tid,
                 episode: 2,
                 season: 1,
+                ..Default::default()
             },
             "",
         );
@@ -5320,6 +5385,7 @@ mod tests {
                 title_id: other,
                 episode: 1,
                 season: 1,
+                ..Default::default()
             },
             "",
         );
