@@ -92,6 +92,17 @@ pub fn wants_force_dark(_theme_id: &str) -> bool {
     true
 }
 
+/// Tema accent rengini Cairo grafikleri için RGB'ye çevirir.
+pub fn accent_rgb(theme_id: &str) -> (u8, u8, u8) {
+    let hex = palette(theme_id).accent.trim_start_matches('#');
+    let parse = |s: &str| u8::from_str_radix(s, 16).unwrap_or(0);
+    if hex.len() == 6 {
+        (parse(&hex[0..2]), parse(&hex[2..4]), parse(&hex[4..6]))
+    } else {
+        (0x35, 0x84, 0xE4)
+    }
+}
+
 /// Tema CSS'i. Bilinmeyen id → koyu (güvenli varsayılan).
 pub fn theme_css(theme_id: &str) -> String {
     let id = if THEMES.iter().any(|(i, _)| *i == theme_id) {
@@ -182,6 +193,13 @@ mod tests {
     #[test]
     fn unknown_theme_falls_back_to_dark() {
         assert_eq!(theme_css("uzay"), theme_css("koyu"));
+    }
+
+    #[test]
+    fn accent_rgb_matches_palette() {
+        assert_eq!(accent_rgb("koyu"), (0x35, 0x84, 0xE4));
+        assert_eq!(accent_rgb("bordo"), (0xE5, 0x48, 0x4D));
+        assert_eq!(accent_rgb("bilinmeyen"), accent_rgb("koyu"));
     }
 
     #[test]

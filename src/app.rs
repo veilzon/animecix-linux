@@ -22,6 +22,7 @@ pub enum Page {
     Favs,
     Marathon,
     History,
+    Stats,
     Settings,
     Search,
     Downloads,
@@ -666,7 +667,7 @@ impl App {
         });
         {
             // Yan ray satırları (Lowell sidebar uyarlaması).
-            let pages: [(Page, &str, &str); 10] = [
+            let pages: [(Page, &str, &str); 11] = [
                 (Page::Home, "go-home-symbolic", "Ana Sayfa"),
                 (Page::Kesfet, "view-grid-symbolic", "Keşfet"),
                 (Page::Favs, "starred-symbolic", "Favoriler"),
@@ -676,6 +677,7 @@ impl App {
                     "Maraton",
                 ),
                 (Page::History, "document-open-recent-symbolic", "Geçmiş"),
+                (Page::Stats, "office-chart-bar-symbolic", "İstatistikler"),
                 (Page::Calendar, "x-office-calendar-symbolic", "Takvim"),
                 (Page::News, "view-list-symbolic", "Haberler"),
                 (Page::Downloads, "folder-download-symbolic", "İndirilenler"),
@@ -1148,6 +1150,7 @@ impl App {
             Page::Favs => Some(Page::Favs),
             Page::Marathon => Some(Page::Marathon),
             Page::History => Some(Page::History),
+            Page::Stats => Some(Page::Stats),
             Page::Downloads => Some(Page::Downloads),
             Page::Settings => Some(Page::Settings),
             Page::Kesfet => Some(Page::Kesfet),
@@ -1427,6 +1430,15 @@ impl App {
                     self.build_history_view(),
                 );
             }
+            Page::Stats => {
+                self.title_label.set_text("İstatistikler");
+                switch(
+                    &self.stack,
+                    "stats",
+                    gtk::StackTransitionType::Crossfade,
+                    self.build_stats_view(),
+                );
+            }
             Page::Downloads => {
                 self.title_label.set_text("İndirilenler");
                 switch(
@@ -1581,6 +1593,10 @@ impl App {
             "history" => {
                 self.page_history.borrow_mut().push(Page::History);
                 self.show_page(&Page::History);
+            }
+            "stats" => {
+                self.page_history.borrow_mut().push(Page::Stats);
+                self.show_page(&Page::Stats);
             }
             "downloads" => {
                 self.page_history.borrow_mut().push(Page::Downloads);
@@ -2395,6 +2411,58 @@ impl App {
         );
 
         scroll.set_child(Some(&view));
+        scroll
+    }
+
+    fn build_stats_view(&self) -> gtk::ScrolledWindow {
+        let scroll = gtk::ScrolledWindow::new();
+        scroll.add_css_class("clear-scroll");
+        scroll.set_hexpand(true);
+        scroll.set_vexpand(true);
+        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+
+        let st = self.client.load_state();
+        let downloads = self.dl_manager.snapshot();
+        let mut names: HashMap<u64, String> = HashMap::new();
+        for t in st
+            .saved
+            .iter()
+            .chain(st.history.iter().map(|h| &h.title))
+            .chain(st.marathon.iter().map(|m| &m.title))
+        {
+            names.entry(t.id).or_insert_with(|| t.name.clone());
+        }
+        for rec in &downloads {
+            if rec.title_id != 0 {
+                names
+                    .entry(rec.title_id)
+                    .or_insert_with(|| rec.title.clone());
+            }
+        }
+        for cat in self.cats.borrow().iter() {
+            for t in &cat.items {
+                names.entry(t.id).or_insert_with(|| t.name.clone());
+            }
+        }
+        for list in st.watched.values() {
+            for w in list {
+                if let Some(name) = &w.title_name {
+                    names.entry(w.title_id).or_insert_with(|| name.clone());
+                }
+            }
+        }
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let stats = crate::stats::build_summary(&st, &downloads, &names, now);
+        let accent = crate::theme::accent_rgb(&self.settings.borrow().theme);
+        let view = crate::ui::stats_view::StatsView::build(&stats, accent);
+        let clamp = adw::Clamp::new();
+        clamp.set_maximum_size(1120);
+        clamp.set_child(Some(&view));
+        scroll.set_child(Some(&clamp));
         scroll
     }
 

@@ -3,7 +3,6 @@
 //! `State` + indirme kuyruğu + isim çözümleme haritası saf girdilerdir;
 //! GTK'ya bağımlılık yoktur. Eski kayıtlarda `title_name`/`watched_at`
 //! bulunmadığı için isim ve süre tahminleri dürüstçe işaretlenir.
-#![allow(dead_code)] // Task 16: istatistik sayfası bağlanınca kaldırılacak.
 
 use crate::api::{State, Watched};
 use crate::download::{DownloadRecord, DownloadStatus};
