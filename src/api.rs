@@ -3543,9 +3543,6 @@ impl Client {
             return Err("bölüm listesi alınamadı".into());
         }
         self.apply_watched_list_named(t.id, &t.name, &eps);
-        if t.title_type.as_deref() == Some("movie") {
-            self.save_progress(t.id, 1, 1, 1.0, 1.0);
-        }
         Ok(eps.len())
     }
 

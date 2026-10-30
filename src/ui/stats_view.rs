@@ -28,7 +28,7 @@ impl StatsView {
         root.append(&hero());
         root.append(&kpi_row(stats));
 
-        if stats.episode_count == 0 && stats.downloaded_count == 0 {
+        if !stats.has_data() {
             root.append(&empty_card());
         } else {
             let grid = gtk::Grid::new();

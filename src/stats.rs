@@ -9,6 +9,7 @@ use crate::download::{DownloadRecord, DownloadStatus};
 use std::collections::{BTreeSet, HashMap, HashSet};
 
 const DEFAULT_EPISODE_SECS: f64 = 24.0 * 60.0;
+const MIN_REAL_DURATION_SECS: f64 = 5.0;
 const WEEK_SECS: u64 = 7 * 86_400;
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -22,6 +23,15 @@ pub struct StatsSummary {
     pub top_anime: Vec<AnimeSlice>,
     pub seasons: Vec<SeasonSlice>,
     pub activity: Vec<ActivityBucket>,
+}
+
+impl StatsSummary {
+    pub fn has_data(&self) -> bool {
+        self.episode_count > 0
+            || self.downloaded_count > 0
+            || self.watch_seconds > 0.0
+            || self.activity.iter().any(|b| b.count > 0)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -79,7 +89,7 @@ pub fn build_summary(
         .progress
         .values()
         .map(|(_, dur)| *dur)
-        .filter(|dur| *dur > 0.0)
+        .filter(|dur| *dur >= MIN_REAL_DURATION_SECS)
         .collect();
     durations.sort_by(|a, b| a.total_cmp(b));
     let median_duration = durations.get(durations.len() / 2).copied();
@@ -87,29 +97,31 @@ pub fn build_summary(
     let mut watch_seconds = 0.0;
     let mut watch_estimated = false;
     let mut progress_keys: HashSet<(u64, u64, u64)> = HashSet::new();
+    let mut watched_invalid_progress: HashSet<(u64, u64, u64)> = HashSet::new();
     for (key, (pos, dur)) in &state.progress {
         let Some(k) = parse_progress_key(key) else {
             continue;
         };
         progress_keys.insert(k);
+        let valid_duration = *dur >= MIN_REAL_DURATION_SECS;
         if watched_keys.contains(&k) {
-            if *dur > 0.0 {
+            if valid_duration {
                 watch_seconds += *dur;
             } else {
-                watch_seconds += pos.max(0.0);
-                watch_estimated = true;
+                watched_invalid_progress.insert(k);
             }
         } else {
             let partial = pos.max(0.0);
-            watch_seconds += if *dur > 0.0 {
-                partial.min(*dur)
+            if valid_duration {
+                watch_seconds += partial.min(*dur);
             } else {
-                partial
-            };
+                watch_seconds += partial;
+                watch_estimated = true;
+            }
         }
     }
     for key in &watched_keys {
-        if !progress_keys.contains(key) {
+        if !progress_keys.contains(key) || watched_invalid_progress.contains(key) {
             watch_seconds += median_duration.unwrap_or(DEFAULT_EPISODE_SECS);
             watch_estimated = true;
         }
@@ -431,6 +443,38 @@ mod tests {
         let s = build_summary(&State::default(), &downloads, &HashMap::new(), 0);
         assert_eq!(s.downloaded_count, 2);
         assert_eq!(s.downloaded_bytes, 4_000);
+    }
+
+    #[test]
+    fn movie_watch_sentinel_is_estimated() {
+        let st = state_with(vec![watched(9, 1, 1)], vec![("9:1:1", 1.0, 1.0)]);
+        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        assert!(s.watch_estimated, "sentinel süre tahmini sayılmalı");
+        assert_eq!(s.watch_seconds, DEFAULT_EPISODE_SECS);
+    }
+
+    #[test]
+    fn has_data_covers_partial_progress_and_history() {
+        let partial = state_with(vec![], vec![("1:1:1", 50.0, 100.0)]);
+        assert!(build_summary(&partial, &[], &HashMap::new(), 1_000_000_000).has_data());
+
+        let now = 1_000_000_000;
+        let mut history = State::default();
+        history.history.push(HistoryEntry {
+            title: Title {
+                id: 2,
+                name: "Dizi".into(),
+                ..Default::default()
+            },
+            episode: Episode {
+                season: 1,
+                episode: 1,
+                name: "Bölüm".into(),
+            },
+            ts: now - 60,
+        });
+        assert!(build_summary(&history, &[], &HashMap::new(), now).has_data());
+        assert!(!StatsSummary::default().has_data());
     }
 
     #[test]
