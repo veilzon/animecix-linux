@@ -3254,6 +3254,17 @@ impl App {
         });
     }
 
+    /// Tek bölüm indirme akışı: kalite sor + çevirmenleri önden çek.
+    pub(crate) fn download_episode(&self, title: Title, ep: Episode) {
+        let this_q = self.clone_ref();
+        let this = self.clone_ref();
+        this_q.ask_download_quality(move |quality| {
+            if let Some(quality) = quality {
+                this.start_download_prefetch(title.clone(), vec![ep.clone()], quality, true);
+            }
+        });
+    }
+
     pub(crate) fn ask_download_quality(&self, cb: impl Fn(Option<String>) + 'static) {
         let dialog = adw::MessageDialog::builder()
             .heading("İndirme Kalitesi")

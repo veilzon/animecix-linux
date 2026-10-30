@@ -617,20 +617,7 @@ impl App {
                         let title_dl = title.clone();
                         let ep_dl = e.clone();
                         dl_one.connect_clicked(move |_| {
-                            let this_q = this_dl.clone_ref();
-                            let this2 = this_dl.clone_ref();
-                            let title2 = title_dl.clone();
-                            let ep2 = ep_dl.clone();
-                            this_q.ask_download_quality(move |q| {
-                                if let Some(quality) = q {
-                                    this2.start_download_prefetch(
-                                        title2.clone(),
-                                        vec![ep2.clone()],
-                                        quality,
-                                        true,
-                                    );
-                                }
-                            });
+                            this_dl.download_episode(title_dl.clone(), ep_dl.clone());
                         });
                     }
                     row.append(&dl_one);
@@ -752,8 +739,16 @@ impl App {
                             );
                         });
 
+                        let this_dl = this_ctx.clone_ref();
+                        let title_dl = title_ctx.clone();
+                        let ep_dl = ep_ctx.clone();
+                        let on_download: Rc<dyn Fn()> = Rc::new(move || {
+                            this_dl.download_episode(title_dl.clone(), ep_dl.clone());
+                        });
+
                         crate::ui::row_menu::RowMenu::build(vec![
                             (toggle_label, on_toggle),
+                            ("⬇ İndir".to_string(), on_download),
                             ("🧹 Temizle".to_string(), on_clear),
                         ])
                         .popup_at(&row_ctx, x, y);
