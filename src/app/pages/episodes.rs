@@ -483,10 +483,19 @@ impl App {
         } else {
             // Tek disk okuma: satır başına load_state() donmayı önler.
             let watched_all = self.client.load_state().watched;
+            let local_records = self.dl_manager.snapshot();
             let rows: Vec<(Episode, gtk::Box, Rc<RefCell<bool>>)> = eps
                 .iter()
                 .map(|e| {
                     let key = format!("{}:{}:{}", title.id, e.season, e.episode);
+                    let downloaded = crate::local_playback::find_for_episode(
+                        &local_records,
+                        title.id,
+                        &title.name,
+                        e.season,
+                        e.episode,
+                    )
+                    .is_some();
 
                     let label = components::episode_label_spaced(e.season, e.episode, &e.name);
                     let name = gtk::Label::new(Some(&label));
@@ -505,6 +514,13 @@ impl App {
 
                     let header_box = gtk::Box::new(gtk::Orientation::Horizontal, 8);
                     header_box.append(&name);
+                    if downloaded {
+                        let badge = gtk::Image::from_icon_name("folder-download-symbolic");
+                        badge.set_pixel_size(14);
+                        badge.add_css_class("dim-label");
+                        badge.set_tooltip_text(Some("İndirildi — yerel dosyadan oynatılır"));
+                        header_box.append(&badge);
+                    }
                     header_box.append(&time_lbl);
 
                     let pic = self.covers.cover_picture(title.poster.as_deref(), 48, 72);

@@ -103,6 +103,12 @@ pub enum Msg {
     Discover(Result<(Vec<Title>, usize, u32), String>),
     Eps(Title, Result<Vec<Episode>, String>),
     Play(Title, Episode, Result<PlaySources, String>),
+    PlayLocal {
+        title: Title,
+        ep: Episode,
+        path: String,
+        plan: Option<crate::skip::SkipPlan>,
+    },
     NextEp(Title, Result<Episode, String>),
     FansubsLoaded {
         title: Title,
@@ -3046,6 +3052,14 @@ impl App {
                 ),
                 Err(e) => self.show_error(&e),
             },
+            Msg::PlayLocal {
+                title,
+                ep,
+                path,
+                plan,
+            } => {
+                self.play_candidates(&title, &ep, std::slice::from_ref(&path), &[], &[], plan);
+            }
             Msg::NextEp(title, res) => match res {
                 Ok(ep) => self.play(&title, &ep),
                 Err(e) => {

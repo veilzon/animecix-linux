@@ -9,6 +9,16 @@ use crate::ui::operation_stack::OperationState;
 
 impl App {
     pub(crate) fn play(&self, title: &Title, ep: &Episode) {
+        if let Some(rec) = crate::local_playback::find_for_episode(
+            &self.dl_manager.snapshot(),
+            title.id,
+            &title.name,
+            ep.season,
+            ep.episode,
+        ) {
+            self.play_local_record(title, ep, &rec);
+            return;
+        }
         let title = title.clone();
         let ep = ep.clone();
         eprintln!(
@@ -393,14 +403,6 @@ impl App {
 
     /// Yerel indirilmiş dosyayı mevcut mpv/RPC supervisor'ıyla oynatır.
     pub(crate) fn play_local(&self, rec: &crate::download::DownloadRecord) {
-        if !rec.dest.is_file() {
-            self.ops.error(
-                "Dosya bulunamadı",
-                &rec.dest.display().to_string(),
-                std::time::Duration::from_secs(6),
-            );
-            return;
-        }
         let title_id = self.download_title_id(rec);
         if title_id == 0 {
             self.ops.info(
@@ -419,8 +421,53 @@ impl App {
             episode: rec.episode,
             name: rec.ep_name.clone(),
         };
+        self.play_local_record(&title, &ep, rec);
+    }
+
+    /// Yerel dosyayı intro/outro planını çözerek oynatır.
+    fn play_local_record(
+        &self,
+        title: &Title,
+        ep: &Episode,
+        rec: &crate::download::DownloadRecord,
+    ) {
+        if !rec.dest.is_file() {
+            self.ops.error(
+                "Dosya bulunamadı",
+                &rec.dest.display().to_string(),
+                std::time::Duration::from_secs(6),
+            );
+            return;
+        }
+        self.home_dirty.set(true);
         let path = rec.dest.to_string_lossy().into_owned();
-        self.play_candidates(&title, &ep, std::slice::from_ref(&path), &[], &[], None);
+        if title.id == 0 {
+            self.play_candidates(title, ep, std::slice::from_ref(&path), &[], &[], None);
+            return;
+        }
+        let manual_s = self.settings.borrow().official_skip_secret.clone();
+        let title_c = title.clone();
+        let ep_c = ep.clone();
+        self.busy(true);
+        self.spawn(move |c| {
+            let plan = crate::skip::fetch_plan_for_embeds(
+                &c,
+                title_c.id,
+                ep_c.season,
+                ep_c.episode,
+                &[],
+                &[],
+                &manual_s,
+            );
+            let title_m = title_c.clone();
+            let ep_m = ep_c.clone();
+            move || Msg::PlayLocal {
+                title: title_m,
+                ep: ep_m,
+                path,
+                plan,
+            }
+        });
     }
 
     /// Eski indirme kayıtlarında başlık kimliğini yerel verilerden çözer.

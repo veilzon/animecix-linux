@@ -11,7 +11,6 @@ use std::path::Path;
 ///
 /// Sıra: `Done` → sezon/bölüm → başlık kimliği (yoksa isim) → dosya var.
 /// Aynı bölümde birden fazla indirme varsa kuyruktaki ilk kayıt kazanır.
-#[allow(dead_code)] // Task 10: oynatma akışına bağlanınca kaldırılacak.
 pub fn find_for_episode(
     records: &[DownloadRecord],
     title_id: u64,
