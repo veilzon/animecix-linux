@@ -164,11 +164,6 @@ impl OperationQueue {
         self.ops.len().saturating_sub(self.visible().len())
     }
 
-    /// Verilen önekle başlayan kimlikleri siler.
-    pub fn remove_prefix(&mut self, prefix: &str) {
-        self.ops.retain(|op| !op.id.starts_with(prefix));
-    }
-
     /// Verilen önekle başlayanlardan yalnızca `ids` içindekileri korur.
     pub fn retain_prefix_ids(&mut self, prefix: &str, ids: &HashSet<String>) {
         self.ops
@@ -840,12 +835,4 @@ mod tests {
         assert!(q.visible().is_empty());
     }
 
-    #[test]
-    fn queue_removes_download_prefix() {
-        let mut q = OperationQueue::new(3);
-        q.begin("dl:1", "A", "");
-        q.begin("dl:2", "B", "");
-        q.remove_prefix("dl:");
-        assert!(q.visible().is_empty());
-    }
 }

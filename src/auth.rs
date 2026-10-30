@@ -10,12 +10,13 @@
 //! (Lowell137/animecix-linux `auth.rs` MIT portu; manga + avatar
 //! yükleme hariç — onlar Faz 4'te.)
 
+#![allow(dead_code)] // gecici-yerel: uzak mod protokol yardımcıları testlerle korunuyor.
+
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::api::{Client, BASE};
+use crate::api::Client;
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct User {

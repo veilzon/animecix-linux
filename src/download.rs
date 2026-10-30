@@ -123,6 +123,7 @@ pub fn range_header(have: u64) -> Option<String> {
 }
 
 /// Hedef dizinde boş alan (bayt). Öğrenilemezse None.
+#[allow(dead_code)] // İndirme öncesi disk kontrolü için; testle korunuyor.
 pub fn free_space(path: &Path) -> Option<u64> {
     let anchor = if path.exists() {
         path.to_path_buf()

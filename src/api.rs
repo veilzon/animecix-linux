@@ -383,6 +383,7 @@ pub struct Review {
 }
 
 /// Son eklenen bölüm (last-episodes). Herkese açık.
+#[allow(dead_code)] // İleride "son bölümler" yüzeyi için; testlerle korunuyor.
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub struct LastEpisode {
     #[serde(default)]
@@ -403,6 +404,7 @@ pub struct LastEpisode {
 
 impl LastEpisode {
     /// Bölüm listesini açmak için en az bilgiyle başlık kurar.
+    #[allow(dead_code)] // LastEpisode yüzeyi bağlanınca kullanılacak.
     pub fn ref_title(&self) -> Title {
         Title {
             id: self.title_id,
@@ -2199,6 +2201,7 @@ impl Client {
 
     /// Katı seçim: istenen kalite listede yoksa None (sessiz üst-kaliteye düşmez).
     /// "best" her zaman serbesttir; "720p" 480p'ye inebilir; "480p" yalnızca 480p'dir.
+    #[allow(dead_code)] // İndirme kalite politikası testlerle korunuyor.
     pub fn pick_strict(urls: &[(String, String)], quality: &str) -> Option<(String, String)> {
         match quality {
             "480p" => urls.iter().find(|(l, _)| l == "480p").cloned(),
@@ -3384,6 +3387,7 @@ impl Client {
         let _ = name; // (state dosyasındaki isim eski sistemle uyumluluk için)
     }
 
+    #[allow(dead_code)] // Test/API yüzeyi; bölüm listesi kendi hızlı yolunu kullanıyor.
     pub fn is_watched(&self, title_id: u64, season: u64, episode: u64) -> bool {
         let st = self.load_state();
         st.watched
@@ -3778,16 +3782,6 @@ impl Client {
     pub fn set_right_click_tip_seen(&self, seen: bool) {
         let mut st = self.load_state();
         st.right_click_tip_seen = seen;
-        self.save_state(&st);
-    }
-
-    pub fn is_tools_tip_seen(&self) -> bool {
-        self.load_state().tools_tip_seen
-    }
-
-    pub fn set_tools_tip_seen(&self, seen: bool) {
-        let mut st = self.load_state();
-        st.tools_tip_seen = seen;
         self.save_state(&st);
     }
 
@@ -4258,18 +4252,6 @@ mod tests {
         assert_eq!(mine.title.name, "Deneme Anime", "isim korunmalı");
         assert!(!mine.title.meta_line().is_empty(), "meta korunmalı");
         c.toggle_marathon(&t); // temizlik
-    }
-
-    #[test]
-    fn tools_tip_seen_survives_migrate() {
-        use_isolated_state();
-        let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-        let c = Client::new();
-        assert!(!c.is_tools_tip_seen());
-        c.set_tools_tip_seen(true);
-        assert!(c.is_tools_tip_seen(), "bayrak göçte korunmalı");
-        c.set_tools_tip_seen(false);
-        assert!(!c.is_tools_tip_seen());
     }
 
     #[test]
@@ -5148,10 +5130,6 @@ mod tests {
         );
     }
 
-    #[test]
-    #[test]
-    #[test]
-    #[test]
     #[test]
     fn sanitized_drops_garbage_keeps_real() {
         // Canlı vaka: JJK veritabanı intro'yu kabaca, outro'yu ters vermişti.

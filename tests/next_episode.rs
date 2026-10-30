@@ -20,7 +20,7 @@ fn run_supervisor(mpv_child: Arc<Mutex<Option<Child>>>) -> bool {
     let start = Instant::now();
     // Gerçek kodda IPC soketi belirince (kullanıcı 'n' basmadan çok önce) playing
     // true olur. Sahte child için "açıldı" kabul ediyoruz.
-    let mut playing = true;
+    let playing = true;
     loop {
         let exited = {
             let mut g = mpv_child.lock().unwrap();

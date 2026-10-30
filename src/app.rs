@@ -1,5 +1,4 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
@@ -6049,7 +6048,6 @@ fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
 #[cfg(test)]
 mod decide_retry_tests {
     use super::App;
-    use super::Page;
     use crate::api::Title;
 
     #[test]

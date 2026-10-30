@@ -1,6 +1,5 @@
 use crate::api::{Client, Title};
 use adw::prelude::*;
-use gtk::prelude::*;
 
 pub fn bookmark_button(client: &Client, t: &Title) -> gtk::Button {
     let saved = client.is_saved(t.id);

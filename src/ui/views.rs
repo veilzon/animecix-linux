@@ -1,7 +1,6 @@
 use crate::api::{marathon_summary, Client, HistoryEntry, Settings, Title};
 use crate::ui::episodes_view;
 use adw::prelude::*;
-use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 

@@ -9,7 +9,7 @@ use std::sync::{
     mpsc, Arc, Mutex, OnceLock,
 };
 
-use crate::download::{DownloadEvent, DownloadHandle, UA};
+use crate::download::UA;
 
 /// Segment/bağlantı sayısı (aria2 `-x/-s`).
 pub const SEGMENTS: u32 = 6;
@@ -467,6 +467,7 @@ pub fn start_download_aria(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::download::DownloadEvent;
 
     #[test]
     fn rpc_body_shapes() {
