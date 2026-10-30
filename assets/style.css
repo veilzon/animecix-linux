@@ -1,0 +1,552 @@
+/* === FlowBoxChild Temizliği (Çift arka plan engelleme) === */
+                flowboxchild {
+                    padding: 0;
+                    margin: 0;
+                    background: none;
+                    border: none;
+                    outline: none;
+                    box-shadow: none;
+                }
+                flowboxchild:hover, flowboxchild:selected, flowboxchild:focus {
+                    background: none;
+                    border: none;
+                    outline: none;
+                    box-shadow: none;
+                }
+
+                /* === Kapak Fotoğrafları ve Kesin Boyut Sınırlamaları === */
+                .cover {
+                    background-color: alpha(currentColor, 0.07);
+                    border-radius: 10px;
+                    transition: transform 150ms ease, box-shadow 150ms ease;
+                }
+
+                /* === Kart Hover: parlama + hafif büyüme === */
+                .title-btn:hover {
+                    cursor: pointer;
+                }
+                .title-btn:hover .cover {
+                    transform: scale(1.04);
+                    box-shadow: 0 0 22px 3px alpha(@accent_color, 0.55);
+                }
+
+                .cover-thumb {
+                    min-width: 48px;
+                    max-width: 48px;
+                    min-height: 72px;
+                    max-height: 72px;
+                }
+
+                .cover-header {
+                    min-width: 120px;
+                    max-width: 120px;
+                    min-height: 180px;
+                    max-height: 180px;
+                }
+
+                .cover-movie-header {
+                    min-width: 160px;
+                    max-width: 160px;
+                    min-height: 240px;
+                    max-height: 240px;
+                }
+
+                .cover-shelf {
+                    min-width: 140px;
+                    max-width: 140px;
+                    min-height: 210px;
+                    max-height: 210px;
+                }
+
+                /* === Kart Hover Animasyonu === */
+                .title-btn {
+                    padding: 4px;
+                    border-radius: 12px;
+                    transition: transform 140ms ease, background-color 140ms ease;
+                }
+                .title-btn:hover {
+                    transform: scale(1.04);
+                    background-color: alpha(currentColor, 0.08);
+                }
+                .title-btn:active {
+                    transform: scale(0.97);
+                }
+
+                /* === Yan menü satırları (Lowell137/animecix-linux, MIT birebir) === */
+                .side-row {
+                    border-radius: 10px;
+                    font-weight: 450;
+                }
+                .side-row label {
+                    font-weight: 450;
+                }
+                .side-selected {
+                    background-color: alpha(currentColor, 0.13);
+                }
+                /* === Daraltılmış sidebar satırları: dolguyu sıfırla === */
+                .side-dock {
+                    min-width: 0px;
+                    padding-left: 2px;
+                    padding-right: 2px;
+                    padding-top: 4px;
+                    padding-bottom: 4px;
+                }
+
+                /* === Poster-lift: hoverda yazılar sabit, sadece poster kalkar
+                       (Lowell137/animecix-linux, MIT lisanslı uyarlama) === */
+                .poster-lift {
+                    transition: transform 140ms ease;
+                }
+                .poster-lift.lifted {
+                    transform: translateY(-3px);
+                }
+
+                /* === Spotlight hero (Lowell137/animecix-linux, MIT birebir) === */
+                .hero-clip {
+                    border-radius: 18px;
+                }
+                .hero-clip > picture {
+                    border-radius: 18px;
+                }
+                .hero-shade {
+                    background: linear-gradient(to top, rgba(0,0,0,0.92), rgba(0,0,0,0.55) 55%, rgba(0,0,0,0.15) 80%, rgba(0,0,0,0.0));
+                    border-radius: 0 0 18px 18px;
+                    padding: 14px 20px 16px 20px;
+                }
+                .hero-text {
+                    color: white;
+                    text-shadow: 0 1px 4px alpha(black, 0.9);
+                }
+                .hero-genre {
+                    color: #f5a524;
+                    font-weight: bold;
+                    text-shadow: 0 1px 3px alpha(black, 0.9);
+                }
+
+                /* === Dizi Detay Kartı === */
+                .title-detail-card {
+                    background-color: alpha(currentColor, 0.04);
+                    border: 1px solid alpha(currentColor, 0.08);
+                    border-radius: 14px;
+                    padding: 14px;
+                    transition: background-color 150ms ease;
+                }
+
+                /* === Detay görünümü bilgi rozetleri (süre / bölüm / yayın) === */
+                .detail-badge {
+                    background-color: alpha(currentColor, 0.08);
+                    border: 1px solid alpha(currentColor, 0.12);
+                    border-radius: 999px;
+                    padding: 3px 12px;
+                    color: alpha(currentColor, 0.75);
+                    font-size: 0.85em;
+                }
+
+                /* === Puan hapı (Lowell137/animecix-linux, MIT uyarlaması) === */
+                .rating-pill {
+                    background-color: alpha(#f5c211, 0.16);
+                    border: 1px solid alpha(#f5c211, 0.4);
+                    border-radius: 999px;
+                    padding: 3px 12px;
+                    color: #f5c211;
+                    font-weight: bold;
+                }
+
+                /* === Tek Seferlik İpucu Kartı === */                .tip-banner {
+                    background-color: alpha(@accent_color, 0.1);
+                    border: 1px solid alpha(@accent_color, 0.28);
+                    border-radius: 10px;
+                    padding: 10px 14px;
+                    margin: 0 12px 8px 12px;
+                }
+                .tip-banner-text {
+                    font-size: 0.9em;
+                }
+
+                /* === Kart Başlık Yazısı === */
+                .card-title {
+                    font-weight: 600;
+                    font-size: 0.85em;
+                    text-align: center;
+                    margin-top: 2px;
+                }
+
+                /* === Raf Başlıkları: büyük + nefes alan parlaklık === */
+                @keyframes shelf-breathe {
+                    0%, 100% { opacity: 0.72; }
+                    50% { opacity: 1.0; }
+                }
+                .shelf-title {
+                    font-size: 1.02em;
+                    font-weight: 800;
+                    letter-spacing: 0.1em;
+                    text-transform: uppercase;
+                    color: @accent_color;
+                    opacity: 0.9;
+                    text-shadow: 0 0 14px alpha(@accent_color, 0.35);
+                    animation-name: shelf-breathe;
+                    animation-duration: 3.2s;
+                    animation-timing-function: ease-in-out;
+                    animation-iteration-count: infinite;
+                }
+
+                /* === Koyu temalarda sabit okunaklı raf başlığı (temaya sadık değil) === */
+                .theme-dark .shelf-title {
+                    color: #FFFFFF;
+                    text-shadow: 0 1px 4px alpha(black, 0.85);
+                }
+
+                /* === Haber gövde boyu (Ayarlar > Görünüm) === */
+                label.news-font-small { font-size: 0.9em; }
+                label.news-font-normal { font-size: 1.0em; }
+                label.news-font-large { font-size: 1.2em; line-height: 1.6; }
+
+                /* === Dikey Film Sayfası === */
+                .movie-big {
+                    border-radius: 18px;
+                }
+                .movie-tint {
+                    border-radius: 18px;
+                    transition: background 1s ease;
+                }
+                .movie-play-btn { font-size: 1.1em; padding: 12px 36px; font-weight: 700; }
+
+                /* === Bookmark Butonu (eski floating) === */
+                .lg-icon { -gtk-icon-size: 26px; }
+                .bookmark-btn {
+                    background-color: alpha(black, 0.55);
+                    backdrop-filter: blur(8px);
+                    border-radius: 20px;
+                    transition: background-color 120ms, transform 120ms;
+                }
+                .bookmark-btn:hover {
+                    background-color: alpha(black, 0.75);
+                    transform: scale(1.1);
+                }
+
+                /* === Inline Bookmark Butonu (Bölüm sayfası kart içi) === */
+                .inline-bookmark-btn {
+                    transition: transform 120ms, color 120ms;
+                }
+                .inline-bookmark-btn:hover {
+                    transform: scale(1.15);
+                }
+
+                /* === Bölüm Listesi Paneli: oluklar panelde erir, siyah çerçeve biter === */
+                /* NOT: GtkListBox'un CSS düğümü `list`tir (`listbox` ölü kural olur). */
+                list.content-list {
+                    background-color: alpha(@row_tint, 0.04);
+                    border: none;
+                    box-shadow: none;
+                    border-radius: 14px;
+                    padding: 6px 8px;
+                }
+                list.content-list > separator {
+                    background-color: transparent;
+                    opacity: 0;
+                }
+                .content-list > row {
+                    background-color: alpha(@row_tint, 0.10);
+                    border: none;
+                    outline: none;
+                    box-shadow: none;
+                    border-radius: 10px;
+                    margin: 3px 0;
+                    transition: background-color 120ms ease;
+                }
+                .content-list > row:hover {
+                    background-color: alpha(@row_tint, 0.17);
+                }
+                .content-list > row:focus-visible {
+                    background-color: alpha(@row_tint, 0.22);
+                    outline: none;
+                }
+                .content-list > row:selected,
+                .content-list > row:selected:focus {
+                    background-color: alpha(@row_tint, 0.28);
+                    outline: none;
+                    box-shadow: none;
+                }
+
+                /* === Şeffaf kaydırma: viewport dahil tema görünür === */
+                .clear-scroll,
+                .clear-scroll viewport,
+                .clear-scroll list:not(.content-list),
+                .clear-scroll list:not(.content-list) > row,
+                .clear-scroll flowbox {
+                    background-color: transparent;
+                    background-image: none;
+                    border: none;
+                    box-shadow: none;
+                }
+
+                /* === Hero skeleton: veri gelene kadar nabız iskelet === */
+                .hero-skeleton {
+                    background-color: alpha(currentColor, 0.08);
+                    border-radius: 18px;
+                    animation: hero-pulse 1.2s ease-in-out infinite alternate;
+                }
+                @keyframes hero-pulse {
+                    from { opacity: 0.45; }
+                    to { opacity: 1.0; }
+                }
+
+                /* === Hero üstü yüzen arama hapı (Lowell tokenleri:
+                       999px kapsül + koyu zemin + gölge) === */
+                entry.quick-search {
+                    border-radius: 9999px;
+                    min-height: 34px;
+                    padding: 4px 16px;
+                    background-color: rgba(20, 20, 28, 0.85);
+                    border: 1px solid alpha(currentColor, 0.12);
+                    box-shadow: 0 4px 18px alpha(black, 0.45);
+                }
+                entry.quick-search:focus {
+                    background-color: rgba(20, 20, 28, 0.95);
+                    border-color: alpha(@accent_color, 0.6);
+                }
+
+                /* === Yüzen indirme hapı: kapsül kabı, düğmeleri sarar === */
+                .dl-float-pill {
+                    background-color: alpha(@card_bg_color, 0.95);
+                    color: @card_fg_color;
+                    border: 1px solid alpha(currentColor, 0.12);
+                    border-radius: 9999px;
+                    padding: 6px;
+                    box-shadow: 0 4px 18px alpha(black, 0.45);
+                }
+                .dl-float-pill button.pill {
+                    margin: 0;
+                }
+
+                /* === Alt ortadaki işlem yığını: siyah, tek satır haplar === */
+                .op-stack {
+                    background-color: transparent;
+                    border: none;
+                    padding: 0;
+                    box-shadow: none;
+                }
+                .op-row {
+                    background-color: #000000;
+                    color: #ffffff;
+                    border: 1px solid alpha(#ffffff, 0.18);
+                    border-radius: 9999px;
+                    padding: 6px 12px;
+                    box-shadow: 0 6px 18px alpha(black, 0.45);
+                }
+                .op-row.op-error {
+                    border-color: alpha(#ff6b6b, 0.85);
+                }
+                .op-row.op-done {
+                    border-color: alpha(@accent_color, 0.7);
+                }
+                .op-text {
+                    color: #ffffff;
+                }
+                .op-status {
+                    font-weight: 700;
+                    color: #ffffff;
+                }
+                .op-pct {
+                    color: #ffffff;
+                    font-size: 0.85em;
+                }
+                .op-progress {
+                    min-height: 6px;
+                }
+                .op-progress trough {
+                    min-height: 6px;
+                    border-radius: 3px;
+                    background-color: alpha(#ffffff, 0.15);
+                }
+                .op-progress progress {
+                    min-height: 6px;
+                    border-radius: 3px;
+                    background-color: @accent_color;
+                }
+                .op-overflow {
+                    background-color: #000000;
+                    color: #ffffff;
+                    border: 1px solid alpha(#ffffff, 0.18);
+                    border-radius: 9999px;
+                    padding: 3px 10px;
+                    font-size: 0.85em;
+                }
+
+                /* === Bölüm kaydırıcısı: kenar gölgesi şeridi + hap altı boşluk === */
+                scrolledwindow.clear-scroll undershoot.top,
+                scrolledwindow.clear-scroll undershoot.bottom,
+                scrolledwindow.clear-scroll overshoot.top,
+                scrolledwindow.clear-scroll overshoot.bottom {
+                    background: none;
+                    background-image: none;
+                    box-shadow: none;
+                    border: none;
+                }
+                scrolledwindow.clear-scroll scrollbar {
+                    background: transparent;
+                    border: none;
+                }
+                scrolledwindow.clear-scroll viewport {
+                    padding-bottom: 72px;
+                }
+
+                /* === İzleme Maratonu Zengin Tasarım Stilleri === */
+                list.marathon-list-box {
+                    background: transparent;
+                }
+                list.marathon-list-box > row {
+                    background: transparent;
+                    border: none;
+                    padding: 0;
+                    margin: 0;
+                    box-shadow: none;
+                }
+                list.marathon-list-box > row:hover,
+                list.marathon-list-box > row:selected,
+                list.marathon-list-box > row:focus {
+                    background: transparent;
+                }
+
+                .marathon-summary-card {
+                    background-color: alpha(currentColor, 0.04);
+                    border: 1px solid alpha(@accent_color, 0.25);
+                    border-radius: 16px;
+                    padding: 16px 20px;
+                    margin-bottom: 14px;
+                }
+
+                .marathon-percent-pill {
+                    background-color: alpha(@accent_color, 0.18);
+                    color: @accent_color;
+                    border: 1px solid alpha(@accent_color, 0.35);
+                    border-radius: 14px;
+                    padding: 4px 12px;
+                    font-weight: 700;
+                    font-size: 0.9em;
+                }
+
+                .marathon-item-card {
+                    background-color: alpha(currentColor, 0.03);
+                    border: 1px solid alpha(currentColor, 0.07);
+                    border-radius: 14px;
+                    padding: 12px 16px;
+                    margin-bottom: 8px;
+                    cursor: grab;
+                    transition: background-color 140ms ease, border-color 140ms ease;
+                }
+                .marathon-item-card:hover {
+                    background-color: alpha(currentColor, 0.06);
+                    border-color: alpha(@accent_color, 0.3);
+                }
+                .marathon-item-card:active {
+                    cursor: grabbing;
+                }
+                .marathon-item-card:drop(active) {
+                    border-color: @accent_color;
+                    background-color: alpha(@accent_color, 0.12);
+                }
+
+                .fav-item-card {
+                    background-color: alpha(currentColor, 0.03);
+                    border: 1px solid alpha(currentColor, 0.07);
+                    border-radius: 14px;
+                    padding: 12px 16px;
+                    margin-bottom: 8px;
+                    transition: background-color 140ms ease, border-color 140ms ease;
+                }
+                .fav-item-card:hover {
+                    background-color: alpha(currentColor, 0.06);
+                    border-color: alpha(@accent_color, 0.3);
+                }
+
+                .marathon-index {
+                    min-width: 26px;
+                    min-height: 26px;
+                    padding: 2px 8px;
+                    color: @accent_color;
+                    background-color: alpha(@accent_color, 0.12);
+                    border: 1px solid alpha(@accent_color, 0.45);
+                    border-radius: 9px;
+                    font-weight: 700;
+                    font-size: 13px;
+                }
+
+                .history-item-card {
+                    background-color: alpha(currentColor, 0.035);
+                    border: 1px solid alpha(currentColor, 0.08);
+                    border-radius: 12px;
+                    padding: 5px 12px;
+                    margin-bottom: 5px;
+                    transition: background-color 140ms ease, border-color 140ms ease;
+                }
+                .history-item-card:hover {
+                    background-color: alpha(currentColor, 0.07);
+                    border-color: alpha(@accent_color, 0.35);
+                }
+                .status-badge-completed {
+                    background-color: alpha(#2ec27e, 0.18);
+                    color: #2ec27e;
+                    border: 1px solid alpha(#2ec27e, 0.4);
+                    border-radius: 12px;
+                    padding: 2px 10px;
+                    font-size: 0.82em;
+                    font-weight: 600;
+                }
+
+                .status-badge-progress {
+                    background-color: alpha(@accent_color, 0.22);
+                    color: @accent_color;
+                    border: 1px solid alpha(@accent_color, 0.6);
+                    border-radius: 12px;
+                    padding: 2px 10px;
+                    font-size: 0.82em;
+                    font-weight: 600;
+                }
+
+                /* === Durum Renkleri === */
+                .success { color: #2ec27e; font-weight: bold; }
+                .error   { color: #e01b24; font-weight: bold; }
+
+                /* === Hesap sayfası (profil kartı + avatar) === */
+                .profile-header-card {
+                    background-color: alpha(currentColor, 0.06);
+                    border-radius: 16px;
+                    border: 1px solid alpha(currentColor, 0.1);
+                }
+                .profile-banner-pic {
+                    border-radius: 16px 16px 0 0;
+                }
+                .profile-banner-empty {
+                    background-color: #3a2330;
+                }
+                .side-expired {
+                    color: #f6c343;
+                }
+                .profile-avatar-circle {
+                    border-radius: 48px;
+                }
+                .profile-avatar-ring {
+                    border-radius: 52px;
+                    border: 3px solid alpha(@accent_color, 0.7);
+                    padding: 2px;
+                }
+                .avatar-overlay-box {
+                    background: none;
+                    border: none;
+                }
+
+                /* === Bölüm Progress Bar === */
+                .episode-progress {
+                    min-height: 6px;
+                    border-radius: 3px;
+                }
+                .episode-progress trough {
+                    border-radius: 3px;
+                    min-height: 6px;
+                    background-color: alpha(currentColor, 0.12);
+                }
+                .episode-progress progress {
+                    border-radius: 3px;
+                    background-color: @accent_color;
+                }
