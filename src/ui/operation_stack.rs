@@ -834,5 +834,4 @@ mod tests {
         q.tick(Instant::now() + Duration::from_secs(2));
         assert!(q.visible().is_empty());
     }
-
 }

@@ -1782,7 +1782,6 @@ impl App {
             content.set_margin_start(20);
             content.set_margin_end(20);
             content.set_margin_bottom(18);
-            // Rozet: anlamlı ilk tür.
             if let Some(g0) = t.display_genre() {
                 let badge = gtk::Label::new(Some(&g0));
                 badge.add_css_class("detail-badge");
@@ -1795,7 +1794,6 @@ impl App {
             title.set_xalign(0.0);
             title.set_ellipsize(gtk::pango::EllipsizeMode::End);
             content.append(&title);
-            // Kısa tür satırı: anlamlı tür + yıl.
             let genre_year = match (t.display_genre(), t.year) {
                 (Some(g), Some(y)) => {
                     format!("{g} · {y}")
@@ -1812,7 +1810,6 @@ impl App {
                 gl.set_ellipsize(gtk::pango::EllipsizeMode::End);
                 content.append(&gl);
             }
-            // Açıklama: 90 karakter kesik.
             if let Some(d) = t
                 .description
                 .as_ref()
@@ -2066,7 +2063,6 @@ impl App {
             self.build_spotlight_async(&main_box, &pool);
         }
 
-        // Devam rafı: spotlight ile raflar arası.
         if let Some(cont) = self.build_continue_section() {
             main_box.append(&cont);
         }
@@ -2611,7 +2607,6 @@ impl App {
             card.add_controller(gesture);
             root.append(&card);
         }
-        // Sayfalayıcı.
         let cur = self.news_page.get();
         if last > 1 {
             let pager = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -2824,7 +2819,6 @@ impl App {
         root.set_margin_start(12);
         root.set_margin_end(12);
 
-        // Filtre çubuğu.
         let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         bar.set_valign(gtk::Align::Center);
         let type_list = gtk::StringList::new(&["Tümü", "Anime", "Film"]);
@@ -3195,7 +3189,6 @@ impl App {
                 .info(msg, "", std::time::Duration::from_secs(2));
         });
 
-        // Toplu indirme modu durumu.
         let dl_mode = Rc::new(Cell::new(false));
         let dl_checks: Rc<RefCell<Vec<(Episode, gtk::CheckButton)>>> =
             Rc::new(RefCell::new(Vec::new()));
@@ -3849,7 +3842,6 @@ impl App {
                     filter_bar.append(&btn);
                 }
             }
-            // İzlenme filtresi: Tümü / İzlendi / İzlenmemiş.
             {
                 let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
                 spacer.set_hexpand(true);
@@ -5784,7 +5776,6 @@ impl App {
                 });
             });
         }
-        // Enter: ilk sonuca git.
         {
             let dlg_w_act = dlg_w.clone();
             let first_hit = first_hit.clone();
