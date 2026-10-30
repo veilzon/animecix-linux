@@ -132,6 +132,35 @@ pub enum Msg {
     },
 }
 
+pub(crate) struct EpisodeBar {
+    pub bar: gtk::ProgressBar,
+    pub label: gtk::Label,
+    pub watched: Rc<RefCell<bool>>,
+}
+
+pub(crate) fn fmt_ep_time(s: f64) -> String {
+    let s = s as u64;
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
+}
+
+pub(crate) fn episode_bar_display(watched: bool, pos: f64, dur: f64) -> (f64, Option<String>) {
+    if watched {
+        return (1.0, Some("İzlendi".to_string()));
+    }
+    if dur > 0.0 && pos > 1.0 {
+        (
+            (pos / dur).clamp(0.0, 1.0),
+            Some(format!("{} / {}", fmt_ep_time(pos), fmt_ep_time(dur))),
+        )
+    } else {
+        (0.0, None)
+    }
+}
+
 pub struct App {
     pub window: adw::ApplicationWindow,
     pub stack: gtk::Stack,
@@ -147,7 +176,7 @@ pub struct App {
     pub search_results: Rc<RefCell<Vec<Title>>>,
     pub settings: Rc<RefCell<api::Settings>>,
     pub progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
-    pub progress_bars: Rc<RefCell<HashMap<String, (gtk::ProgressBar, gtk::Label)>>>,
+    pub progress_bars: Rc<RefCell<HashMap<String, EpisodeBar>>>,
     pub dl_rows: Rc<RefCell<HashMap<String, crate::ui::downloads_view::DlRow>>>,
     pub opening_op_id: Rc<RefCell<Option<String>>>,
     pub opening_op_shown_at: Rc<RefCell<Option<std::time::Instant>>>,
@@ -4046,6 +4075,35 @@ mod search_caret_tests {
         let entry = gtk::SearchEntry::new();
         set_search_text_caret_end(&entry, "");
         assert_eq!(entry.position(), 0);
+    }
+}
+
+#[cfg(test)]
+mod episode_bar_tests {
+    use super::episode_bar_display;
+
+    #[test]
+    fn watched_is_always_full() {
+        assert_eq!(
+            episode_bar_display(true, 10.0, 100.0),
+            (1.0, Some("İzlendi".to_string()))
+        );
+        assert_eq!(
+            episode_bar_display(true, 0.0, 0.0),
+            (1.0, Some("İzlendi".to_string()))
+        );
+    }
+
+    #[test]
+    fn unwatched_uses_fraction() {
+        let (fraction, text) = episode_bar_display(false, 30.0, 100.0);
+        assert_eq!(fraction, 0.3);
+        assert_eq!(text.as_deref(), Some("0:30 / 1:40"));
+    }
+
+    #[test]
+    fn unwatched_without_duration_hides() {
+        assert_eq!(episode_bar_display(false, 0.0, 0.0), (0.0, None));
     }
 }
 

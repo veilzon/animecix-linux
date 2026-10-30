@@ -892,20 +892,20 @@ impl App {
                         return glib::ControlFlow::Continue;
                     }
                     progress2.borrow_mut().insert(pk_cur.clone(), (pos, dur));
-                    if let Some((pb, lbl)) = progress_bars2.borrow().get(&pk_cur) {
-                        if dur > 0.0 {
-                            pb.set_fraction((pos / dur).clamp(0.0, 1.0));
-                            let fmt = |s: f64| -> String {
-                                let s = s as u64;
-                                if s >= 3600 {
-                                    format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
-                                } else {
-                                    format!("{}:{:02}", s / 60, s % 60)
-                                }
-                            };
-                            lbl.set_text(&format!("{} / {}", fmt(pos), fmt(dur)));
-                            lbl.set_visible(true);
-                            pb.set_visible(true);
+                    if let Some(entry) = progress_bars2.borrow().get(&pk_cur) {
+                        if *entry.watched.borrow() {
+                            entry.bar.set_fraction(1.0);
+                            entry.bar.set_visible(true);
+                            entry.label.set_text("İzlendi");
+                            entry.label.set_visible(true);
+                        } else {
+                            let (fraction, text) = crate::app::episode_bar_display(false, pos, dur);
+                            entry.bar.set_fraction(fraction);
+                            if let Some(text) = text {
+                                entry.label.set_text(&text);
+                                entry.label.set_visible(true);
+                                entry.bar.set_visible(true);
+                            }
                         }
                     }
                     client_prog.save_progress(tid, cur.1, cur.0, pos, dur);
@@ -919,6 +919,13 @@ impl App {
                             "",
                         );
                         marked_ep = Some(cur);
+                        if let Some(entry) = progress_bars2.borrow().get(&pk_cur) {
+                            *entry.watched.borrow_mut() = true;
+                            entry.bar.set_fraction(1.0);
+                            entry.bar.set_visible(true);
+                            entry.label.set_text("İzlendi");
+                            entry.label.set_visible(true);
+                        }
                     }
                     // Konum gönderimi kapalı: yalnız geçmiş + favori yazılır.
                     // (Yerel kayıt yukarıdaki save_progress ile tutulur.

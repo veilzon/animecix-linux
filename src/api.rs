@@ -3387,7 +3387,6 @@ impl Client {
         let _ = name; // (state dosyasındaki isim eski sistemle uyumluluk için)
     }
 
-    #[allow(dead_code)] // Test/API yüzeyi; bölüm listesi kendi hızlı yolunu kullanıyor.
     pub fn is_watched(&self, title_id: u64, season: u64, episode: u64) -> bool {
         let st = self.load_state();
         st.watched

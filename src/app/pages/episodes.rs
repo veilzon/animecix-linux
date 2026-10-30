@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::api::{self, Episode, Title};
-use crate::app::{App, Msg};
+use crate::app::{episode_bar_display, App, EpisodeBar, Msg};
 use crate::ui::{components, episodes_view};
 
 /// Sezon çubuğunda doğrudan gösterilen sezon sayısı; kalanı `…` popover'ına.
@@ -120,9 +120,21 @@ impl App {
                 },
             );
             let prog_key = format!("{}:1:1", title.id);
-            self.progress_bars
-                .borrow_mut()
-                .insert(prog_key, (movie_pb, movie_lbl));
+            let movie_watched = Rc::new(RefCell::new(self.client.is_watched(title.id, 1, 1)));
+            if *movie_watched.borrow() {
+                movie_pb.set_fraction(1.0);
+                movie_pb.set_visible(true);
+                movie_lbl.set_text("İzlendi");
+                movie_lbl.set_visible(true);
+            }
+            self.progress_bars.borrow_mut().insert(
+                prog_key,
+                EpisodeBar {
+                    bar: movie_pb,
+                    label: movie_lbl,
+                    watched: movie_watched,
+                },
+            );
             movie_view.add_css_class("movie-tint");
             self.apply_movie_tint(&movie_view, title.poster.as_deref());
 
@@ -537,36 +549,40 @@ impl App {
                         .copied()
                         .unwrap_or((0.0, 0.0));
 
+                    let is_watched = Rc::new(RefCell::new(
+                        watched_all
+                            .get(&title.id.to_string())
+                            .map(|l| {
+                                l.iter()
+                                    .any(|x| x.episode == e.episode && x.season == e.season)
+                            })
+                            .unwrap_or(false)
+                            || (saved_dur > 0.0 && saved_pos / saved_dur > 0.9),
+                    ));
+
                     let progress_bar = gtk::ProgressBar::new();
                     progress_bar.add_css_class("episode-progress");
-
-                    let fmt_time = |s: f64| -> String {
-                        let s = s as u64;
-                        if s >= 3600 {
-                            format!("{}:{:02}:{:02}", s / 3600, (s % 3600) / 60, s % 60)
-                        } else {
-                            format!("{}:{:02}", s / 60, s % 60)
-                        }
-                    };
-
-                    if saved_dur > 0.0 && saved_pos > 1.0 {
-                        progress_bar.set_fraction((saved_pos / saved_dur).clamp(0.0, 1.0));
-                        progress_bar.set_visible(true);
-                        time_lbl.set_text(&format!(
-                            "{} / {}",
-                            fmt_time(saved_pos),
-                            fmt_time(saved_dur)
-                        ));
+                    let (fraction, text) =
+                        episode_bar_display(*is_watched.borrow(), saved_pos, saved_dur);
+                    progress_bar.set_fraction(fraction);
+                    if let Some(text) = text {
+                        time_lbl.set_text(&text);
                         time_lbl.set_visible(true);
+                        progress_bar.set_visible(true);
                     } else {
                         progress_bar.set_visible(false);
                         time_lbl.set_visible(false);
                     }
                     right_col.append(&progress_bar);
 
-                    self.progress_bars
-                        .borrow_mut()
-                        .insert(key.clone(), (progress_bar.clone(), time_lbl.clone()));
+                    self.progress_bars.borrow_mut().insert(
+                        key.clone(),
+                        EpisodeBar {
+                            bar: progress_bar.clone(),
+                            label: time_lbl.clone(),
+                            watched: is_watched.clone(),
+                        },
+                    );
 
                     let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                     row.set_margin_top(6);
@@ -588,17 +604,6 @@ impl App {
 
                     row.append(&pic);
                     row.append(&right_col);
-
-                    let is_watched = Rc::new(RefCell::new(
-                        watched_all
-                            .get(&title.id.to_string())
-                            .map(|l| {
-                                l.iter()
-                                    .any(|x| x.episode == e.episode && x.season == e.season)
-                            })
-                            .unwrap_or(false)
-                            || (saved_dur > 0.0 && saved_pos / saved_dur > 0.9),
-                    ));
 
                     let done_icon = gtk::Image::from_icon_name("object-select-symbolic");
                     done_icon.add_css_class("dim-label");
@@ -683,6 +688,10 @@ impl App {
                         let ep_c = ep_ctx.clone();
                         let is_watched_c = is_watched_ctx.clone();
                         let done_icon_c = done_icon_ctx.clone();
+                        let bar_c = bar_ctx.clone();
+                        let lbl_c = lbl_ctx.clone();
+                        let key_c = key_ctx.clone();
+                        let progress_c = progress_ctx.clone();
                         let this_refresh = this_ctx.clone_ref();
 
                         let on_toggle: Rc<dyn Fn()> = Rc::new(move || {
@@ -691,6 +700,22 @@ impl App {
                                 client_c.remove_watched(title_c.id, ep_c.season, ep_c.episode);
                                 *is_watched_c.borrow_mut() = false;
                                 done_icon_c.set_visible(false);
+                                let saved = progress_c
+                                    .borrow()
+                                    .get(&key_c)
+                                    .copied()
+                                    .unwrap_or((0.0, 0.0));
+                                let (fraction, text) = episode_bar_display(false, saved.0, saved.1);
+                                bar_c.set_fraction(fraction);
+                                if let Some(text) = text {
+                                    lbl_c.set_text(&text);
+                                    lbl_c.set_visible(true);
+                                    bar_c.set_visible(true);
+                                } else {
+                                    lbl_c.set_text("");
+                                    lbl_c.set_visible(false);
+                                    bar_c.set_visible(false);
+                                }
                             } else {
                                 let w = api::Watched {
                                     title_id: title_c.id,
@@ -701,6 +726,10 @@ impl App {
                                 client_c.add_history(&title_c, &ep_c);
                                 *is_watched_c.borrow_mut() = true;
                                 done_icon_c.set_visible(true);
+                                bar_c.set_fraction(1.0);
+                                bar_c.set_visible(true);
+                                lbl_c.set_text("İzlendi");
+                                lbl_c.set_visible(true);
                             }
                             let msg = if was_watched {
                                 "✖ İzlenmedi olarak işaretlendi"
