@@ -721,6 +721,8 @@ impl App {
                                     title_id: title_c.id,
                                     episode: ep_c.episode,
                                     season: ep_c.season,
+                                    title_name: Some(title_c.name.clone()),
+                                    title_type: title_c.title_type.clone(),
                                     ..Default::default()
                                 };
                                 client_c.save_watched(&w, &title_c.name);

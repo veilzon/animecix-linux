@@ -1,4 +1,27 @@
-# Changelog — v1.2.7 (güncel sürüm notları)
+# Changelog — v1.3.0 (güncel sürüm notları)
+
+- **İstatistikler sayfası eklendi:** izlediğin anime ve bölüm sayısı,
+  tahmini izleme süresi, en çok izlediğin animeler, sezon dağılımı ve
+  son 8 haftanın izleme ritmi grafiklerle görülebiliyor. Filmler bölüm
+  veya sezon sayılmıyor; anime sayısının yanında ayrı film sayısı
+  gösteriliyor.
+- **İndirilen bölümler öncelikli:** indirdiğin bölüm normal listeden
+  açıldığında yerel dosyadan oynatılıyor; sonraki/önceki geçişlerde de
+  öncelik veriliyor.
+- **Bölüm listesinde indirildi işareti** ve **sağ tıkla indirme** eklendi.
+- **Yerel bölümlerde intro/outro atlama:** indirilmiş bölümlerde de
+  `s`/`e` ile atlama çalışıyor.
+- **İzlendi işareti:** izlendi olarak işaretlenen bölümün ilerleme
+  çubuğu anında doluyor; eski işaretler de aynı şekilde görünüyor.
+- **Bellek toparlama:** MPV kapandıktan sonra uygulama kapak ve geçici
+  önbellek belleğini toparlıyor.
+- **Tam ekran düzeltmeleri:** tam ekrana geçince kapaklar artık anında
+  büyüyor; F11/Esc ile tam ekrandan çıkış daha güvenilir; uygulama ikinci
+  kez açıldığında yeni pencere oluşmuyor.
+- **Kapak yerleşimi:** geniş pencerelerde kapaklar boşluğu dolduruyor,
+  gereksiz küçük kalmıyor.
+
+# Changelog — v1.2.7
 
 - Ana sayfada arama çubuğu öne çıkan alanın üstüne taşındı; yazıp
   Enter'a basınca arama açılır.

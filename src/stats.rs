@@ -15,6 +15,7 @@ const WEEK_SECS: u64 = 7 * 86_400;
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct StatsSummary {
     pub anime_count: usize,
+    pub film_count: usize,
     pub episode_count: usize,
     pub watch_seconds: f64,
     pub watch_estimated: bool,
@@ -28,6 +29,7 @@ pub struct StatsSummary {
 impl StatsSummary {
     pub fn has_data(&self) -> bool {
         self.episode_count > 0
+            || self.film_count > 0
             || self.downloaded_count > 0
             || self.watch_seconds > 0.0
             || self.activity.iter().any(|b| b.count > 0)
@@ -57,17 +59,23 @@ pub fn build_summary(
     state: &State,
     downloads: &[DownloadRecord],
     names: &HashMap<u64, String>,
+    movie_ids: &HashSet<u64>,
     now: u64,
 ) -> StatsSummary {
     let mut episode_keys: BTreeSet<(u64, u64, u64)> = BTreeSet::new();
     let mut watched_keys: HashSet<(u64, u64, u64)> = HashSet::new();
+    let mut film_ids: HashSet<u64> = HashSet::new();
     for (tid, list) in &state.watched {
         let Ok(tid) = tid.parse::<u64>() else {
             continue;
         };
         for w in list {
             let key = (tid, w.season, w.episode);
-            episode_keys.insert(key);
+            if movie_ids.contains(&tid) {
+                film_ids.insert(tid);
+            } else {
+                episode_keys.insert(key);
+            }
             watched_keys.insert(key);
         }
     }
@@ -75,7 +83,9 @@ pub fn build_summary(
         let Some(k) = parse_progress_key(key) else {
             continue;
         };
-        if *dur > 0.0 && pos / dur >= 0.9 {
+        if movie_ids.contains(&k.0) {
+            film_ids.insert(k.0);
+        } else if *dur > 0.0 && pos / dur >= 0.9 {
             episode_keys.insert(k);
         }
     }
@@ -173,6 +183,9 @@ pub fn build_summary(
 
     let mut events: HashMap<(u64, u64, u64), u64> = HashMap::new();
     for h in &state.history {
+        if movie_ids.contains(&h.title.id) {
+            continue;
+        }
         events
             .entry((h.title.id, h.episode.season, h.episode.episode))
             .and_modify(|ts| *ts = (*ts).max(h.ts))
@@ -180,7 +193,7 @@ pub fn build_summary(
     }
     for list in state.watched.values() {
         for w in list {
-            if w.watched_at > 0 {
+            if w.watched_at > 0 && !movie_ids.contains(&w.title_id) {
                 events
                     .entry((w.title_id, w.season, w.episode))
                     .and_modify(|ts| *ts = (*ts).max(w.watched_at))
@@ -221,6 +234,7 @@ pub fn build_summary(
 
     StatsSummary {
         anime_count: per_title_len(&episode_keys),
+        film_count: film_ids.len(),
         episode_count: episode_keys.len(),
         watch_seconds,
         watch_estimated,
@@ -281,7 +295,7 @@ mod tests {
     use super::*;
     use crate::api::{Episode, HistoryEntry, Title};
     use crate::download::{DownloadRecord, DownloadStatus};
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
     use std::path::PathBuf;
 
     fn watched(tid: u64, season: u64, episode: u64) -> Watched {
@@ -332,7 +346,7 @@ mod tests {
             vec![watched(1, 1, 1), watched(1, 1, 2), watched(2, 1, 1)],
             vec![("1:1:3", 95.0, 100.0)],
         );
-        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), 1_000_000_000);
         assert_eq!(s.anime_count, 2);
         assert_eq!(s.episode_count, 4);
     }
@@ -343,7 +357,7 @@ mod tests {
             vec![watched(1, 1, 1)],
             vec![("1:1:1", 90.0, 100.0), ("1:1:2", 30.0, 100.0)],
         );
-        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), 1_000_000_000);
         assert_eq!(s.watch_seconds, 130.0);
         assert!(!s.watch_estimated);
     }
@@ -354,7 +368,7 @@ mod tests {
             vec![watched(1, 1, 1), watched(1, 1, 2)],
             vec![("1:1:1", 90.0, 100.0)],
         );
-        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), 1_000_000_000);
         assert_eq!(s.watch_seconds, 200.0);
         assert!(s.watch_estimated);
     }
@@ -374,7 +388,7 @@ mod tests {
         let mut names = HashMap::new();
         names.insert(1, "A Dizi".to_string());
         names.insert(2, "B Dizi".to_string());
-        let s = build_summary(&st, &[], &names, 1_000_000_000);
+        let s = build_summary(&st, &[], &names, &HashSet::new(), 1_000_000_000);
         assert_eq!(s.top_anime[0].name, "B Dizi");
         assert_eq!(s.top_anime[0].episodes, 3);
         assert_eq!(s.top_anime[1].name, "A Dizi");
@@ -386,7 +400,7 @@ mod tests {
             vec![watched(1, 1, 1), watched(1, 2, 1), watched(1, 6, 1)],
             vec![],
         );
-        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), 1_000_000_000);
         assert_eq!(
             s.seasons,
             vec![
@@ -426,7 +440,7 @@ mod tests {
             },
             ts: now - 86_400,
         });
-        let s = build_summary(&st, &[], &HashMap::new(), now);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), now);
         assert_eq!(s.activity.len(), 8);
         let total: usize = s.activity.iter().map(|b| b.count).sum();
         assert_eq!(total, 2);
@@ -440,15 +454,44 @@ mod tests {
             download("b", DownloadStatus::Queued, 2_000, 0),
             download("c", DownloadStatus::Done, 3_000, 3_000),
         ];
-        let s = build_summary(&State::default(), &downloads, &HashMap::new(), 0);
+        let s = build_summary(
+            &State::default(),
+            &downloads,
+            &HashMap::new(),
+            &HashSet::new(),
+            0,
+        );
         assert_eq!(s.downloaded_count, 2);
         assert_eq!(s.downloaded_bytes, 4_000);
     }
 
     #[test]
+    fn movies_are_not_counted_as_episodes() {
+        let st = state_with(
+            vec![watched(1, 1, 1), watched(1, 1, 2), watched(9, 1, 1)],
+            vec![],
+        );
+        let mut movies = HashSet::new();
+        movies.insert(9);
+        let s = build_summary(&st, &[], &HashMap::new(), &movies, 1_000_000_000);
+        assert_eq!(s.anime_count, 1);
+        assert_eq!(s.film_count, 1);
+        assert_eq!(s.episode_count, 2);
+        assert_eq!(
+            s.seasons,
+            vec![SeasonSlice {
+                label: "S1".into(),
+                episodes: 2
+            }]
+        );
+        assert_eq!(s.top_anime.len(), 1);
+        assert_eq!(s.top_anime[0].title_id, 1);
+    }
+
+    #[test]
     fn movie_watch_sentinel_is_estimated() {
         let st = state_with(vec![watched(9, 1, 1)], vec![("9:1:1", 1.0, 1.0)]);
-        let s = build_summary(&st, &[], &HashMap::new(), 1_000_000_000);
+        let s = build_summary(&st, &[], &HashMap::new(), &HashSet::new(), 1_000_000_000);
         assert!(s.watch_estimated, "sentinel süre tahmini sayılmalı");
         assert_eq!(s.watch_seconds, DEFAULT_EPISODE_SECS);
     }
@@ -456,7 +499,14 @@ mod tests {
     #[test]
     fn has_data_covers_partial_progress_and_history() {
         let partial = state_with(vec![], vec![("1:1:1", 50.0, 100.0)]);
-        assert!(build_summary(&partial, &[], &HashMap::new(), 1_000_000_000).has_data());
+        assert!(build_summary(
+            &partial,
+            &[],
+            &HashMap::new(),
+            &HashSet::new(),
+            1_000_000_000
+        )
+        .has_data());
 
         let now = 1_000_000_000;
         let mut history = State::default();
@@ -473,7 +523,7 @@ mod tests {
             },
             ts: now - 60,
         });
-        assert!(build_summary(&history, &[], &HashMap::new(), now).has_data());
+        assert!(build_summary(&history, &[], &HashMap::new(), &HashSet::new(), now).has_data());
         assert!(!StatsSummary::default().has_data());
     }
 

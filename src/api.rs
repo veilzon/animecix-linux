@@ -656,6 +656,8 @@ pub struct Watched {
     #[serde(default)]
     pub title_name: Option<String>,
     #[serde(default)]
+    pub title_type: Option<String>,
+    #[serde(default)]
     pub watched_at: u64,
 }
 
@@ -3386,6 +3388,9 @@ impl Client {
             if existing.title_name.is_none() {
                 existing.title_name = entry.title_name.clone();
             }
+            if existing.title_type.is_none() {
+                existing.title_type = entry.title_type.clone();
+            }
         } else {
             list.push(entry);
         }
@@ -3503,10 +3508,16 @@ impl Client {
 
     #[allow(dead_code)] // Test/API yüzeyi; mark_title_watched isimli varyantı kullanıyor.
     pub fn apply_watched_list(&self, tid: u64, eps: &[Episode]) {
-        self.apply_watched_list_named(tid, "", eps);
+        self.apply_watched_list_named(tid, "", None, eps);
     }
 
-    fn apply_watched_list_named(&self, tid: u64, name: &str, eps: &[Episode]) {
+    fn apply_watched_list_named(
+        &self,
+        tid: u64,
+        name: &str,
+        title_type: Option<&str>,
+        eps: &[Episode],
+    ) {
         let mut st = self.load_state();
         let list = st.watched.entry(tid.to_string()).or_default();
         let watched_at = now_secs();
@@ -3517,6 +3528,9 @@ impl Client {
             {
                 if existing.title_name.is_none() && !name.is_empty() {
                     existing.title_name = Some(name.to_string());
+                }
+                if existing.title_type.is_none() {
+                    existing.title_type = title_type.map(str::to_string);
                 }
                 continue;
             }
@@ -3529,6 +3543,7 @@ impl Client {
                 } else {
                     Some(name.to_string())
                 },
+                title_type: title_type.map(str::to_string),
                 watched_at,
                 ..Default::default()
             });
@@ -3542,7 +3557,7 @@ impl Client {
         if eps.is_empty() {
             return Err("bölüm listesi alınamadı".into());
         }
-        self.apply_watched_list_named(t.id, &t.name, &eps);
+        self.apply_watched_list_named(t.id, &t.name, t.title_type.as_deref(), &eps);
         Ok(eps.len())
     }
 
@@ -4515,6 +4530,7 @@ mod tests {
     fn watched_legacy_json_defaults_new_fields() {
         let w: Watched = serde_json::from_str(r#"{"title_id":1,"episode":2,"season":3}"#).unwrap();
         assert_eq!(w.title_name, None);
+        assert_eq!(w.title_type, None);
         assert_eq!(w.watched_at, 0);
     }
 

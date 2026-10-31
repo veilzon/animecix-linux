@@ -103,11 +103,16 @@ fn kpi_row(stats: &StatsSummary) -> gtk::FlowBox {
 
     let duration = format_duration_human(stats.watch_seconds);
     let size = fmt_bytes(stats.downloaded_bytes);
+    let anime_sub = if stats.film_count > 0 {
+        format!("{} film ayrı", stats.film_count)
+    } else {
+        "en az bir bölüm".to_string()
+    };
     let cards = [
         (
             "ANİME".to_string(),
             stats.anime_count.to_string(),
-            "en az bir bölüm".to_string(),
+            anime_sub,
         ),
         (
             "BÖLÜM".to_string(),
@@ -265,6 +270,11 @@ fn activity_card(stats: &StatsSummary, accent: (f64, f64, f64)) -> gtk::Box {
         "Son 8 hafta",
         "izlenen bölüm etkinliği",
     ));
+    if stats.activity.iter().all(|b| b.count == 0) {
+        card.append(&muted("Bu aralıkta izleme kaydı yok."));
+        return card;
+    }
+
     let area = gtk::DrawingArea::new();
     area.set_content_height(150);
     area.set_hexpand(true);
@@ -432,13 +442,30 @@ fn draw_activity(
     accent: (f64, f64, f64),
 ) {
     let count = buckets.len().max(1);
-    let gap = 10.0;
-    let bar_w = ((w as f64 - gap * (count as f64 - 1.0)) / count as f64).max(4.0);
-    let max = buckets.iter().map(|b| b.count).max().unwrap_or(0).max(1) as f64;
-    let baseline = h as f64 - 2.0;
+    let slot = w as f64 / count as f64;
+    let bar_w = (slot * 0.48).clamp(12.0, 34.0);
+    // Tek bir etkinlik bile tüm grafiği kaplamasın: taban ölçek 3.
+    let max = buckets.iter().map(|b| b.count).max().unwrap_or(0).max(3) as f64;
+    let top = 18.0;
+    let baseline = h as f64 - 12.0;
+    let chart_h = (baseline - top).max(12.0);
+
+    for frac in [1.0 / 3.0, 2.0 / 3.0, 1.0] {
+        let y = baseline - chart_h * frac;
+        cr.set_source_rgba(1.0, 1.0, 1.0, 0.06);
+        cr.set_line_width(1.0);
+        cr.move_to(0.0, y);
+        cr.line_to(w as f64, y);
+        let _ = cr.stroke();
+    }
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.1);
+    cr.move_to(0.0, baseline);
+    cr.line_to(w as f64, baseline);
+    let _ = cr.stroke();
+
     for (idx, b) in buckets.iter().enumerate() {
-        let bh = (b.count as f64 / max) * (h as f64 - 22.0);
-        let x = idx as f64 * (bar_w + gap);
+        let x = idx as f64 * slot + (slot - bar_w) / 2.0;
+        let bh = (b.count as f64 / max) * chart_h;
         if b.count == 0 {
             cr.set_source_rgba(1.0, 1.0, 1.0, 0.06);
             rounded_rect(cr, x, baseline - 2.0, bar_w, 2.0, 1.0);
@@ -447,6 +474,19 @@ fn draw_activity(
             rounded_rect(cr, x, baseline - bh, bar_w, bh.max(4.0), bar_w / 2.0);
         }
         let _ = cr.fill();
+
+        if b.count > 0 {
+            let text = b.count.to_string();
+            cr.set_font_size(11.0);
+            cr.set_source_rgba(1.0, 1.0, 1.0, 0.68);
+            if let Ok(ext) = cr.text_extents(&text) {
+                cr.move_to(
+                    x + bar_w / 2.0 - ext.width() / 2.0 - ext.x_bearing(),
+                    baseline - bh - 7.0,
+                );
+                let _ = cr.show_text(&text);
+            }
+        }
     }
 }
 

@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use std::cell::{Cell, RefCell};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -1203,12 +1203,18 @@ impl App {
         let this = self.clone_ref();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(()) => {
+                // İnternet kontrolü arka planda biterken kullanıcı başka
+                // sayfadaysa onu Home'a kaçırma; sadece Home görünürse tazele.
+                let was_home = stack.visible_child_name().as_deref() == Some("home");
                 let widget = this.build_home_view();
                 if let Some(prev) = stack.child_by_name("home") {
                     stack.remove(&prev);
                 }
                 stack.add_named(&widget, Some("home"));
-                stack.set_visible_child_name("home");
+                this.home_dirty.set(false);
+                if was_home {
+                    stack.set_visible_child_name("home");
+                }
                 glib::ControlFlow::Break
             }
             Err(_) => glib::ControlFlow::Continue,
@@ -2393,7 +2399,32 @@ impl App {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_secs())
             .unwrap_or(0);
-        let stats = crate::stats::build_summary(&st, &downloads, &names, now);
+        let mut movie_ids: HashSet<u64> = HashSet::new();
+        for t in st
+            .saved
+            .iter()
+            .chain(st.history.iter().map(|h| &h.title))
+            .chain(st.marathon.iter().map(|m| &m.title))
+        {
+            if t.title_type.as_deref() == Some("movie") {
+                movie_ids.insert(t.id);
+            }
+        }
+        for cat in self.cats.borrow().iter() {
+            for t in &cat.items {
+                if t.title_type.as_deref() == Some("movie") {
+                    movie_ids.insert(t.id);
+                }
+            }
+        }
+        for list in st.watched.values() {
+            for w in list {
+                if w.title_type.as_deref() == Some("movie") {
+                    movie_ids.insert(w.title_id);
+                }
+            }
+        }
+        let stats = crate::stats::build_summary(&st, &downloads, &names, &movie_ids, now);
         let accent = crate::theme::accent_rgb(&self.settings.borrow().theme);
         let view = crate::ui::stats_view::StatsView::build(&stats, accent);
         let clamp = adw::Clamp::new();
@@ -3796,6 +3827,18 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.3.0" => Some((
+            "Yenilikler (v1.3.0)",
+            vec![
+                "İstatistikler sayfası: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın ritmi; filmler bölüm sayılmıyor, ayrı film sayısı gösteriliyor.",
+                "İndirilen bölümler normal listede öncelikli oynatılıyor; indirildi işareti ve sağ tıkla indirme eklendi.",
+                "İndirilmiş bölümlerde intro/outro atlama (s/e) çalışıyor.",
+                "İzlendi işaretlenen bölümün ilerleme çubuğu anında doluyor.",
+                "MPV kapandıktan sonra uygulama belleği toparlanıyor.",
+                "Tam ekranda kapaklar anında büyüyor; F11/Esc ile çıkış ve geniş pencere yerleşimi düzeltildi.",
+                "Uygulama ikinci kez açıldığında yeni pencere yerine mevcut pencere öne geliyor.",
+            ],
+        )),
         "1.2.7" => Some((
             "Yenilikler (v1.2.7)",
             vec![
@@ -4014,6 +4057,7 @@ mod decide_retry_tests {
 
     #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.3.0").is_some());
         assert!(super::changelog_items("1.2.6").is_some());
         assert!(super::changelog_items("9.9.9").is_none());
     }

@@ -530,6 +530,8 @@ impl App {
             title_id: title.id,
             episode: ep.episode,
             season: ep.season,
+            title_name: Some(title.name.clone()),
+            title_type: title.title_type.clone(),
             ..Default::default()
         };
         self.client.set_current(&w);
@@ -560,6 +562,8 @@ impl App {
         let tid = title.id;
         let season = ep.season;
         let episode = ep.episode;
+        let title_name_c = title.name.clone();
+        let title_type_c = title.title_type.clone();
         let _prog_key = format!("{tid}:{season}:{episode}");
 
         let saved_pos = self.client.start_pos(tid, season, episode);
@@ -923,9 +927,11 @@ impl App {
                                 title_id: tid,
                                 episode: cur.0,
                                 season: cur.1,
+                                title_name: Some(title_name_c.clone()),
+                                title_type: title_type_c.clone(),
                                 ..Default::default()
                             },
-                            "",
+                            &title_name_c,
                         );
                         marked_ep = Some(cur);
                         if let Some(entry) = progress_bars2.borrow().get(&pk_cur) {
