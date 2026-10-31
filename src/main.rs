@@ -10,6 +10,7 @@ mod download_folders;
 mod font;
 mod http;
 mod icons;
+mod layout;
 mod local_playback;
 mod memory;
 mod music;

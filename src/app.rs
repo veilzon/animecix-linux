@@ -216,23 +216,6 @@ pub struct App {
     pub scale_css: gtk::CssProvider,
 }
 
-/// Spotlight yüksekliği: pencere boyunun %52'si (20px kuantum) ile
-/// sütun tabanının büyüğü, 360–560 kelepçeli (Lowell hero_h_for_window birebir).
-fn hero_h_for_window(win_h: i32, cols: u32) -> i32 {
-    let from_h = (win_h as f32 * 0.52) as i32 / 20 * 20;
-    let from_c = 260 + cols.max(3).min(8) as i32 * 20;
-    from_h.max(from_c).clamp(360, 560)
-}
-
-/// Kart kuantumu: genişlikten sütun (3-8) + kart boyu (140-220, 10px
-/// kuantum). Pencere büyüyünce kartlar da büyür (sabit 140 dönemi kapandı).
-fn card_quantum(win_w: i32) -> (u32, i32) {
-    let cols = ((win_w / 180).max(3).min(8)) as u32;
-    let raw = (win_w - 24 - (cols as i32 - 1) * 16) / cols as i32;
-    let w = (raw / 10 * 10).clamp(140, 220);
-    (cols, w)
-}
-
 /// Spotlight seçimi (saf): havuzdan slot_count başlık. Şimdilik karıştır +
 /// ilk N; algoritma değişince sadece bu fonksiyonun içi değişir.
 fn pick_spotlight(pool: &[Title], slot_count: usize, seed: u64) -> Vec<Title> {
@@ -624,6 +607,7 @@ impl App {
         // Kayıtlı paralellik açılışta motora işlenir (eski dosya → 1).
         dl_manager.set_max_parallel(client.load_settings().max_parallel_downloads as usize);
 
+        let initial_metrics = crate::layout::initial_metrics();
         let app_inst = Rc::new(Self {
             window,
             stack: main_stack,
@@ -650,10 +634,10 @@ impl App {
             sidebar_rows: Rc::new(RefCell::new(Vec::new())),
             sidebar_collapsed: Rc::new(Cell::new(false)),
             sidebar_box,
-            hero_h: Rc::new(Cell::new(hero_h_for_window(800, 5))),
+            hero_h: Rc::new(Cell::new(initial_metrics.hero_h)),
             home_dirty: Rc::new(Cell::new(true)),
-            card_w: Rc::new(Cell::new(card_quantum(1280).1)),
-            grid_cols: Rc::new(Cell::new(card_quantum(1280).0)),
+            card_w: Rc::new(Cell::new(initial_metrics.card_w)),
+            grid_cols: Rc::new(Cell::new(initial_metrics.grid_cols)),
             news: Rc::new(RefCell::new(None)),
             news_page: Rc::new(Cell::new(1)),
             calendar: Rc::new(RefCell::new(None)),
@@ -889,51 +873,7 @@ impl App {
                 glib::ControlFlow::Continue
             });
         }
-        // Hero + kart kuantumu pencereye göre (Lowell birebir): layout
-        // değişimini izle. İlk ölçüm ANINDA uygulanır (açılışta 1280
-        // tahmini yerine gerçek pencere; boyut zıplaması olmaz), sonraki
-        // değişimler 300ms debounce'ludur. Değişim evi kirli işaretler:
-        // görünürdeyse hemen yeniden kurulur, değilse dönüşte kurulur
-        // (bayat kapak boyutu kalması düzeltmesi).
-        {
-            let inst = app_inst.clone_ref();
-            let gen = Rc::new(Cell::new(0u32));
-            let first = Rc::new(Cell::new(true));
-            let last_h = Rc::new(Cell::new(inst.hero_h.get()));
-            let last_q = Rc::new(Cell::new((inst.grid_cols.get(), inst.card_w.get())));
-            app_inst.window.connect_map(move |w| {
-                let Some(surface) = w.surface() else {
-                    return;
-                };
-                let inst_c = inst.clone_ref();
-                let gen_c = gen.clone();
-                let first_c = first.clone();
-                let last_h_c = last_h.clone();
-                let last_q_c = last_q.clone();
-                surface.connect_layout(move |_, ww, h| {
-                    let my = gen_c.get() + 1;
-                    gen_c.set(my);
-                    if first_c.get() {
-                        first_c.set(false);
-                        inst_c.apply_window_metrics(ww, h, &last_h_c, &last_q_c);
-                        return;
-                    }
-                    let gen_c2 = gen_c.clone();
-                    let inst_c2 = inst_c.clone_ref();
-                    let last_h_c2 = last_h_c.clone();
-                    let last_q_c2 = last_q_c.clone();
-                    glib::timeout_add_local_once(
-                        std::time::Duration::from_millis(300),
-                        move || {
-                            if gen_c2.get() != my {
-                                return;
-                            }
-                            inst_c2.apply_window_metrics(ww, h, &last_h_c2, &last_q_c2);
-                        },
-                    );
-                });
-            });
-        }
+        crate::layout::install(&app_inst);
         app_inst.show_page(&initial_page);
         if welcome_seen {
             app_inst.fetch_home();
@@ -1071,41 +1011,6 @@ impl App {
         self.show_page(p);
         if matches!(p, Page::Home) {
             self.fetch_home();
-        }
-    }
-
-    /// Pencere ölçüsü değişimini uygular (layout: ilk ölçüm anında,
-    /// sonrakiler debounce'lu). Hero yüksekliği + kart kuantumu güncellenir;
-    /// değişim varsa ev kirlenir ve görünürdeyse yeniden kurulur. Rebuild
-    /// bayraksız çağrılamaz: `show_page(Home)` kirli değilse cache'i korur
-    /// ve boyutlar pencereden bağımsız kalırdı (kapak boyu takılması).
-    fn apply_window_metrics(
-        &self,
-        ww: i32,
-        h: i32,
-        last_h: &Rc<Cell<i32>>,
-        last_q: &Rc<Cell<(u32, i32)>>,
-    ) {
-        let nh = hero_h_for_window(h, 5);
-        let nq = card_quantum(ww);
-        let mut dirty = false;
-        if nh != last_h.get() {
-            last_h.set(nh);
-            self.hero_h.set(nh);
-            dirty = true;
-        }
-        if nq != last_q.get() {
-            last_q.set(nq);
-            self.grid_cols.set(nq.0);
-            self.card_w.set(nq.1);
-            dirty = true;
-        }
-        if !dirty {
-            return;
-        }
-        self.home_dirty.set(true);
-        if self.page_history.borrow().last() == Some(&Page::Home) {
-            self.show_page(&Page::Home);
         }
     }
 
@@ -2111,7 +2016,7 @@ impl App {
         // + üstte ortalı Entry. Enter metni popup'a taşıyıp hapı boşaltır;
         // açılışta odak alınmaz (kısayollar/carousel bozulmasın).
         let clamp = adw::Clamp::new();
-        clamp.set_maximum_size(1400);
+        clamp.set_maximum_size(crate::layout::CONTENT_MAX);
         clamp.set_child(Some(&main_box));
         let home_overlay = gtk::Overlay::new();
         home_overlay.set_child(Some(&clamp));
@@ -4060,27 +3965,6 @@ mod decide_retry_tests {
             a.iter().map(|t| t.id).collect::<Vec<_>>(),
             c.iter().map(|t| t.id).collect::<Vec<_>>()
         );
-    }
-
-    #[test]
-    fn card_quantum_table() {
-        // 1280px: 7 sütun, 160px kart.
-        assert_eq!(super::card_quantum(1280), (7, 160));
-        // Dar: 3 sütun tabanı, 140px tabanı.
-        assert_eq!(super::card_quantum(500), (3, 140));
-        // Geniş: 8 sütun tavanı, 220px tavanı.
-        let (c, w) = super::card_quantum(3000);
-        assert_eq!(c, 8);
-        assert_eq!(w, 220);
-    }
-
-    #[test]
-    fn hero_h_table() {
-        // Lowell hero_h_for_window vektörleri birebir.
-        assert_eq!(super::hero_h_for_window(885, 8), 460);
-        assert_eq!(super::hero_h_for_window(800, 5), 400);
-        assert_eq!(super::hero_h_for_window(680, 3), 360);
-        assert_eq!(super::hero_h_for_window(2000, 8), 560);
     }
 
     #[test]
