@@ -543,6 +543,11 @@ impl App {
         back_btn.set_tooltip_text(Some("Geri"));
         back_btn.set_visible(false);
         header.pack_start(&back_btn);
+
+        let fullscreen_btn = gtk::Button::from_icon_name("view-fullscreen-symbolic");
+        fullscreen_btn.add_css_class("flat");
+        fullscreen_btn.set_tooltip_text(Some("Tam Ekran (F11)"));
+        header.pack_end(&fullscreen_btn);
         // Sayfalar butonu App::new sonunda (goto kablosu Rc gerektirir) eklenir.
 
         let main_stack = gtk::Stack::new();
@@ -585,6 +590,30 @@ impl App {
             .default_height(800)
             .content(&root_overlay)
             .build();
+        {
+            let window_c = window.clone();
+            fullscreen_btn.connect_clicked(move |_| {
+                if window_c.is_fullscreen() {
+                    window_c.unfullscreen();
+                } else {
+                    window_c.fullscreen();
+                }
+            });
+            let btn_c = fullscreen_btn.clone();
+            window.connect_fullscreened_notify(move |w| {
+                let full = w.is_fullscreen();
+                btn_c.set_icon_name(if full {
+                    "view-restore-symbolic"
+                } else {
+                    "view-fullscreen-symbolic"
+                });
+                btn_c.set_tooltip_text(Some(if full {
+                    "Tam Ekrandan Çık (F11)"
+                } else {
+                    "Tam Ekran (F11)"
+                }));
+            });
+        }
 
         let initial_page = if welcome_seen {
             Page::Home
@@ -959,20 +988,6 @@ impl App {
             key_ctrl.connect_key_pressed(move |_, keyval, _, state| {
                 let key_name = keyval.name().map(|s| s.to_string()).unwrap_or_default();
                 let is_ctrl = state.contains(gtk::gdk::ModifierType::CONTROL_MASK);
-                // Tam ekran (Lowell137/animecix-linux uyarlaması): F11 aç/kapat,
-                // Esc tam ekrandan çıkar (fonksiyon tuşu; metin alanına yazılmaz).
-                if key_name == "F11" {
-                    if gtk::prelude::GtkWindowExt::is_fullscreen(&window_c) {
-                        window_c.unfullscreen();
-                    } else {
-                        window_c.fullscreen();
-                    }
-                    return glib::Propagation::Stop;
-                }
-                if key_name == "Escape" && gtk::prelude::GtkWindowExt::is_fullscreen(&window_c) {
-                    window_c.unfullscreen();
-                    return glib::Propagation::Stop;
-                }
                 // F1: kısayol yardım penceresi (ayar değerlerini yansıtır).
                 if key_name == "F1" {
                     let s = settings.borrow();
@@ -998,6 +1013,44 @@ impl App {
                 }
             });
             self.window.add_controller(key_ctrl);
+        }
+
+        {
+            // Capture phase: SearchEntry/Welcome Esc'i yutamaz.
+            let window_c = self.window.clone();
+            let last_toggle = Rc::new(Cell::new(None::<std::time::Instant>));
+            let fs_ctrl = gtk::EventControllerKey::new();
+            fs_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
+            fs_ctrl.connect_key_pressed(move |_, keyval, _, _| {
+                let key_name = keyval.name().map(|s| s.to_string()).unwrap_or_default();
+                match key_name.as_str() {
+                    "F11" => {
+                        let now = std::time::Instant::now();
+                        if let Some(last) = last_toggle.get() {
+                            if now.duration_since(last) < std::time::Duration::from_millis(250) {
+                                return glib::Propagation::Stop;
+                            }
+                        }
+                        last_toggle.set(Some(now));
+                        if window_c.is_fullscreen() {
+                            window_c.unfullscreen();
+                        } else {
+                            window_c.fullscreen();
+                        }
+                        glib::Propagation::Stop
+                    }
+                    "Escape" if window_c.is_fullscreen() => {
+                        window_c.unfullscreen();
+                        glib::Propagation::Stop
+                    }
+                    "Escape" if window_c.is_maximized() => {
+                        window_c.unmaximize();
+                        glib::Propagation::Stop
+                    }
+                    _ => glib::Propagation::Proceed,
+                }
+            });
+            self.window.add_controller(fs_ctrl);
         }
     }
 
@@ -1133,6 +1186,7 @@ impl App {
                 }
             }
         }
+        crate::layout::refresh(self);
     }
 
     pub fn go_back(&self) {
@@ -1195,6 +1249,7 @@ impl App {
         let px = (16.0 * s).round() as i32;
         self.scale_css
             .load_from_data(&format!("window {{ font-size: {px}px; }}"));
+        crate::layout::refresh(self);
     }
 
     pub(crate) fn apply_movie_tint(&self, target: &gtk::Box, poster: Option<&str>) {
@@ -1689,6 +1744,7 @@ impl App {
                 continue;
             };
             let pic = gtk::Picture::new();
+            pic.set_can_shrink(true);
             pic.set_content_fit(gtk::ContentFit::Cover);
             pic.set_hexpand(true);
             pic.set_width_request(-1);
@@ -2017,6 +2073,7 @@ impl App {
         // açılışta odak alınmaz (kısayollar/carousel bozulmasın).
         let clamp = adw::Clamp::new();
         clamp.set_maximum_size(crate::layout::CONTENT_MAX);
+        clamp.set_tightening_threshold(crate::layout::CONTENT_MAX);
         clamp.set_child(Some(&main_box));
         let home_overlay = gtk::Overlay::new();
         home_overlay.set_child(Some(&clamp));

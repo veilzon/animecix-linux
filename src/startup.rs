@@ -10,6 +10,15 @@ use crate::icons;
 use crate::update;
 
 pub(crate) fn activate(app: &adw::Application) {
+    if let Some(win) = app
+        .active_window()
+        .or_else(|| app.windows().into_iter().next())
+    {
+        win.unminimize();
+        win.present();
+        return;
+    }
+
     let mut migrated = false;
     if let Some(display) = gtk::gdk::Display::default() {
         let mut base = std::path::PathBuf::new();

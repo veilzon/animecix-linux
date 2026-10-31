@@ -22,9 +22,6 @@
                 }
 
                 /* === Kart Hover: parlama + hafif büyüme === */
-                .title-btn:hover {
-                    cursor: pointer;
-                }
                 .title-btn:hover .cover {
                     transform: scale(1.04);
                     box-shadow: 0 0 22px 3px alpha(@accent_color, 0.55);
@@ -32,35 +29,27 @@
 
                 .cover-thumb {
                     min-width: 48px;
-                    max-width: 48px;
                     min-height: 72px;
-                    max-height: 72px;
                 }
 
                 .cover-header {
                     min-width: 120px;
-                    max-width: 120px;
                     min-height: 180px;
-                    max-height: 180px;
                 }
 
                 .cover-movie-header {
                     min-width: 160px;
-                    max-width: 160px;
                     min-height: 240px;
-                    max-height: 240px;
                 }
 
                 .cover-shelf {
                     min-width: 140px;
-                    max-width: 140px;
                     min-height: 210px;
-                    max-height: 210px;
                 }
 
                 /* === Kart Hover Animasyonu === */
                 .title-btn {
-                    padding: 4px;
+                    padding: 4px 0;
                     border-radius: 12px;
                     transition: transform 140ms ease, background-color 140ms ease;
                 }
@@ -167,7 +156,6 @@
                 .card-title {
                     font-weight: 600;
                     font-size: 0.85em;
-                    text-align: center;
                     margin-top: 2px;
                 }
 
@@ -432,15 +420,11 @@
                     border-radius: 14px;
                     padding: 12px 16px;
                     margin-bottom: 8px;
-                    cursor: grab;
                     transition: background-color 140ms ease, border-color 140ms ease;
                 }
                 .marathon-item-card:hover {
                     background-color: alpha(currentColor, 0.06);
                     border-color: alpha(@accent_color, 0.3);
-                }
-                .marathon-item-card:active {
-                    cursor: grabbing;
                 }
                 .marathon-item-card:drop(active) {
                     border-color: @accent_color;
