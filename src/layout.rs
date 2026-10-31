@@ -99,13 +99,14 @@ pub fn install(app: &Rc<App>) {
     };
 
     {
-        let schedule = schedule.clone();
-        app.window
-            .connect_fullscreened_notify(move |_| schedule(None));
+        let app = app.clone();
+        let window = app.window.clone();
+        window.connect_fullscreened_notify(move |_| settle(&app));
     }
     {
-        let schedule = schedule.clone();
-        app.window.connect_maximized_notify(move |_| schedule(None));
+        let app = app.clone();
+        let window = app.window.clone();
+        window.connect_maximized_notify(move |_| settle(&app));
     }
     {
         let connected = Rc::new(Cell::new(false));
@@ -125,6 +126,22 @@ pub fn install(app: &Rc<App>) {
         });
     }
     schedule(None);
+}
+
+/// Fullscreen/maximize geçişi KWin'de birkaç frame sürebilir. Tek bir
+/// 90 ms okuması yerine kısa bir settle penceresi boyunca metrikleri tazele.
+pub fn settle(app: &Rc<App>) {
+    let app = app.clone();
+    let mut ticks = 0u8;
+    glib::timeout_add_local(Duration::from_millis(50), move || {
+        refresh(&app);
+        ticks += 1;
+        if ticks >= 20 {
+            glib::ControlFlow::Break
+        } else {
+            glib::ControlFlow::Continue
+        }
+    });
 }
 
 /// Sidebar/UI scale değişimlerinde anında metrikleri tazeler.

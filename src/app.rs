@@ -544,10 +544,6 @@ impl App {
         back_btn.set_visible(false);
         header.pack_start(&back_btn);
 
-        let fullscreen_btn = gtk::Button::from_icon_name("view-fullscreen-symbolic");
-        fullscreen_btn.add_css_class("flat");
-        fullscreen_btn.set_tooltip_text(Some("Tam Ekran (F11)"));
-        header.pack_end(&fullscreen_btn);
         // Sayfalar butonu App::new sonunda (goto kablosu Rc gerektirir) eklenir.
 
         let main_stack = gtk::Stack::new();
@@ -590,31 +586,6 @@ impl App {
             .default_height(800)
             .content(&root_overlay)
             .build();
-        {
-            let window_c = window.clone();
-            fullscreen_btn.connect_clicked(move |_| {
-                if window_c.is_fullscreen() {
-                    window_c.unfullscreen();
-                } else {
-                    window_c.fullscreen();
-                }
-            });
-            let btn_c = fullscreen_btn.clone();
-            window.connect_fullscreened_notify(move |w| {
-                let full = w.is_fullscreen();
-                btn_c.set_icon_name(if full {
-                    "view-restore-symbolic"
-                } else {
-                    "view-fullscreen-symbolic"
-                });
-                btn_c.set_tooltip_text(Some(if full {
-                    "Tam Ekrandan Çık (F11)"
-                } else {
-                    "Tam Ekran (F11)"
-                }));
-            });
-        }
-
         let initial_page = if welcome_seen {
             Page::Home
         } else {
@@ -1018,6 +989,7 @@ impl App {
         {
             // Capture phase: SearchEntry/Welcome Esc'i yutamaz.
             let window_c = self.window.clone();
+            let this_fs = self.clone_ref();
             let last_toggle = Rc::new(Cell::new(None::<std::time::Instant>));
             let fs_ctrl = gtk::EventControllerKey::new();
             fs_ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
@@ -1037,14 +1009,17 @@ impl App {
                         } else {
                             window_c.fullscreen();
                         }
+                        crate::layout::settle(&this_fs);
                         glib::Propagation::Stop
                     }
                     "Escape" if window_c.is_fullscreen() => {
                         window_c.unfullscreen();
+                        crate::layout::settle(&this_fs);
                         glib::Propagation::Stop
                     }
                     "Escape" if window_c.is_maximized() => {
                         window_c.unmaximize();
+                        crate::layout::settle(&this_fs);
                         glib::Propagation::Stop
                     }
                     _ => glib::Propagation::Proceed,
