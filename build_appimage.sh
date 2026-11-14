@@ -215,11 +215,22 @@ EOF
 # NOT: Tek .desktop dosyası (katalog testi "multiple desktop files" diye patlar).
 
 # 5b. aria2c + kütüphaneleri (6 bağlantılı indirme; glibc çekirdeği hariç).
-if command -v aria2c >/dev/null 2>&1; then
+# CI'da ANIMECIX_MINIMAL_ARIA2=1 ile yalnızca HTTP/HTTPS özellikli minimal
+# aria2 derlenir; BitTorrent/Metalink/XML-RPC/SFTP/ICU libleri pakete girmez.
+ARIA2_BIN=""
+if [ "${ANIMECIX_MINIMAL_ARIA2:-0}" = "1" ]; then
+    bash packaging/build-minimal-aria2.sh
+    ARIA2_BIN="target/aria2-min/bin/aria2c"
+elif [ -x "target/aria2-min/bin/aria2c" ]; then
+    ARIA2_BIN="target/aria2-min/bin/aria2c"
+elif command -v aria2c >/dev/null 2>&1; then
+    ARIA2_BIN="$(command -v aria2c)"
+fi
+if [ -n "$ARIA2_BIN" ]; then
     mkdir -p "$APPDIR/usr/lib"
-    cp "$(command -v aria2c)" "$APPDIR/usr/bin/aria2c"
+    cp "$ARIA2_BIN" "$APPDIR/usr/bin/aria2c"
     chmod +x "$APPDIR/usr/bin/aria2c"
-    for lib in $(ldd "$(command -v aria2c)" 2>/dev/null | awk '{print $3}' | grep '^/'); do
+    for lib in $(ldd "$ARIA2_BIN" 2>/dev/null | awk '{print $3}' | grep '^/'); do
         base="$(basename "$lib")"
         case "$base" in
             libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|ld-linux*|libnss*|libresolv.so*|libstdc++.so*|libgcc_s.so*) continue ;;

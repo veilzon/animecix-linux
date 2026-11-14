@@ -2570,6 +2570,14 @@ impl App {
             },
             move |remove_app| {
                 if remove_app {
+                    if crate::flatpak::is_flatpak() {
+                        this_wipe.ops.info(
+                            "Flatpak Uygulaması",
+                            "Kaldırmak için terminalde: flatpak uninstall io.github.veilzon.AnimeciX",
+                            std::time::Duration::from_secs(8),
+                        );
+                        return;
+                    }
                     match crate::native_package::uninstall() {
                         Ok(()) => {
                             this_wipe.client.wipe_all_data();
@@ -3861,6 +3869,14 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.3.2" => Some((
+            "Yenilikler (v1.3.2)",
+            vec![
+                "Flatpak: kendi depomuzdan tek komutla kurulum ve 'flatpak update' ile güncelleme.",
+                "Flatpak'ta Discord Rich Presence, indirme klasörü erişimi ve sistem entegrasyonu.",
+                "Flatpak sürümünde bağımlılıklar ve masaüstü kısayolu paketle gelir.",
+            ],
+        )),
         "1.3.1" => Some((
             "Yenilikler (v1.3.1)",
             vec![
@@ -4100,6 +4116,7 @@ mod decide_retry_tests {
 
     #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.3.2").is_some());
         assert!(super::changelog_items("1.3.1").is_some());
         assert!(super::changelog_items("1.3.0").is_some());
         assert!(super::changelog_items("1.2.6").is_some());

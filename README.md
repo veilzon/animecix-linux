@@ -8,9 +8,10 @@
 
 **Linux için GTK4/libadwaita ile yazılmış anime, dizi ve film izleme masaüstü istemcisi.**
 
-Tek dosyalık taşınabilir **AppImage** olarak dağıtılır; sistemde GTK4, libadwaita ve mpv
-kuruluysa ek kurulum gerektirmez. Uygulama başlatmada yeni sürümü kontrol eder ve kendini
-otomatik güncelleyebilir. Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
+**Flatpak** (önerilen) veya tek dosyalık taşınabilir **AppImage** olarak dağıtılır.
+Flatpak sürümü kendi depomuzdan kurulur ve `flatpak update` ile güncellenir; AppImage
+sistemde GTK4, libadwaita ve mpv kuruluysa ek kurulum gerektirmez. Sürüm notları için
+[CHANGELOG.md](CHANGELOG.md).
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
 > kullanır. Hizmet sağlayıcıya zarar vermeden, kendi sorumluluğunuzda kullanın.
@@ -32,6 +33,7 @@ otomatik güncelleyebilir. Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Bellek toparlama**: MPV kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
 - **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
+- **Flatpak**: kendi Flatpak depomuzdan tek komutla kurulum; güncellemeler `flatpak update` ile
 - **Otomatik güncelleme**: AppImage, .deb ve .rpm kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (paketlerde yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
@@ -72,7 +74,28 @@ _ekran görüntüleri her zaman güncel olmayabilir._
 
 ## Kurulum
 
-### AppImage (önerilen)
+### Flatpak (önerilen)
+
+Flatpak kuruluysa tek komutla kur:
+
+```bash
+flatpak install --from https://veilzon.github.io/animecix-flatpak/animecix.flatpakref
+```
+
+Flatpak uygulamayı kendi depomuzdan kurar; yalnızca GNOME runtime'ı Flathub'dan
+gelir. Güncelleme:
+
+```bash
+flatpak update io.github.veilzon.AnimeciX
+```
+
+Kaldırma:
+
+```bash
+flatpak uninstall io.github.veilzon.AnimeciX
+```
+
+### AppImage
 
 1. [Releases](https://github.com/veilzon/animecix-linux/releases) sayfasından `AnimeciX-x86_64.AppImage` dosyasını indirin.
 2. Çalıştırılabilir yapın ve açın:
@@ -153,37 +176,26 @@ Sürüm hazırlığı:
    python3 tests/skip_harness.py
    ```
 
-3. Temiz AppImage üret (sürümü elle artırdıysan):
-
-   ```bash
-   GITHUB_TOKEN= VERSION_BUMP=none bash build_appimage.sh
-   ```
-
-4. Tag’i oluştur ve gönder:
+3. Tag’i oluştur ve gönder:
 
    ```bash
    git tag -a vX.Y.Z -m "AnimeciX vX.Y.Z"
    git push origin main vX.Y.Z
    ```
 
-5. Release’i yayınla:
+4. AppImage artık yerelde derlenmez:
+   - `.github/workflows/appimage.yml` her `main` push’unda Debian 12 tabanlı
+     (glibc 2.36) ve minimal aria2’li AppImage’i üretip artifact olarak yükler.
+   - `.github/workflows/release.yml` tag push’unda AppImage’i üretir ve taslak
+     release’e ekler.
+
+5. Taslak release’i kontrol edip yayınla:
 
    ```bash
-   gh release create vX.Y.Z AnimeciX-x86_64.AppImage \
-     --title "AnimeciX vX.Y.Z" \
-     --notes-file /tmp/animecix-X.Y.Z-release-notes.md
+   gh release edit vX.Y.Z --draft=false --latest
    ```
 
-`build_appimage.sh` varsayılan olarak `Cargo.toml` sürümünü otomatik artırır;
-`VERSION_BUMP=none` bunu atlar. `GITHUB_TOKEN` tanımlıysa betik ayrıca
-`v<sürüm>` etiketli bir GitHub Release oluşturup AppImage’ı yükler; ancak
-release notlarını `CHANGELOG.md`’den almadığı için önerilen akış yukarıdaki
-manuel adımlardır.
-
-Tag push edildiğinde `.github/workflows/release.yml` testleri ve Debian 12
-tabanlı AppImage build’ini doğrular; release sayfasına dosya yüklemez. Yerel
-build’in glibc gereksinimi host’a bağlıdır; daha eski dağıtımlar için CI’ın
-Debian 12 artifact’i (glibc 2.34) kullanılabilir.
+   `.github/workflows/package.yml` yayınlanan release’e deb/rpm paketlerini ekler.
 
 ---
 

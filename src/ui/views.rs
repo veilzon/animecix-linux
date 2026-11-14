@@ -854,16 +854,21 @@ impl SettingsView {
 
         let on_save = Rc::new(on_save);
 
+        let flatpak = crate::flatpak::is_flatpak();
         let update_supported = crate::update::self_update_supported();
-        let update_desc = match crate::update::install_kind() {
-            crate::update::InstallKind::AppImage => {
-                "Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller"
-            }
-            crate::update::InstallKind::Deb | crate::update::InstallKind::Rpm => {
-                "Başlatmada yeni sürümü kontrol eder; paketi indirip sistem paket yöneticisiyle kurar (yetki istenir)"
-            }
-            crate::update::InstallKind::Unknown => {
-                "Yalnızca AppImage, .deb veya .rpm kurulumlarında kullanılabilir"
+        let update_desc = if flatpak {
+            "Flatpak sürümü terminalde `flatpak update` ile güncellenir"
+        } else {
+            match crate::update::install_kind() {
+                crate::update::InstallKind::AppImage => {
+                    "Başlatmada yeni sürümü kontrol eder ve AppImage'i kendisi günceller"
+                }
+                crate::update::InstallKind::Deb | crate::update::InstallKind::Rpm => {
+                    "Başlatmada yeni sürümü kontrol eder; paketi indirip sistem paket yöneticisiyle kurar (yetki istenir)"
+                }
+                crate::update::InstallKind::Unknown => {
+                    "Yalnızca AppImage, .deb veya .rpm kurulumlarında kullanılabilir"
+                }
             }
         };
         let (auto_update_row, auto_update_sw) = crate::ui::components::switch_row(
@@ -1111,18 +1116,23 @@ impl SettingsView {
 
         let system_managed = crate::native_package::system_package_managed();
         let (uninstall_row, uninstall_sw) = crate::ui::components::switch_row(
-            if system_managed {
+            if flatpak {
+                "Flatpak Uygulamasını Kaldır"
+            } else if system_managed {
                 "Paketi Sistemden Kaldır"
             } else {
                 "Uygulamayı ve Başlatıcıyı da Sistemden Kaldır"
             },
-            if system_managed {
+            if flatpak {
+                "Terminalde: flatpak uninstall io.github.veilzon.AnimeciX"
+            } else if system_managed {
                 "Paket yöneticisiyle kaldırılır (yetki istenir)"
             } else {
                 "Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler"
             },
             false,
         );
+        uninstall_sw.set_sensitive(!flatpak);
         data_group.add(&uninstall_row);
 
         let wipe_btn = gtk::Button::with_label("Tüm Verileri Sıfırla ve Temizle");
@@ -1176,13 +1186,24 @@ impl SettingsView {
             env!("CARGO_PKG_VERSION")
         ));
 
-        let ver_badge = gtk::Label::new(Some("Güncel ✓"));
+        let ver_badge = gtk::Label::new(Some(if flatpak { "Flatpak" } else { "Güncel ✓" }));
         ver_badge.add_css_class("status-badge-completed");
         ver_badge.set_valign(gtk::Align::Center);
         ver_row.add_suffix(&ver_badge);
         info_group.add(&ver_row);
 
-        if system_managed {
+        if flatpak {
+            let status = gtk::Label::new(Some("Masaüstü kısayolunu Flatpak yönetiyor."));
+            status.add_css_class("dim-label");
+            status.set_xalign(0.0);
+            status.set_margin_top(4);
+            info_group.add(&status);
+            let update_hint = gtk::Label::new(Some("Güncellemeler: terminalde `flatpak update`"));
+            update_hint.add_css_class("dim-label");
+            update_hint.set_xalign(0.0);
+            update_hint.set_margin_bottom(4);
+            info_group.add(&update_hint);
+        } else if system_managed {
             let status = gtk::Label::new(Some("Masaüstü kısayolunu sistem paketi yönetiyor."));
             status.add_css_class("dim-label");
             status.set_xalign(0.0);

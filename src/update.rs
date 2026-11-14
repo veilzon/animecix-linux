@@ -89,7 +89,7 @@ pub fn install_kind() -> InstallKind {
 
 /// Uygulama içi güncelleme bu kurulumda destekleniyor mu.
 pub fn self_update_supported() -> bool {
-    install_kind() != InstallKind::Unknown
+    !crate::flatpak::is_flatpak() && install_kind() != InstallKind::Unknown
 }
 
 fn deb_package_installed() -> bool {
@@ -480,6 +480,16 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
     show_if_uptodate: bool,
     on_suppress_uptodate: impl Fn() + 'static,
 ) {
+    if crate::flatpak::is_flatpak() {
+        if show_if_uptodate {
+            present_info(
+                window,
+                "Flatpak Güncellemesi",
+                "Flatpak sürümü terminalde `flatpak update` ile güncellenir.",
+            );
+        }
+        return;
+    }
     let kind = install_kind();
     if kind == InstallKind::Unknown {
         if show_if_uptodate {

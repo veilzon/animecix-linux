@@ -31,6 +31,10 @@ pub(crate) fn cmd_check_icons() {
             base.join("usr/share/animecix/assets"),
             base.join("assets/hicolor"),
             base.join("assets"),
+            // Flatpak: uygulama varlıkları /app/share altında.
+            std::path::PathBuf::from("/app/share/icons"),
+            std::path::PathBuf::from("/app/share/animecix/assets/hicolor"),
+            std::path::PathBuf::from("/app/share/animecix/assets"),
             // FHS kurulumu (/usr/bin/animecix): gömülü set /usr/share/animecix altında.
             std::path::PathBuf::from("/usr/share/animecix/assets/hicolor"),
             std::path::PathBuf::from("/usr/share/animecix/assets"),

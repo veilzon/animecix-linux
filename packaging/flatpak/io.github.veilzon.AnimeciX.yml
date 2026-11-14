@@ -4,6 +4,7 @@ runtime-version: '50'
 sdk: org.gnome.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
+  - org.freedesktop.Sdk.Extension.llvm20
 command: animecix
 separate-locales: false
 build-options:
@@ -15,6 +16,23 @@ finish-args:
   - --socket=wayland
   - --device=dri
   - --socket=pulseaudio
+  # İndirme yöneticisi kullanıcı seçtiği klasöre yazabilsin.
+  - --filesystem=home
+  # Discord RPC: native Discord ve Flatpak Discord/Vesktop soketleri.
+  - --filesystem=xdg-run/app
+  - --filesystem=xdg-run/.flatpak
+  - --filesystem=xdg-run/snap.discord
+  - --filesystem=xdg-run/snap.discord-canary
+  - --filesystem=xdg-run/discord-ipc-0
+  - --filesystem=xdg-run/discord-ipc-1
+  - --filesystem=xdg-run/discord-ipc-2
+  - --filesystem=xdg-run/discord-ipc-3
+  - --filesystem=xdg-run/discord-ipc-4
+  - --filesystem=xdg-run/discord-ipc-5
+  - --filesystem=xdg-run/discord-ipc-6
+  - --filesystem=xdg-run/discord-ipc-7
+  - --filesystem=xdg-run/discord-ipc-8
+  - --filesystem=xdg-run/discord-ipc-9
 cleanup:
   - /include
   - /lib/pkgconfig
@@ -88,8 +106,9 @@ modules:
     build-options:
       env:
         CARGO_HOME: /run/build/animecix/cargo
+        LIBCLANG_PATH: /usr/lib/sdk/llvm20/lib
     build-commands:
-      - cargo build --release --offline --locked
+      - LLVM_STDDEF=$(find /usr/lib/sdk/llvm20 -name stddef.h | head -n1); LLVM_INC=${LLVM_STDDEF%/*}; [ -n "$LLVM_INC" ] || LLVM_INC=/usr/lib/sdk/llvm20/lib/clang/20/include; export BINDGEN_EXTRA_CLANG_ARGS="-I$LLVM_INC -I/usr/include -I/usr/include/x86_64-linux-gnu"; cargo build --release --offline --locked
       - install -Dm755 target/release/animecix -t /app/bin
       - install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.desktop -t /app/share/applications/
       - install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml -t /app/share/metainfo/
@@ -97,9 +116,16 @@ modules:
       - install -Dm644 assets/icon-128.png /app/share/icons/hicolor/128x128/apps/io.github.veilzon.AnimeciX.png
       - install -Dm644 assets/icon-256.png /app/share/icons/hicolor/256x256/apps/io.github.veilzon.AnimeciX.png
       - install -Dm644 assets/icon-512.png /app/share/icons/hicolor/512x512/apps/io.github.veilzon.AnimeciX.png
+      # Uygulama içi ikon adı (tr.com.animecix) Flatpak'ta da bulunsun.
+      - install -Dm644 assets/icon-64.png /app/share/icons/hicolor/64x64/apps/tr.com.animecix.png
+      - install -Dm644 assets/icon-128.png /app/share/icons/hicolor/128x128/apps/tr.com.animecix.png
+      - install -Dm644 assets/icon-256.png /app/share/icons/hicolor/256x256/apps/tr.com.animecix.png
+      - install -Dm644 assets/icon-512.png /app/share/icons/hicolor/512x512/apps/tr.com.animecix.png
       - mkdir -p /app/share/animecix/assets
       - cp -r assets/upscale /app/share/animecix/assets/
-      - chmod -R a-w /app/share/animecix/assets/upscale
+      - cp -r assets/hicolor /app/share/animecix/assets/
+      - install -Dm644 assets/ATTRIBUTION-Adwaita.md /app/share/animecix/ATTRIBUTION-Adwaita.md
+      - chmod -R a-w /app/share/animecix/assets/upscale /app/share/animecix/assets/hicolor
     sources:
       - type: dir
         path: ../..

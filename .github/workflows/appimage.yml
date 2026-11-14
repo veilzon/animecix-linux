@@ -1,0 +1,61 @@
+name: AppImage build (CI)
+
+# AppImage yalnızca CI'da üretilir. Debian 12 tabanı (glibc 2.36) daha yeni
+# dağıtımlarda geniş uyumluluk sağlar; minimal aria2 ile gereksiz libler
+# pakete girmez.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: appimage-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    container:
+      image: debian:12
+      options: --user root
+    defaults:
+      run:
+        shell: bash
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file ffmpeg mpv xvfb xauth binutils libtool libfuse2 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev
+          rm -rf /var/lib/apt/lists/*
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          prefix-key: bookworm-appimage
+
+      - name: Build AppImage (minimal aria2)
+        run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
+
+      - name: Smoke test
+        run: |
+          xvfb-run -a ./AnimeciX-x86_64.AppImage --check-shaders
+          xvfb-run -a ./AnimeciX-x86_64.AppImage --check-icons
+          ls -lh AnimeciX-x86_64.AppImage
+          sha256sum AnimeciX-x86_64.AppImage
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: animecix-appimage
+          path: AnimeciX-x86_64.AppImage

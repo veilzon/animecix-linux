@@ -181,6 +181,9 @@ pub(crate) fn cleanup_stale_appimage_integration(home: &str, current_appimage: &
 }
 
 pub fn install_desktop_entry() -> Result<(), String> {
+    if crate::flatpak::is_flatpak() {
+        return Err("Flatpak sürümünde menü girdisi Flatpak tarafından yönetiliyor.".to_string());
+    }
     if crate::native_package::system_package_managed() || appimage_integration_disabled() {
         return Err(
             "Sistem kurulumu (RPM/DEB) algılandı; menü kısayolu sistem paketi tarafından yönetiliyor."

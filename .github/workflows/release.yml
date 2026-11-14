@@ -1,9 +1,8 @@
 name: Release build (AppImage)
 
-# Sürüm akışı yereldir: release AppImage'ı bakımcının makinesinde üretilip
-# `gh release upload` ile yüklenir. Bu workflow tag/main'de derleyip test
-# ederek kodun AppImage üretebilir kaldığını garanti eder; release
-# sayfasına dokunmaz (publish adımı bilerek yoktur).
+# Tag push'unda AppImage'ı CI'da üretir, test eder ve taslak release'e
+# yükler. Release'in yayınlanması ayrı adımdır; yayınlanınca package.yml
+# deb/rpm paketlerini aynı release'e ekler.
 on:
   push:
     tags: ["v*"]
@@ -33,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils libtool libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -55,7 +54,7 @@ jobs:
 
       - name: Tests
         run: |
-          xvfb-run -a cargo test --release --bin animecix
+          xvfb-run -a cargo test --release --bin animecix -- --test-threads=1
           python3 tests/skip_harness.py
 
       - name: Build release binary
@@ -64,8 +63,8 @@ jobs:
       - name: Shader check
         run: ./target/release/animecix --check-shaders
 
-      - name: Build AppImage (thin, no version bump)
-        run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux bash build_appimage.sh
+      - name: Build AppImage (minimal aria2, no version bump)
+        run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
 
       - name: Verify artifacts
         run: |
@@ -81,3 +80,27 @@ jobs:
         with:
           name: animecix-build
           path: AnimeciX-x86_64.AppImage
+
+  upload:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download AppImage
+        uses: actions/download-artifact@v4
+        with:
+          name: animecix-build
+
+      - name: Upload to draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --draft \
+              --title "AnimeciX $TAG" --notes "Otomatik derleme."
+          fi
+          gh release upload "$TAG" AnimeciX-x86_64.AppImage \
+            --repo "$GITHUB_REPOSITORY" --clobber

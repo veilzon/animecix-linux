@@ -45,6 +45,10 @@ pub(crate) fn activate(app: &adw::Application) {
                 base.join("usr/share/animecix/assets"),
                 base.join("assets/hicolor"),
                 base.join("assets"),
+                // Flatpak: uygulama varlıkları /app/share altında.
+                std::path::PathBuf::from("/app/share/icons"),
+                std::path::PathBuf::from("/app/share/animecix/assets/hicolor"),
+                std::path::PathBuf::from("/app/share/animecix/assets"),
                 // FHS kurulumu (/usr/bin/animecix): gömülü set /usr/share/animecix altında.
                 std::path::PathBuf::from("/usr/share/animecix/assets/hicolor"),
                 std::path::PathBuf::from("/usr/share/animecix/assets"),
@@ -72,7 +76,10 @@ pub(crate) fn activate(app: &adw::Application) {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
-        if crate::native_package::system_package_managed() {
+        if crate::flatpak::is_flatpak() {
+            // Flatpak menü girdisini ve güncellemeleri kendi yönetir.
+            // Sandbox içinde kullanıcı .desktop dosyası oluşturmayız.
+        } else if crate::native_package::system_package_managed() {
             // deb/rpm paketi menü girdisinin sahibidir. Kullanıcı seviyesinde
             // .desktop yazmayız; eski sürümlerin bıraktığı girdileri temizleriz.
             eprintln!("[STARTUP] sistem paketi algılandı; kullanıcı entegrasyonu temizleniyor");

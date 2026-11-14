@@ -41,6 +41,7 @@ impl WelcomeView {
     ) -> gtk::Overlay {
         let scroll = gtk::ScrolledWindow::new();
         scroll.add_css_class("clear-scroll");
+        let flatpak = crate::flatpak::is_flatpak();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         root.set_margin_top(24);
         root.set_margin_bottom(24);
@@ -56,7 +57,11 @@ impl WelcomeView {
         let title = gtk::Label::new(Some("AnimeciX"));
         title.add_css_class("title-1");
         hero.append(&title);
-        let tag = gtk::Label::new(Some("Anime, dizi ve film — tek tıkla, kaldığın yerden."));
+        let tag = gtk::Label::new(Some(if flatpak {
+            "Flatpak sürümü — bağımlılıklar ve menü girdisi paketle gelir."
+        } else {
+            "Anime, dizi ve film — tek tıkla, kaldığın yerden."
+        }));
         tag.add_css_class("dim-label");
         tag.add_css_class("title-4");
         tag.set_wrap(true);
@@ -97,76 +102,78 @@ impl WelcomeView {
         }
         root.append(&cards);
 
-        // Kurulum durumu.
-        let setup_group = adw::PreferencesGroup::new();
-        setup_group.set_title("Kurulum Durumu");
-        let deps = check_all_dependencies();
-        let missing = deps.iter().filter(|d| !d.installed).count();
-        let dep_row = adw::ActionRow::new();
-        dep_row.set_title("Sistem Araçları");
-        if missing == 0 {
-            dep_row.set_subtitle(&format!("{} araç hazır ✅", deps.len()));
-        } else {
-            let names: Vec<String> = deps
-                .iter()
-                .filter(|d| !d.installed)
-                .map(|d| {
-                    if let Some(cmd) = &d.install_cmd {
-                        format!("{} ({})", d.name, cmd)
-                    } else {
-                        d.name.to_string()
-                    }
-                })
-                .collect();
-            dep_row.set_subtitle(&format!("Eksik: {}", names.join(", ")));
-        }
-        setup_group.add(&dep_row);
+        // Kurulum durumu (Flatpak'ta bağımlılık ve menü girdisi paketle gelir).
+        if !flatpak {
+            let setup_group = adw::PreferencesGroup::new();
+            setup_group.set_title("Kurulum Durumu");
+            let deps = check_all_dependencies();
+            let missing = deps.iter().filter(|d| !d.installed).count();
+            let dep_row = adw::ActionRow::new();
+            dep_row.set_title("Sistem Araçları");
+            if missing == 0 {
+                dep_row.set_subtitle(&format!("{} araç hazır ✅", deps.len()));
+            } else {
+                let names: Vec<String> = deps
+                    .iter()
+                    .filter(|d| !d.installed)
+                    .map(|d| {
+                        if let Some(cmd) = &d.install_cmd {
+                            format!("{} ({})", d.name, cmd)
+                        } else {
+                            d.name.to_string()
+                        }
+                    })
+                    .collect();
+                dep_row.set_subtitle(&format!("Eksik: {}", names.join(", ")));
+            }
+            setup_group.add(&dep_row);
 
-        let desk_row = adw::ActionRow::new();
-        desk_row.set_title("Uygulama Menüsü");
-        let system_managed = crate::native_package::system_package_managed();
-        let appimage_blocked = crate::appimage_integration_disabled();
-        desk_row.set_subtitle(if system_managed || appimage_blocked {
-            "Menü kısayolunu sistem paketi yönetiyor."
-        } else if check_desktop_entry_installed() {
-            "AnimeciX menüde hazır."
-        } else {
-            "Tek tıkla uygulama menüsüne ekle."
-        });
-        if !system_managed {
-            let desk_btn = gtk::Button::with_label(if appimage_blocked {
-                "Sistem Kurulumu Etkin"
+            let desk_row = adw::ActionRow::new();
+            desk_row.set_title("Uygulama Menüsü");
+            let system_managed = crate::native_package::system_package_managed();
+            let appimage_blocked = crate::appimage_integration_disabled();
+            desk_row.set_subtitle(if system_managed || appimage_blocked {
+                "Menü kısayolunu sistem paketi yönetiyor."
             } else if check_desktop_entry_installed() {
-                "Yeniden Entegre Et"
+                "AnimeciX menüde hazır."
             } else {
-                "Menüye Ekle"
+                "Tek tıkla uygulama menüsüne ekle."
             });
-            desk_btn.add_css_class("pill");
-            desk_btn.set_sensitive(!appimage_blocked);
-            if !appimage_blocked && !check_desktop_entry_installed() {
-                desk_btn.add_css_class("suggested-action");
-            } else {
-                desk_btn.add_css_class("flat");
-            }
-            {
-                let on_toast = Rc::new(on_toast);
-                let row_c = desk_row.clone();
-                let btn_c = desk_btn.clone();
-                desk_btn.connect_clicked(move |_| match install_desktop_entry() {
-                    Ok(_) => {
-                        row_c.set_subtitle("AnimeciX menüye eklendi!");
-                        btn_c.set_label("Yeniden Entegre Et");
-                        btn_c.remove_css_class("suggested-action");
-                        btn_c.add_css_class("flat");
-                        (*on_toast)("📌 AnimeciX menüye eklendi!".to_string());
-                    }
-                    Err(e) => (*on_toast)(format!("⚠️ Menüye eklenemedi: {e}")),
+            if !system_managed {
+                let desk_btn = gtk::Button::with_label(if appimage_blocked {
+                    "Sistem Kurulumu Etkin"
+                } else if check_desktop_entry_installed() {
+                    "Yeniden Entegre Et"
+                } else {
+                    "Menüye Ekle"
                 });
+                desk_btn.add_css_class("pill");
+                desk_btn.set_sensitive(!appimage_blocked);
+                if !appimage_blocked && !check_desktop_entry_installed() {
+                    desk_btn.add_css_class("suggested-action");
+                } else {
+                    desk_btn.add_css_class("flat");
+                }
+                {
+                    let on_toast = Rc::new(on_toast);
+                    let row_c = desk_row.clone();
+                    let btn_c = desk_btn.clone();
+                    desk_btn.connect_clicked(move |_| match install_desktop_entry() {
+                        Ok(_) => {
+                            row_c.set_subtitle("AnimeciX menüye eklendi!");
+                            btn_c.set_label("Yeniden Entegre Et");
+                            btn_c.remove_css_class("suggested-action");
+                            btn_c.add_css_class("flat");
+                            (*on_toast)("📌 AnimeciX menüye eklendi!".to_string());
+                        }
+                        Err(e) => (*on_toast)(format!("⚠️ Menüye eklenemedi: {e}")),
+                    });
+                }
+                desk_row.add_suffix(&desk_btn);
             }
-            desk_row.add_suffix(&desk_btn);
+            setup_group.add(&desk_row);
+            root.append(&setup_group);
         }
-        setup_group.add(&desk_row);
-        root.append(&setup_group);
 
         // Hızlı tercihler.
         let pref_group = adw::PreferencesGroup::new();
@@ -218,7 +225,11 @@ impl WelcomeView {
 
         let on_finish = Rc::new(on_finish);
         // Başlat.
-        let start_btn = gtk::Button::with_label("Başlamaya Hazırım 🚀");
+        let start_btn = gtk::Button::with_label(if flatpak {
+            "Başla 🚀"
+        } else {
+            "Başlamaya Hazırım 🚀"
+        });
         start_btn.add_css_class("suggested-action");
         start_btn.add_css_class("pill");
         start_btn.add_css_class("title-3");

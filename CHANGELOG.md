@@ -1,4 +1,16 @@
-# Changelog — v1.3.1 (güncel sürüm notları)
+# Changelog — v1.3.2 (güncel sürüm notları)
+
+- **Flatpak desteği:** AnimeciX artık kendi Flatpak depomuzdan tek komutla
+  kuruluyor. `flatpak install --from https://veilzon.github.io/animecix-flatpak/animecix.flatpakref`
+  ile kur, `flatpak update` ile güncelle. Flathub'a gönderim yok; uygulama
+  bizim depomuzdan, yalnızca GNOME runtime'ı Flathub'dan geliyor.
+- **Flatpak'ta Discord ve indirme:** Discord Rich Presence sandbox içinde
+  çalışıyor; indirme klasörüne ve seçtiğin klasörlere erişim var.
+- **Flatpak entegrasyonu:** Masaüstü kısayolunu ve güncellemeleri Flatpak
+  yönetiyor; uygulama içi güncelleme ve sistemden kaldırma yerine
+  `flatpak update` / `flatpak uninstall` yönlendirmesi gösteriliyor.
+
+# Changelog — v1.3.1
 
 - **Discord Rich Presence eklendi:** Discord'da izlediğin anime/film ve
   bölüm bilgisi görünüyor. Varsayılan olarak açık; normal, Flatpak, Snap ve

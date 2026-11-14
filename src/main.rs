@@ -8,6 +8,7 @@ mod diagnostics;
 mod discord_rpc;
 mod download;
 mod download_folders;
+mod flatpak;
 mod font;
 mod http;
 mod icons;
@@ -84,9 +85,14 @@ fn main() {
         eprintln!("[STARTUP] hafif mod aktif (cairo renderer)");
     }
 
-    let app = adw::Application::builder()
-        .application_id("tr.com.animecix")
-        .build();
+    // Flatpak, uygulama kimliğini kendi app-id'siyle eşleştirir; böylece
+    // sistemde kurulu deb/rpm sürümüyle tek örnek çakışması yaşanmaz.
+    let app_id = if crate::flatpak::is_flatpak() {
+        "io.github.veilzon.AnimeciX"
+    } else {
+        "tr.com.animecix"
+    };
+    let app = adw::Application::builder().application_id(app_id).build();
 
     app.connect_activate(startup::activate);
 

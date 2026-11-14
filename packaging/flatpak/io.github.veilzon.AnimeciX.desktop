@@ -7,6 +7,6 @@ Exec=animecix
 Icon=io.github.veilzon.AnimeciX
 Terminal=false
 Categories=AudioVideo;Video;GTK;
-StartupWMClass=AnimeciX
+StartupWMClass=io.github.veilzon.AnimeciX
 Keywords=anime;video;player;izle;
 X-Purpose-Comment=Türkçe altyazılı anime izleyin

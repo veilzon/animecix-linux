@@ -1061,8 +1061,8 @@ mod tests {
                     let _req = String::from_utf8_lossy(&buf[..n]).into_owned();
                     let c = cc.fetch_add(1, O::SeqCst) + 1;
                     mc.fetch_max(c, O::SeqCst);
-                    // Çakışma penceresi: başlıklar gecikir.
-                    std::thread::sleep(std::time::Duration::from_millis(300));
+                    // Çakışma penceresi: işler arası 2–4 sn gecikmeyi de kapsar.
+                    std::thread::sleep(std::time::Duration::from_secs(5));
                     let body = vec![0xCDu8; LEN];
                     let _ = s.write_all(
                         format!(
