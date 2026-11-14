@@ -181,7 +181,7 @@ pub(crate) fn cleanup_stale_appimage_integration(home: &str, current_appimage: &
 }
 
 pub fn install_desktop_entry() -> Result<(), String> {
-    if appimage_integration_disabled() {
+    if crate::native_package::system_package_managed() || appimage_integration_disabled() {
         return Err(
             "Sistem kurulumu (RPM/DEB) algılandı; menü kısayolu sistem paketi tarafından yönetiliyor."
                 .to_string(),
@@ -281,36 +281,6 @@ pub fn install_desktop_entry() -> Result<(), String> {
         .output();
 
     Ok(())
-}
-
-pub fn uninstall_application() {
-    let home = std::env::var("HOME").unwrap_or_default();
-    if home.is_empty() {
-        return;
-    }
-
-    let bin_path = format!("{home}/.local/bin/animecix");
-    let _ = std::fs::remove_file(&bin_path);
-    let _ = std::fs::remove_file(stable_appimage_path(&home));
-
-    let d1 = format!("{home}/.local/share/applications/tr.com.animecix.desktop");
-    let d2 = format!("{home}/.local/share/applications/animecix.desktop");
-    let _ = std::fs::remove_file(&d1);
-    let _ = std::fs::remove_file(&d2);
-
-    let i1 = format!("{home}/.local/share/icons/hicolor/256x256/apps/tr.com.animecix.png");
-    let i2 = format!("{home}/.local/share/icons/hicolor/256x256/apps/animecix.png");
-    let i3 = format!("{home}/.local/share/icons/tr.com.animecix.png");
-    let i4 = format!("{home}/.local/share/icons/animecix.png");
-    let _ = std::fs::remove_file(&i1);
-    let _ = std::fs::remove_file(&i2);
-    let _ = std::fs::remove_file(&i3);
-    let _ = std::fs::remove_file(&i4);
-
-    let apps_dir = format!("{home}/.local/share/applications");
-    let _ = std::process::Command::new("update-desktop-database")
-        .arg(&apps_dir)
-        .output();
 }
 
 fn check_command(cmd: &str) -> bool {

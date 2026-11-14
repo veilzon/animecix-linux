@@ -188,6 +188,8 @@ pub struct App {
     pub current_mpv_pid: Arc<std::sync::atomic::AtomicU64>,
     pub home_acts: Rc<RefCell<Vec<Option<usize>>>>,
     pub dl_manager: crate::download::DownloadManager,
+    /// Discord Rich Presence arka plan bağlantısı.
+    pub discord_rpc: crate::discord_rpc::DiscordRpc,
     /// Bölüm hızlı-arama tuşu: sayfa başına tek controller (birikmeyi önler).
     pub ep_search_controller: Rc<RefCell<Option<gtk::EventControllerKey>>>,
     /// Yan ray: (sayfa, satır, etiket, tam ad) + daraltma durumu
@@ -601,11 +603,17 @@ impl App {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
+        let initial_settings = client.load_settings();
         let (dl_tx, dl_rx) = std::sync::mpsc::channel::<crate::download::UiEvent>();
         let dl_manager =
             crate::download::DownloadManager::new(crate::download::queue_file_path(), dl_tx);
         // Kayıtlı paralellik açılışta motora işlenir (eski dosya → 1).
-        dl_manager.set_max_parallel(client.load_settings().max_parallel_downloads as usize);
+        dl_manager.set_max_parallel(initial_settings.max_parallel_downloads as usize);
+        let discord_rpc =
+            crate::discord_rpc::DiscordRpc::start(crate::discord_rpc::DiscordConfig {
+                enabled: initial_settings.discord_rpc_enabled,
+                socket: initial_settings.discord_rpc_socket.clone(),
+            });
 
         let initial_metrics = crate::layout::initial_metrics();
         let app_inst = Rc::new(Self {
@@ -620,7 +628,7 @@ impl App {
             page_history: Rc::new(RefCell::new(vec![initial_page.clone()])),
             cats: Rc::new(RefCell::new(Vec::new())),
             search_results: Rc::new(RefCell::new(Vec::new())),
-            settings: Rc::new(RefCell::new(client.load_settings())),
+            settings: Rc::new(RefCell::new(initial_settings)),
             progress: Rc::new(RefCell::new(init_progress)),
             progress_bars: Rc::new(RefCell::new(HashMap::new())),
             dl_rows: Rc::new(RefCell::new(HashMap::new())),
@@ -630,6 +638,7 @@ impl App {
             current_mpv_pid: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             home_acts: Rc::new(RefCell::new(Vec::new())),
             dl_manager,
+            discord_rpc,
             ep_search_controller: Rc::new(RefCell::new(None)),
             sidebar_rows: Rc::new(RefCell::new(Vec::new())),
             sidebar_collapsed: Rc::new(Cell::new(false)),
@@ -887,6 +896,13 @@ impl App {
         if !internet_cache_fresh() {
             app_inst.refresh_internet_status();
         }
+        {
+            let rpc_close = app_inst.discord_rpc.clone();
+            app_inst.window.connect_close_request(move |_| {
+                rpc_close.shutdown();
+                glib::Propagation::Proceed
+            });
+        }
         app_inst.apply_goto_arg();
         app_inst
     }
@@ -914,6 +930,7 @@ impl App {
             current_mpv_pid: self.current_mpv_pid.clone(),
             home_acts: self.home_acts.clone(),
             dl_manager: self.dl_manager.clone(),
+            discord_rpc: self.discord_rpc.clone(),
             ep_search_controller: self.ep_search_controller.clone(),
             sidebar_rows: self.sidebar_rows.clone(),
             sidebar_collapsed: self.sidebar_collapsed.clone(),
@@ -2499,6 +2516,12 @@ impl App {
                 *this_save.settings.borrow_mut() = new_s.clone();
                 this_save.client.save_settings(&new_s);
                 this_save.client.set_cf_clearance(&new_s.cf_clearance);
+                this_save
+                    .discord_rpc
+                    .configure(crate::discord_rpc::DiscordConfig {
+                        enabled: new_s.discord_rpc_enabled,
+                        socket: new_s.discord_rpc_socket.clone(),
+                    });
                 if new_s.max_parallel_downloads != old_s.max_parallel_downloads {
                     // Artırım bekleyen işleri hemen başlatır; azaltım
                     // devam edenleri bölmez, yeni alımı kısar.
@@ -2546,11 +2569,22 @@ impl App {
                 }
             },
             move |remove_app| {
-                this_wipe.client.wipe_all_data();
                 if remove_app {
-                    crate::uninstall_application();
-                    std::process::exit(0);
+                    match crate::native_package::uninstall() {
+                        Ok(()) => {
+                            this_wipe.client.wipe_all_data();
+                            std::process::exit(0);
+                        }
+                        Err(e) => {
+                            this_wipe.ops.error(
+                                "Kaldırma başarısız",
+                                &e,
+                                std::time::Duration::from_secs(8),
+                            );
+                        }
+                    }
                 } else {
+                    this_wipe.client.wipe_all_data();
                     this_wipe.ops.info(
                         "Tüm veriler temizlendi ve sıfırlandı!",
                         "",
@@ -3827,6 +3861,15 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.3.1" => Some((
+            "Yenilikler (v1.3.1)",
+            vec![
+                "Discord Rich Presence: izlediğin anime/film ve bölüm bilgisi Discord'da görünüyor; varsayılan açık, Ayarlar → Discord'dan kapatılabilir.",
+                "Geçmişte göreli zaman: 'Az önce', '5 dk önce' gibi etiketler.",
+                "deb/rpm kurulumlarında masaüstü kısayolunu sistem paketi yönetiyor; 'Sistemden kaldır' paketi native paket yöneticisiyle kaldırıyor.",
+                "GitHub güncellemeleri paralel parçalarla daha hızlı indiriliyor.",
+            ],
+        )),
         "1.3.0" => Some((
             "Yenilikler (v1.3.0)",
             vec![
@@ -4057,6 +4100,7 @@ mod decide_retry_tests {
 
     #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.3.1").is_some());
         assert!(super::changelog_items("1.3.0").is_some());
         assert!(super::changelog_items("1.2.6").is_some());
         assert!(super::changelog_items("9.9.9").is_none());

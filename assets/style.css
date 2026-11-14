@@ -468,6 +468,11 @@
                     background-color: alpha(currentColor, 0.07);
                     border-color: alpha(@accent_color, 0.35);
                 }
+                .history-time {
+                    font-size: 0.72em;
+                    font-weight: 500;
+                }
+
                 .status-badge-completed {
                     background-color: alpha(#2ec27e, 0.18);
                     color: #2ec27e;

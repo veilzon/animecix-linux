@@ -5,6 +5,7 @@ mod auth;
 mod covers;
 mod desktop;
 mod diagnostics;
+mod discord_rpc;
 mod download;
 mod download_folders;
 mod font;
@@ -14,6 +15,7 @@ mod layout;
 mod local_playback;
 mod memory;
 mod music;
+mod native_package;
 mod play_quality;
 mod player;
 mod segmented;
@@ -28,7 +30,7 @@ use adw::prelude::*;
 
 pub(crate) use desktop::{
     appimage_integration_disabled, check_all_dependencies, check_desktop_entry_installed,
-    install_desktop_entry, uninstall_application,
+    install_desktop_entry,
 };
 
 pub fn restart_app() {

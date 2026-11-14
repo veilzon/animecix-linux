@@ -124,38 +124,47 @@ impl WelcomeView {
 
         let desk_row = adw::ActionRow::new();
         desk_row.set_title("Uygulama Menüsü");
-        let desk_btn = gtk::Button::with_label(if check_desktop_entry_installed() {
-            "Yeniden Entegre Et"
-        } else {
-            "Menüye Ekle"
-        });
-        desk_btn.add_css_class("pill");
-        if !check_desktop_entry_installed() {
-            desk_btn.add_css_class("suggested-action");
-        } else {
-            desk_btn.add_css_class("flat");
-        }
-        desk_row.set_subtitle(if check_desktop_entry_installed() {
+        let system_managed = crate::native_package::system_package_managed();
+        let appimage_blocked = crate::appimage_integration_disabled();
+        desk_row.set_subtitle(if system_managed || appimage_blocked {
+            "Menü kısayolunu sistem paketi yönetiyor."
+        } else if check_desktop_entry_installed() {
             "AnimeciX menüde hazır."
         } else {
             "Tek tıkla uygulama menüsüne ekle."
         });
-        {
-            let on_toast = Rc::new(on_toast);
-            let row_c = desk_row.clone();
-            let btn_c = desk_btn.clone();
-            desk_btn.connect_clicked(move |_| match install_desktop_entry() {
-                Ok(_) => {
-                    row_c.set_subtitle("AnimeciX menüye eklendi!");
-                    btn_c.set_label("Yeniden Entegre Et");
-                    btn_c.remove_css_class("suggested-action");
-                    btn_c.add_css_class("flat");
-                    (*on_toast)("📌 AnimeciX menüye eklendi!".to_string());
-                }
-                Err(e) => (*on_toast)(format!("⚠️ Menüye eklenemedi: {e}")),
+        if !system_managed {
+            let desk_btn = gtk::Button::with_label(if appimage_blocked {
+                "Sistem Kurulumu Etkin"
+            } else if check_desktop_entry_installed() {
+                "Yeniden Entegre Et"
+            } else {
+                "Menüye Ekle"
             });
+            desk_btn.add_css_class("pill");
+            desk_btn.set_sensitive(!appimage_blocked);
+            if !appimage_blocked && !check_desktop_entry_installed() {
+                desk_btn.add_css_class("suggested-action");
+            } else {
+                desk_btn.add_css_class("flat");
+            }
+            {
+                let on_toast = Rc::new(on_toast);
+                let row_c = desk_row.clone();
+                let btn_c = desk_btn.clone();
+                desk_btn.connect_clicked(move |_| match install_desktop_entry() {
+                    Ok(_) => {
+                        row_c.set_subtitle("AnimeciX menüye eklendi!");
+                        btn_c.set_label("Yeniden Entegre Et");
+                        btn_c.remove_css_class("suggested-action");
+                        btn_c.add_css_class("flat");
+                        (*on_toast)("📌 AnimeciX menüye eklendi!".to_string());
+                    }
+                    Err(e) => (*on_toast)(format!("⚠️ Menüye eklenemedi: {e}")),
+                });
+            }
+            desk_row.add_suffix(&desk_btn);
         }
-        desk_row.add_suffix(&desk_btn);
         setup_group.add(&desk_row);
         root.append(&setup_group);
 

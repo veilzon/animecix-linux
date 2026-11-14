@@ -290,6 +290,28 @@ impl MarathonView {
     }
 }
 
+/// Geçmiş kaydı için göreli zaman etiketi (saf).
+/// `ts` ve `now_sec` epoch saniyesidir; 0 veya gelecek zaman boş döner.
+fn relative_time_label(ts: u64, now_sec: u64) -> String {
+    if ts == 0 || ts > now_sec {
+        return String::new();
+    }
+    let diff = now_sec - ts;
+    if diff < 60 {
+        "Az önce".to_string()
+    } else if diff < 3_600 {
+        format!("{} dk önce", diff / 60)
+    } else if diff < 86_400 {
+        format!("{} saat önce", diff / 3_600)
+    } else if diff < 86_400 * 30 {
+        format!("{} gün önce", diff / 86_400)
+    } else if diff < 86_400 * 365 {
+        format!("{} ay önce", diff / (86_400 * 30))
+    } else {
+        format!("{} yıl önce", diff / (86_400 * 365))
+    }
+}
+
 pub struct HistoryView;
 
 impl HistoryView {
@@ -360,6 +382,11 @@ impl HistoryView {
                 delete_sel_btn.set_sensitive(count > 0);
             }
         };
+
+        let now_sec = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
 
         for h in history {
             let row_box = gtk::Box::new(gtk::Orientation::Horizontal, 10);
@@ -433,6 +460,18 @@ impl HistoryView {
             row_box.append(&chk);
             row_box.append(&pic);
             row_box.append(&text_box);
+
+            let time_str = relative_time_label(h.ts, now_sec);
+            if !time_str.is_empty() {
+                let time = gtk::Label::new(Some(&time_str));
+                time.add_css_class("dim-label");
+                time.add_css_class("history-time");
+                time.set_valign(gtk::Align::Center);
+                time.set_xalign(1.0);
+                time.set_margin_end(4);
+                row_box.append(&time);
+            }
+
             row_box.append(&click_btn);
 
             list_box.append(&row_box);
@@ -667,6 +706,30 @@ impl SettingsView {
 
         root.append(&player_group);
 
+        let discord_group = adw::PreferencesGroup::new();
+        discord_group.set_title("Discord");
+        let (discord_row, discord_sw) = crate::ui::components::switch_row(
+            "Rich Presence",
+            "Discord'da ne izlediğini gösterir (Discord açık değilse sessizce atlanır)",
+            settings.discord_rpc_enabled,
+        );
+        discord_group.add(&discord_row);
+
+        let discord_socket_row = adw::ActionRow::new();
+        discord_socket_row.set_title("Discord Socket Yolu");
+        discord_socket_row.set_subtitle(
+            "Boş bırakırsan otomatik bulunur (Flatpak/Snap dahil). Yolu yazıp Enter'a bas.",
+        );
+        let discord_socket_entry = gtk::Entry::new();
+        discord_socket_entry.set_text(settings.discord_rpc_socket.as_deref().unwrap_or(""));
+        discord_socket_entry.set_placeholder_text(Some("Otomatik"));
+        discord_socket_entry.set_hexpand(true);
+        discord_socket_entry.set_width_chars(28);
+        discord_socket_entry.set_sensitive(settings.discord_rpc_enabled);
+        discord_socket_row.add_suffix(&discord_socket_entry);
+        discord_group.add(&discord_socket_row);
+        root.append(&discord_group);
+
         let perf_group = adw::PreferencesGroup::new();
         perf_group.set_title("Performans");
 
@@ -858,6 +921,8 @@ impl SettingsView {
             let fs_r = fs_sw.clone();
             let ih_r = intro_hint_sw.clone();
             let mh_r = music_hint_sw.clone();
+            let dr = discord_sw.clone();
+            let ds = discord_socket_entry.clone();
             let pq_r = play_q_sw.clone();
             let an_r = auto_next_sw.clone();
             let au_r = auto_update_sw.clone();
@@ -897,6 +962,13 @@ impl SettingsView {
                 updated.auto_fullscreen = fs_r.is_active();
                 updated.show_intro_hint = ih_r.is_active();
                 updated.show_music_hint = mh_r.is_active();
+                updated.discord_rpc_enabled = dr.is_active();
+                let discord_socket = ds.text().trim().to_string();
+                updated.discord_rpc_socket = if discord_socket.is_empty() {
+                    None
+                } else {
+                    Some(discord_socket)
+                };
                 updated.play_ask_quality = pq_r.is_active();
                 updated.auto_next = an_r.is_active();
                 updated.auto_update = au_r.is_active();
@@ -950,6 +1022,14 @@ impl SettingsView {
         intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();
         music_hint_sw.connect_active_notify(move |_| sa5b());
+        let sa_discord = save_all.clone();
+        discord_sw.connect_active_notify(move |_| sa_discord());
+        let sa_discord_socket = save_all.clone();
+        discord_socket_entry.connect_activate(move |_| sa_discord_socket());
+        let discord_socket_entry_c = discord_socket_entry.clone();
+        discord_sw.connect_active_notify(move |sw| {
+            discord_socket_entry_c.set_sensitive(sw.is_active());
+        });
         let sa5c = save_all.clone();
         play_q_sw.connect_active_notify(move |_| sa5c());
         let sa5d = save_all.clone();
@@ -1029,10 +1109,19 @@ impl SettingsView {
         let data_group = adw::PreferencesGroup::new();
         data_group.set_title("Veri Yönetimi");
 
+        let system_managed = crate::native_package::system_package_managed();
         let (uninstall_row, uninstall_sw) = crate::ui::components::switch_row(
-            "Uygulamayı ve Başlatıcıyı da Sistemden Kaldır",
-            "Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler",
-            true,
+            if system_managed {
+                "Paketi Sistemden Kaldır"
+            } else {
+                "Uygulamayı ve Başlatıcıyı da Sistemden Kaldır"
+            },
+            if system_managed {
+                "Paket yöneticisiyle kaldırılır (yetki istenir)"
+            } else {
+                "Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler"
+            },
+            false,
         );
         data_group.add(&uninstall_row);
 
@@ -1093,15 +1182,31 @@ impl SettingsView {
         ver_row.add_suffix(&ver_badge);
         info_group.add(&ver_row);
 
-        let reinstall_btn =
-            gtk::Button::with_label("Masaüstü Başlatıcısını Sistemime Kur / Güncelle");
-        reinstall_btn.add_css_class("flat");
-        reinstall_btn.add_css_class("pill");
-        reinstall_btn.set_margin_top(4);
-        reinstall_btn.connect_clicked(|_| {
-            let _ = crate::install_desktop_entry();
-        });
-        info_group.add(&reinstall_btn);
+        if system_managed {
+            let status = gtk::Label::new(Some("Masaüstü kısayolunu sistem paketi yönetiyor."));
+            status.add_css_class("dim-label");
+            status.set_xalign(0.0);
+            status.set_margin_top(4);
+            info_group.add(&status);
+        } else {
+            let appimage_blocked = crate::appimage_integration_disabled();
+            let reinstall_btn = gtk::Button::with_label(if appimage_blocked {
+                "Masaüstü Başlatıcısı Sistem Paketinde"
+            } else {
+                "Masaüstü Başlatıcısını Sistemime Kur / Güncelle"
+            });
+            reinstall_btn.add_css_class("flat");
+            reinstall_btn.add_css_class("pill");
+            reinstall_btn.set_margin_top(4);
+            reinstall_btn.set_sensitive(!appimage_blocked);
+            if appimage_blocked {
+                reinstall_btn.set_tooltip_text(Some("Menü kısayolunu sistem paketi yönetiyor."));
+            }
+            reinstall_btn.connect_clicked(|_| {
+                let _ = crate::install_desktop_entry();
+            });
+            info_group.add(&reinstall_btn);
+        }
 
         let gh_row = adw::ActionRow::new();
         gh_row.set_title("GitHub");
@@ -1228,7 +1333,31 @@ fn row_search_text(w: &gtk::Widget) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::tr_fold;
+    use super::{relative_time_label, tr_fold};
+
+    #[test]
+    fn relative_time_boundaries() {
+        let now = 1_000_000_000u64;
+        assert_eq!(relative_time_label(0, now), "");
+        assert_eq!(relative_time_label(now + 10, now), "");
+        assert_eq!(relative_time_label(now, now), "Az önce");
+        assert_eq!(relative_time_label(now - 59, now), "Az önce");
+        assert_eq!(relative_time_label(now - 60, now), "1 dk önce");
+        assert_eq!(relative_time_label(now - 3_599, now), "59 dk önce");
+        assert_eq!(relative_time_label(now - 3_600, now), "1 saat önce");
+        assert_eq!(relative_time_label(now - 86_399, now), "23 saat önce");
+        assert_eq!(relative_time_label(now - 86_400, now), "1 gün önce");
+        assert_eq!(
+            relative_time_label(now - 86_400 * 30 + 1, now),
+            "29 gün önce"
+        );
+        assert_eq!(relative_time_label(now - 86_400 * 30, now), "1 ay önce");
+        assert_eq!(
+            relative_time_label(now - 86_400 * 365 + 1, now),
+            "12 ay önce"
+        );
+        assert_eq!(relative_time_label(now - 86_400 * 365, now), "1 yıl önce");
+    }
 
     #[test]
     fn tr_fold_turkish_cases() {

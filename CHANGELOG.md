@@ -1,4 +1,19 @@
-# Changelog — v1.3.0 (güncel sürüm notları)
+# Changelog — v1.3.1 (güncel sürüm notları)
+
+- **Discord Rich Presence eklendi:** Discord'da izlediğin anime/film ve
+  bölüm bilgisi görünüyor. Varsayılan olarak açık; normal, Flatpak, Snap ve
+  Vesktop/Vencord kurulumlarını otomatik buluyor, Ayarlar → Discord'dan
+  kapatılıp socket yolu değiştirilebiliyor. Süre/geri sayım gösterilmiyor.
+- **Geçmişte göreli zaman:** izleme geçmişinde “Az önce”, “5 dk önce”,
+  “2 gün önce” gibi etiketler görünüyor.
+- **Sistem paketi entegrasyonu:** deb/rpm kurulumlarında masaüstü kısayolu
+  paket tarafından yönetiliyor; gereksiz “Kur/Güncelle” düğmesi kaldırıldı.
+  “Sistemden kaldır” artık paketi native paket yöneticisiyle kaldırıyor.
+- **Hızlı güncelleme indirmesi:** GitHub'dan indirilen AppImage/deb/rpm
+  güncellemeleri paralel parçalarla indiriliyor; sunucu desteklemezse tek
+  bağlantıya düşülüyor.
+
+# Changelog — v1.3.0
 
 - **İstatistikler sayfası eklendi:** izlediğin anime ve bölüm sayısı,
   tahmini izleme süresi, en çok izlediğin animeler, sezon dağılımı ve

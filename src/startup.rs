@@ -2,9 +2,9 @@ use adw::prelude::*;
 
 use crate::app::App;
 use crate::desktop::{
-    appimage_integration_blocked, check_desktop_entry_installed,
+    appimage_integration_disabled, check_desktop_entry_installed,
     cleanup_stale_appimage_integration, desktop_exec_target, install_desktop_entry,
-    parse_desktop_exec, system_installation_present,
+    parse_desktop_exec,
 };
 use crate::icons;
 use crate::update;
@@ -72,14 +72,20 @@ pub(crate) fn activate(app: &adw::Application) {
             gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
         );
 
-        let appimage = std::env::var("APPIMAGE").ok();
-        let system_install = system_installation_present();
-        if appimage_integration_blocked(appimage.as_deref(), system_install) {
-            // Sistem paketi menü girdisinin sahibidir: AppImage yalnızca
-            // taşınabilir çalışır. Eski sürümlerin bıraktığı kullanıcı
-            // kısayolu ve sabit kopya arka planda temizlenir.
+        if crate::native_package::system_package_managed() {
+            // deb/rpm paketi menü girdisinin sahibidir. Kullanıcı seviyesinde
+            // .desktop yazmayız; eski sürümlerin bıraktığı girdileri temizleriz.
+            eprintln!("[STARTUP] sistem paketi algılandı; kullanıcı entegrasyonu temizleniyor");
+            std::thread::spawn(|| {
+                if let Err(e) = crate::native_package::cleanup_user() {
+                    eprintln!("[STARTUP] kullanıcı entegrasyonu temizlenemedi: {e}");
+                }
+            });
+        } else if appimage_integration_disabled() {
+            // AppImage + sistem kurulumu: eski davranış korunur. AppImage
+            // yalnızca taşınabilir çalışır; sistem menü girdisini gölgelemez.
             let home = std::env::var("HOME").unwrap_or_default();
-            let current = appimage.unwrap_or_default();
+            let current = std::env::var("APPIMAGE").unwrap_or_default();
             if !home.is_empty() {
                 eprintln!("[STARTUP] sistem kurulumu algılandı; AppImage entegrasyonu atlandı");
                 std::thread::spawn(move || {

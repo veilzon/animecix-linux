@@ -1,7 +1,9 @@
-use futures::StreamExt;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
+use std::sync::Arc;
 
 use adw::prelude::*;
 use glib::ControlFlow;
@@ -154,6 +156,13 @@ fn normalize_pkg_version(raw: &str) -> String {
     s[..end].trim_end_matches('.').to_string()
 }
 
+/// Etiket (`v1.3.1`) ile paket yöneticisinin sürümü (`1.3.1`, `1.3.1-1.fc40`)
+/// normalize edilerek karşılaştırılır.
+fn package_version_matches(installed: Option<&str>, expected: &str) -> bool {
+    let expected = normalize_pkg_version(expected);
+    !expected.is_empty() && installed == Some(expected.as_str())
+}
+
 pub fn needs_update(current: &str, latest: &str) -> bool {
     fn parse(v: &str) -> Vec<u32> {
         v.trim_start_matches('v')
@@ -220,6 +229,7 @@ fn package_magic_ok(kind: InstallKind, bytes: &[u8]) -> bool {
     }
 }
 
+#[allow(dead_code)]
 pub fn replace_target(bytes: &[u8], target: &Path) -> Result<(), String> {
     if bytes.len() < 4 || &bytes[0..4] != b"\x7fELF" {
         return Err("İndirilen dosya geçerli bir AppImage değil".into());
@@ -284,60 +294,112 @@ fn updates_dir() -> PathBuf {
     base.join("animecix").join("updates")
 }
 
-fn download_bytes<F>(url: &str, mut on_progress: F) -> Result<Vec<u8>, String>
-where
-    F: FnMut(u64, u64) + Send + 'static,
-{
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|e| e.to_string())?;
-    rt.block_on(async {
-        let client = reqwest::Client::builder()
-            .user_agent("animecix-updater")
-            .build()
-            .map_err(|e| e.to_string())?;
-        let resp = client.get(url).send().await.map_err(|e| e.to_string())?;
-        if !resp.status().is_success() {
-            return Err(format!("İndirme hatası: {}", resp.status()));
+type Progress = Arc<dyn Fn(u64, u64) + Send + Sync>;
+
+/// Güncelleme dosyasını önce paralel (Range) dener; sunucu desteklemezse
+/// tek bağlantıya düşer. `.part` hedefin yanında tutulur (aynı dosya sistemi).
+fn download_file(
+    url: &str,
+    dest: &Path,
+    segments: usize,
+    min_segmented: u64,
+    progress: Progress,
+) -> Result<(), String> {
+    let client = http_client()?;
+    let file_name = dest
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("update.bin");
+    let part = dest.with_file_name(format!(".{file_name}.part"));
+    let _ = std::fs::remove_file(&part);
+
+    if let Some(total) = crate::segmented::probe_len(&client, url, None) {
+        if total >= min_segmented {
+            let cancel = AtomicBool::new(false);
+            let cb = |done: u64, total: u64| progress(done, total);
+            match crate::segmented::download_segmented(
+                &client,
+                url,
+                None,
+                &part,
+                total,
+                segments.max(1),
+                &cb,
+                &cancel,
+            ) {
+                Ok(()) => {
+                    std::fs::rename(&part, dest).map_err(|e| format!("tamamlama: {e}"))?;
+                    return Ok(());
+                }
+                Err(e) => {
+                    eprintln!("[UPD] paralel indirme başarısız, tekliye düşülüyor: {e}");
+                    let _ = std::fs::remove_file(&part);
+                }
+            }
         }
-        let total = resp.content_length().unwrap_or(0);
-        let mut buf: Vec<u8> = Vec::with_capacity(total as usize);
-        let mut stream = resp.bytes_stream();
-        while let Some(chunk) = stream.next().await {
-            let chunk = chunk.map_err(|e| e.to_string())?;
-            buf.extend_from_slice(&chunk);
-            on_progress(buf.len() as u64, total);
+    }
+
+    let mut resp = client
+        .get(url)
+        .header("User-Agent", crate::download::UA)
+        .send()
+        .map_err(|e| format!("bağlantı: {e}"))?;
+    if !resp.status().is_success() {
+        return Err(format!("HTTP {}", resp.status()));
+    }
+    let total = resp.content_length().unwrap_or(0);
+    let mut file = std::fs::File::create(&part).map_err(|e| format!("dosya: {e}"))?;
+    let mut done = 0u64;
+    let mut buf = vec![0u8; crate::download::CHUNK];
+    loop {
+        let n = resp.read(&mut buf).map_err(|e| format!("ağ: {e}"))?;
+        if n == 0 {
+            break;
         }
-        Ok::<Vec<u8>, String>(buf)
-    })
+        file.write_all(&buf[..n])
+            .map_err(|e| format!("yazma: {e}"))?;
+        done += n as u64;
+        progress(done, total);
+    }
+    file.flush().map_err(|e| format!("flush: {e}"))?;
+    drop(file);
+    std::fs::rename(&part, dest).map_err(|e| format!("tamamlama: {e}"))?;
+    progress(done, total.max(done));
+    Ok(())
 }
 
-pub fn download_update<F>(url: &str, target: &Path, on_progress: F) -> Result<(), String>
-where
-    F: FnMut(u64, u64) + Send + 'static,
-{
-    let bytes = download_bytes(url, on_progress)?;
-    replace_target(&bytes, target)
+pub fn download_update(url: &str, target: &Path, progress: Progress) -> Result<(), String> {
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    let file_name = target
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("AnimeciX-x86_64.AppImage");
+    let tmp = parent.join(format!(".{file_name}.update-{}", std::process::id()));
+    let _ = std::fs::remove_file(&tmp);
+    download_file(url, &tmp, 6, 1 << 20, progress)?;
+    let mut f = std::fs::File::open(&tmp).map_err(|e| e.to_string())?;
+    let mut magic = [0u8; 4];
+    f.read_exact(&mut magic).map_err(|e| e.to_string())?;
+    if &magic != b"\x7fELF" {
+        let _ = std::fs::remove_file(&tmp);
+        return Err("İndirilen dosya geçerli bir AppImage değil".into());
+    }
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o755));
+    }
+    std::fs::rename(&tmp, target).map_err(|e| format!("güncelleme uygulanamadı: {e}"))?;
+    Ok(())
 }
 
 /// Paketi indirir, sihirli baytları doğrular ve önbellek dizinine yazar.
-fn download_package<F>(
+fn download_package(
     kind: InstallKind,
     url: &str,
     asset_name: &str,
-    on_progress: F,
-) -> Result<PathBuf, String>
-where
-    F: FnMut(u64, u64) + Send + 'static,
-{
-    let bytes = download_bytes(url, on_progress)?;
-    if !package_magic_ok(kind, &bytes) {
-        return Err(format!(
-            "İndirilen dosya geçerli bir {} değil",
-            kind.label()
-        ));
-    }
+    progress: Progress,
+) -> Result<PathBuf, String> {
     let dir = updates_dir();
     std::fs::create_dir_all(&dir).map_err(|e| format!("Güncelleme dizini oluşturulamadı: {e}"))?;
     let file_name = Path::new(asset_name)
@@ -346,7 +408,17 @@ where
         .filter(|s| !s.is_empty())
         .unwrap_or("animecix-update.pkg");
     let dest = dir.join(file_name);
-    std::fs::write(&dest, &bytes).map_err(|e| format!("Paket yazılamadı: {e}"))?;
+    download_file(url, &dest, 4, 1 << 20, progress)?;
+    let mut f = std::fs::File::open(&dest).map_err(|e| e.to_string())?;
+    let mut head = [0u8; 256];
+    let n = f.read(&mut head).map_err(|e| e.to_string())?;
+    if !package_magic_ok(kind, &head[..n]) {
+        let _ = std::fs::remove_file(&dest);
+        return Err(format!(
+            "İndirilen dosya geçerli bir {} değil",
+            kind.label()
+        ));
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
@@ -354,70 +426,6 @@ where
         let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o644));
     }
     Ok(dest)
-}
-
-/// Kurulum komutu (saf): (program, argümanlar). Paketler polkit ile kurulur.
-fn install_args(kind: InstallKind, path: &Path) -> Option<(String, Vec<String>)> {
-    let pkg = path.display().to_string();
-    match kind {
-        InstallKind::Deb => Some((
-            "pkexec".to_string(),
-            vec![
-                "apt-get".to_string(),
-                "install".to_string(),
-                "-y".to_string(),
-                "-o".to_string(),
-                "DPkg::Lock::Timeout=120".to_string(),
-                pkg,
-            ],
-        )),
-        InstallKind::Rpm => Some((
-            "pkexec".to_string(),
-            vec![
-                "dnf".to_string(),
-                "install".to_string(),
-                "-y".to_string(),
-                pkg,
-            ],
-        )),
-        _ => None,
-    }
-}
-
-fn run_install(kind: InstallKind, path: &Path) -> Result<(), String> {
-    let Some((program, args)) = install_args(kind, path) else {
-        return Err("Bu kurulum türünde paket kurulumu desteklenmiyor".into());
-    };
-    let out = Command::new(&program).args(&args).output().map_err(|e| {
-        format!(
-            "{program} çalıştırılamadı: {e}. Paketi elle kurabilirsiniz: {}",
-            path.display()
-        )
-    })?;
-    if out.status.success() {
-        return Ok(());
-    }
-    let code = out.status.code().unwrap_or(-1);
-    if code == 126 || code == 127 {
-        return Err("Kurulum için yetki verilmedi (iptal edildi).".into());
-    }
-    let stderr = String::from_utf8_lossy(&out.stderr);
-    let detail = stderr
-        .lines()
-        .rev()
-        .take(3)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect::<Vec<_>>()
-        .join(" ");
-    let mut msg = format!("Paket kurulumu başarısız (çıkış {code}).");
-    if !detail.is_empty() {
-        msg.push(' ');
-        msg.push_str(&detail);
-    }
-    msg.push_str(&format!(" Paketi elle kurabilirsiniz: {}", path.display()));
-    Err(msg)
 }
 
 /// Yeniden başlatma kabuğu: `$0` = çalıştırılacak yol. Kabuk hemen başlar,
@@ -575,6 +583,7 @@ struct UpdateJob {
     kind: InstallKind,
     url: String,
     asset_name: String,
+    expected_version: String,
     appimage_target: Option<String>,
 }
 
@@ -631,6 +640,7 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
                 kind,
                 url: url.clone(),
                 asset_name: asset_name.clone(),
+                expected_version: tag.clone(),
                 appimage_target: appimage_target.clone(),
             };
             run_update_with_progress(window.clone(), job);
@@ -676,10 +686,15 @@ fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
         kind,
         url,
         asset_name,
+        expected_version,
         appimage_target,
     } = job;
+    let expected_version_worker = expected_version.clone();
     let (tx, rx) = channel::<UpdMsg>();
-    let prog_tx = tx.clone();
+    let progress_tx = tx.clone();
+    let progress: Progress = Arc::new(move |cur, total| {
+        let _ = progress_tx.send(UpdMsg::Progress(cur, total));
+    });
     let url_s = url.clone();
     let asset_s = asset_name.clone();
     let target_thread = appimage_target.clone();
@@ -688,28 +703,33 @@ fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
         let result = match kind {
             InstallKind::AppImage => {
                 let target = PathBuf::from(target_thread.unwrap_or_default());
-                download_update(&url_s, &target, move |cur, total| {
-                    let _ = prog_tx.send(UpdMsg::Progress(cur, total));
-                })
+                download_update(&url_s, &target, progress)
             }
-            _ => {
-                let prog = prog_tx.clone();
-                match download_package(kind, &url_s, &asset_s, move |cur, total| {
-                    let _ = prog.send(UpdMsg::Progress(cur, total));
-                }) {
-                    Ok(path) => {
-                        let _ = tx.send(UpdMsg::Step("Kuruluyor… (yetki istenebilir)".into()));
-                        match run_install(kind, &path) {
-                            Ok(()) => {
-                                let _ = std::fs::remove_file(&path);
+            _ => match download_package(kind, &url_s, &asset_s, progress) {
+                Ok(path) => {
+                    let _ = tx.send(UpdMsg::Step("Kuruluyor… (yetki istenebilir)".into()));
+                    match crate::native_package::install(&path) {
+                        Ok(()) => {
+                            let _ = std::fs::remove_file(&path);
+                            let installed = installed_package_version(kind);
+                            if package_version_matches(
+                                installed.as_deref(),
+                                &expected_version_worker,
+                            ) {
                                 Ok(())
+                            } else {
+                                Err(format!(
+                                    "Kurulum sonrası sürüm beklenen {} değil: {}",
+                                    expected_version_worker,
+                                    installed.unwrap_or_else(|| "okunamadı".to_string())
+                                ))
                             }
-                            Err(e) => Err(e),
                         }
+                        Err(e) => Err(e),
                     }
-                    Err(e) => Err(e),
                 }
-            }
+                Err(e) => Err(e),
+            },
         };
         match result {
             Ok(()) => {
@@ -764,6 +784,7 @@ fn start_update_worker<W: IsA<gtk::Window> + Clone + 'static>(
                     kind,
                     url: url_c.clone(),
                     asset_name: asset_c.clone(),
+                    expected_version: expected_version.clone(),
                     appimage_target: target_c.clone(),
                 };
                 retry.connect_clicked(move |_| {
@@ -850,20 +871,6 @@ mod tests {
     }
 
     #[test]
-    fn install_args_use_pkexec_and_pkg_manager() {
-        let (prog, args) = install_args(InstallKind::Deb, Path::new("/tmp/x.deb")).unwrap();
-        assert_eq!(prog, "pkexec");
-        assert_eq!(args[0], "apt-get");
-        assert!(args.contains(&"/tmp/x.deb".to_string()));
-        assert!(install_args(InstallKind::AppImage, Path::new("/tmp/x.AppImage")).is_none());
-
-        let (prog, args) = install_args(InstallKind::Rpm, Path::new("/tmp/x.rpm")).unwrap();
-        assert_eq!(prog, "pkexec");
-        assert_eq!(args[0], "dnf");
-        assert!(args.contains(&"/tmp/x.rpm".to_string()));
-    }
-
-    #[test]
     fn updates_dir_is_user_cache() {
         let d = updates_dir();
         assert!(d.ends_with("animecix/updates"), "beklenmeyen dizin: {d:?}");
@@ -897,16 +904,32 @@ mod tests {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = listener.local_addr().unwrap().port();
         std::thread::spawn(move || {
-            for stream in listener.incoming().take(1) {
+            for stream in listener.incoming().take(10) {
                 let mut s = stream.unwrap();
                 let mut buf = [0u8; 4096];
-                let _ = s.read(&mut buf); // istemci isteğini oku
-                let resp = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/octet-stream\r\nConnection: close\r\n\r\n",
-                    elf.len()
-                );
-                s.write_all(resp.as_bytes()).unwrap();
-                s.write_all(elf).unwrap();
+                let n = s.read(&mut buf).unwrap_or(0);
+                let req = String::from_utf8_lossy(&buf[..n]);
+                if req.starts_with("HEAD ") {
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        elf.len()
+                    );
+                    s.write_all(resp.as_bytes()).unwrap();
+                } else if req.contains("Range: bytes=0-0") {
+                    let resp = format!(
+                        "HTTP/1.1 206 Partial Content\r\nContent-Length: 1\r\nContent-Range: bytes 0-0/{}\r\nConnection: close\r\n\r\n",
+                        elf.len()
+                    );
+                    s.write_all(resp.as_bytes()).unwrap();
+                    s.write_all(&elf[..1]).unwrap();
+                } else {
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        elf.len()
+                    );
+                    s.write_all(resp.as_bytes()).unwrap();
+                    s.write_all(elf).unwrap();
+                }
                 s.flush().unwrap();
             }
         });
@@ -916,9 +939,10 @@ mod tests {
         let _ = std::fs::remove_file(&target);
         let progress = std::sync::Arc::new(std::sync::Mutex::new((0u64, 0u64)));
         let prog = progress.clone();
-        let r = download_update(&url, &target, move |cur, total| {
+        let progress_cb: Progress = std::sync::Arc::new(move |cur, total| {
             *prog.lock().unwrap() = (cur, total);
         });
+        let r = download_update(&url, &target, progress_cb);
         assert!(r.is_ok(), "indirme başarısız: {:?}", r.err());
         assert!(target.exists(), "hedef dosya yazılmadı");
         assert_eq!(std::fs::read(&target).unwrap(), elf);
@@ -933,9 +957,20 @@ mod tests {
         let target =
             std::env::temp_dir().join(format!("animecix-dl-fail-{}.AppImage", std::process::id()));
         let _ = std::fs::remove_file(&target);
-        let r = download_update("http://127.0.0.1:1/nope", &target, |_, _| {});
+        let progress: Progress = std::sync::Arc::new(|_, _| {});
+        let r = download_update("http://127.0.0.1:1/nope", &target, progress);
         assert!(r.is_err(), "erişilemeyen adres başarısız olmalı");
         std::fs::remove_file(&target).ok();
+    }
+
+    #[test]
+    fn package_version_matches_normalizes_tag() {
+        assert!(package_version_matches(Some("1.3.1"), "v1.3.1"));
+        assert!(package_version_matches(Some("1.3.1"), "1.3.1"));
+        assert!(package_version_matches(Some("1.3.1"), "v1.3.1-1.fc40"));
+        assert!(!package_version_matches(Some("1.3.0"), "v1.3.1"));
+        assert!(!package_version_matches(None, "v1.3.1"));
+        assert!(!package_version_matches(Some("1.3.1"), "bozuk"));
     }
 
     #[test]

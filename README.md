@@ -27,14 +27,15 @@ otomatik güncelleyebilir. Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), isteğe bağlı oynatma kalite seçici; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
+- **Discord Rich Presence**: Discord'da izlediğin anime/film ve bölüm bilgisi görünür; varsayılan açık, Ayarlar → Discord'dan kapatılabilir veya socket yolu değiştirilebilir
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme; indirilen bölümler listede işaretlenir, sağ tıkla indirilebilir ve normal oynatmada yerel dosyadan öncelikli açılır
 - **Bellek toparlama**: MPV kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
 - **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
-- **Otomatik güncelleme**: AppImage, .deb ve .rpm kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (paketlerde yetki istenir)
+- **Otomatik güncelleme**: AppImage, .deb ve .rpm kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (paketlerde yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
-- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, masaüstü başlatıcı, veri sıfırlama
+- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, masaüstü başlatıcı, veri sıfırlama
 - **Hızlı yükleme**: HTTP/2 multiplexing ve bağlantı havuzu (keep-alive);
   kapak görselleri paralel (12 worker) indirilir
 
@@ -131,6 +132,11 @@ Uygulama bir **AppImage** olarak çalışıyorsa başlangıçta yeni sürümü k
 - **Otomatik:** *Ayarlar → Güncelleme → Otomatik Güncelleme* açıkken yeni sürüm bulunursa
   onay kutusu çıkar; “Güncelle ve Yeniden Başlat” deyince indirir, kurar ve uygulamayı yeniden başlatır.
 - **Elle:** *Ayarlar → Şimdi Güncelle* ile istediğin an kontrol edebilirsin.
+- **Paketler:** .deb/.rpm güncellemeleri GitHub'dan indirilip sistem paket
+  yöneticisiyle (`apt-get`/`dnf`/`zypper`) kurulur; kurulum sonrası sürüm
+  doğrulanır. deb/rpm kurulumlarında masaüstü kısayolunu sistem paketi yönetir.
+- **Paralel indirme:** Güncelleme dosyaları birden çok bağlantıyla indirilir;
+  sunucu desteklemezse tek bağlantıya düşülür.
 Kaynaktan derlenen sürümde otomatik güncelleme devre dışıdır.
 
 ---

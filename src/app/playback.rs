@@ -568,6 +568,18 @@ impl App {
 
         let saved_pos = self.client.start_pos(tid, season, episode);
 
+        let is_movie = title.title_type.as_deref() == Some("movie");
+        let discord_state = crate::discord_rpc::episode_state(season, episode, &ep.name, is_movie);
+        self.discord_rpc
+            .set_activity(crate::discord_rpc::Activity::from_playback(
+                &title.name,
+                &discord_state,
+                saved_pos.unwrap_or(0.0),
+                0.0,
+                false,
+                title.poster.as_deref(),
+            ));
+
         let sock_path = format!("/tmp/animecix-mpv-{tid}-{season}-{episode}.sock");
         let _ = std::fs::remove_file(&sock_path);
 
@@ -659,6 +671,7 @@ impl App {
             let media_title_h = media_title.clone();
             let gen_play = gen;
             let play_gen_h = self.play_gen.clone();
+            let discord_h = self.discord_rpc.clone();
             let opening_op_id_h = self.opening_op_id.clone();
             let opening_op_shown_at_h = self.opening_op_shown_at.clone();
             glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
@@ -742,6 +755,7 @@ impl App {
                             }
                             PlayEvent::Closed(ev_gen) => {
                                 if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) == ev_gen {
+                                    discord_h.clear();
                                     crate::memory::trim_after_playback(&covers_h, &client_h);
                                 }
                             }
@@ -749,6 +763,7 @@ impl App {
                                 if play_gen_h.load(std::sync::atomic::Ordering::SeqCst) != ev_gen {
                                     continue;
                                 }
+                                discord_h.clear();
                                 let current =
                                     opening_op_id_h.borrow().as_deref() == Some(op_id_h.as_str());
                                 if current {
@@ -809,10 +824,12 @@ impl App {
             let show_intro_hint_c = show_intro_hint;
             let _client_c = client.clone();
             let _current_shared_c = current_shared.clone();
+            let discord_poll = self.discord_rpc.clone();
             let (sender, receiver) = std::sync::mpsc::channel::<(f64, f64)>();
             std::thread::spawn(move || {
                 let mut op_prompted = false;
                 let mut ed_prompted = false;
+                let mut discord_cleared = false;
 
                 while alive.load(std::sync::atomic::Ordering::Relaxed)
                     && !std::path::Path::new(&sock_poll).exists()
@@ -828,6 +845,10 @@ impl App {
                         let snap = skip_c.lock().unwrap().clone();
                         let (pos, dur) =
                             crate::player::query_mpv_position(&sock_c).unwrap_or((0.0, 0.0));
+                        if !discord_cleared && crate::discord_rpc::playback_finished(pos, dur) {
+                            discord_poll.clear();
+                            discord_cleared = true;
+                        }
                         if show_intro_hint_c {
                             if let Some(st) = snap.0.op_start {
                                 if !op_prompted && pos >= (st - 1.5) && pos <= (st + 25.0) {

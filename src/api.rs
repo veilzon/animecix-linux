@@ -772,6 +772,12 @@ pub struct Settings {
     /// Yenilik popup'ı en son hangi sürümde gösterildi (her sürümde bir kez).
     #[serde(default)]
     pub seen_changelog: String,
+    /// Discord Rich Presence açık mı? (varsayılan açık)
+    #[serde(default = "default_true")]
+    pub discord_rpc_enabled: bool,
+    /// Discord IPC soketi; boşsa otomatik bulunur.
+    #[serde(default)]
+    pub discord_rpc_socket: Option<String>,
 }
 fn default_loading() -> String {
     "overlay".into()
@@ -1246,6 +1252,8 @@ impl Default for Settings {
             cover_quality: default_cover_quality(),
             download_dir: None,
             seen_changelog: String::new(),
+            discord_rpc_enabled: true,
+            discord_rpc_socket: None,
         }
     }
 }
@@ -4426,6 +4434,35 @@ mod tests {
         let back: Settings = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(back.mpv_cache_forward_mb, 96);
         assert_eq!(back.mpv_cache_back_mb, 24);
+    }
+
+    #[test]
+    fn settings_discord_defaults_on_and_auto_socket() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(
+            old.discord_rpc_enabled,
+            "Discord RPC varsayılan açık olmalı"
+        );
+        assert_eq!(old.discord_rpc_socket, None);
+        let s = Settings::default();
+        assert!(s.discord_rpc_enabled);
+        assert_eq!(s.discord_rpc_socket, None);
+    }
+
+    #[test]
+    fn settings_discord_roundtrip() {
+        let s = Settings {
+            discord_rpc_enabled: false,
+            discord_rpc_socket: Some("/tmp/discord-ipc-0".into()),
+            ..Settings::default()
+        };
+        let json = serde_json::to_string(&s).expect("serialize");
+        let back: Settings = serde_json::from_str(&json).expect("deserialize");
+        assert!(!back.discord_rpc_enabled);
+        assert_eq!(
+            back.discord_rpc_socket.as_deref(),
+            Some("/tmp/discord-ipc-0")
+        );
     }
 
     #[test]
