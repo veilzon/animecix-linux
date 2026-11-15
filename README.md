@@ -8,10 +8,10 @@
 
 **Linux için GTK4/libadwaita ile yazılmış anime, dizi ve film izleme masaüstü istemcisi.**
 
-**Flatpak** (önerilen) veya tek dosyalık taşınabilir **AppImage** olarak dağıtılır.
-Flatpak sürümü kendi depomuzdan kurulur ve `flatpak update` ile güncellenir; AppImage
-sistemde GTK4, libadwaita ve mpv kuruluysa ek kurulum gerektirmez. Sürüm notları için
-[CHANGELOG.md](CHANGELOG.md).
+**Flatpak** (önerilen), **.deb/.rpm** paketleri veya tek dosyalık taşınabilir
+**AppImage** olarak dağıtılır. Flatpak kendi depomuzdan kurulur ve `flatpak update`
+ile güncellenir; AppImage/deb/rpm sistemdeki GTK4, libadwaita ve mpv'yi kullanır.
+Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
 > kullanır. Hizmet sağlayıcıya zarar vermeden, kendi sorumluluğunuzda kullanın.
@@ -106,17 +106,48 @@ flatpak uninstall io.github.veilzon.AnimeciX
    ```
 
 AppImage tek dosyadır; sistemde GTK4, libadwaita ve mpv varsa ek kurulum gerektirmez.
-İstersen masaüstü başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** ile ekleyebilirsin.
+Minimal aria2 paket içinde gelir; ayrıca `aria2` kurmana gerek yoktur. İstersen masaüstü
+başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** ile ekleyebilirsin.
 
-#### Sistem gereksinimleri
+### Debian / Ubuntu (.deb)
 
-- x86_64 Linux (Wayland veya X11)
-- GTK ≥ 4.8 ve libadwaita ≥ 1.2
-- `mpv` (`PATH`'te)
-- `libfuse.so.2`; yoksa `./AnimeciX-x86_64.AppImage --appimage-extract-and-run`
-- Mevcut release için glibc ≥ 2.39
+[Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
+`animecix_1.3.2_amd64.deb` dosyasını indir veya doğrudan:
 
-Dağıtım bazında runtime paketleri:
+[**animecix_1.3.2_amd64.deb**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.2/animecix_1.3.2_amd64.deb)
+
+```bash
+sudo apt install ./animecix_1.3.2_amd64.deb
+```
+
+Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
+bağımlılıkları apt tarafından kurulur. Güncellemeler uygulama içinden veya
+`sudo apt upgrade` ile yapılır.
+
+### Fedora / RPM
+
+[Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
+`animecix-1.3.2-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
+
+[**animecix-1.3.2-1.fc40.x86_64.rpm**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.2/animecix-1.3.2-1.fc40.x86_64.rpm)
+
+```bash
+sudo dnf install ./animecix-1.3.2-1.fc40.x86_64.rpm
+```
+
+Fedora 40+ içindir. `mpv`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
+kurulur. Güncellemeler uygulama içinden veya `sudo dnf upgrade` ile yapılır.
+
+### Sistem gereksinimleri
+
+- **Ortak:** x86_64 Linux (Wayland veya X11) ve internet bağlantısı.
+- **Flatpak:** Flatpak kurulu olmalı; GNOME runtime'ı Flathub'dan otomatik gelir.
+- **AppImage:** glibc ≥ 2.36, GTK ≥ 4.8, libadwaita ≥ 1.2 ve `mpv` (`PATH`'te).
+  `libfuse.so.2` yoksa `./AnimeciX-x86_64.AppImage --appimage-extract-and-run` kullan.
+- **.deb:** Debian 12+ / Ubuntu 24.04+; bağımlılıklar apt tarafından kurulur.
+- **.rpm:** Fedora 40+; bağımlılıklar dnf tarafından kurulur.
+
+AppImage için dağıtım paketleri:
 
 ```bash
 # Debian/Ubuntu (libfuse2 adı sürüme göre libfuse2t64 olabilir)
@@ -128,6 +159,8 @@ sudo dnf install gtk4 libadwaita mpv fuse-libs
 # Arch
 sudo pacman -S gtk4 libadwaita mpv fuse2
 ```
+
+> Tüm sürümler ve eski paketler: [Releases](https://github.com/veilzon/animecix-linux/releases).
 
 ### Kaynaktan derleme
 
