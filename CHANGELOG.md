@@ -3,8 +3,9 @@
 - **Güvenlik güncellemeleri:** TLS sertifika doğrulaması (rustls-webpki,
   webpki-roots), tokio ve zstd bağımlılıkları güncellendi; yeni RustSec
   duyuruları kapatıldı.
-- **Flatpak mpv düzeltmesi:** Flatpak'taki mpv, `NDEBUG` etkin release olarak derleniyor;
-  `mpv --version` ve kısa video oynatma artık CI'da otomatik test ediliyor.
+- **Flatpak mpv düzeltmesi:** mpv 0.36'daki `m_option_value` union
+  başlatma hatası (GCC 15/glibc 2.42'de `mpv --version` çökmesi) upstream
+  düzeltmesiyle giderildi; `mpv --version` ve kısa video oynatma CI'da test ediliyor.
 - **Flatpak CI güvenilirliği:** Cache'ten gelen eski kurulum temizlenerek
   her zaman yeni build'in test edilmesi sağlandı.
 

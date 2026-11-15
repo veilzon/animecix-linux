@@ -3873,7 +3873,7 @@ fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
             "Yenilikler (v1.3.4)",
             vec![
                 "Güvenlik: TLS sertifika doğrulaması, tokio ve zstd bağımlılıkları güncellendi.",
-                "Flatpak: mpv NDEBUG/release derlemesi ve kısa video oynatma testi CI'da doğrulanıyor.",
+                "Flatpak: mpv 0.36 m_option_value düzeltmesi; mpv --version ve kısa video oynatma CI'da doğrulanıyor.",
                 "Flatpak güncellemeleri açılışta denetleniyor; güncelleme tek tıkla kurulup uygulama yeniden başlıyor.",
             ],
         )),
