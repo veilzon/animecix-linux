@@ -18,6 +18,7 @@ BuildRequires:  clang-devel
 BuildRequires:  perl
 BuildRequires:  nasm
 BuildRequires:  zlib-devel
+BuildRequires:  git
 
 Requires:       mpv
 Requires:       gtk4
@@ -73,5 +74,5 @@ sh %{_datadir}/animecix/post-install-cleanup.sh || :
 %{_datadir}/animecix
 
 %changelog
-* Sat Nov 15 2026 Yasar Efe Celik <yasar.123.sevda@gmail.com> - 1.3.2-1
+* Sun Nov 15 2026 Yasar Efe Celik <yasar.123.sevda@gmail.com> - 1.3.2-1
 - AnimeciX 1.3.2 COPR paketi
