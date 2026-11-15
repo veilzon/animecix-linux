@@ -112,12 +112,12 @@ başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** i
 ### Debian / Ubuntu (.deb)
 
 [Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
-`animecix_1.3.3_amd64.deb` dosyasını indir veya doğrudan:
+`animecix_1.3.4_amd64.deb` dosyasını indir veya doğrudan:
 
-[**animecix_1.3.3_amd64.deb**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.3/animecix_1.3.3_amd64.deb)
+[**animecix_1.3.4_amd64.deb**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.4/animecix_1.3.4_amd64.deb)
 
 ```bash
-sudo apt install ./animecix_1.3.3_amd64.deb
+sudo apt install ./animecix_1.3.4_amd64.deb
 ```
 
 Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
@@ -139,15 +139,20 @@ Güncelleme:
 sudo dnf upgrade animecix
 ```
 
+> `mpv` RPM Fusion deposunda bulunur. Kurulu değilse önce RPM Fusion'ı ekleyin:
+> ```bash
+> sudo dnf install https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-$(rpm -E %fedora).noarch.rpm
+> ```
+
 #### Doğrudan RPM
 
 [Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
-`animecix-1.3.3-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
+`animecix-1.3.4-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
 
-[**animecix-1.3.3-1.fc40.x86_64.rpm**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.3/animecix-1.3.3-1.fc40.x86_64.rpm)
+[**animecix-1.3.4-1.fc40.x86_64.rpm**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.4/animecix-1.3.4-1.fc40.x86_64.rpm)
 
 ```bash
-sudo dnf install ./animecix-1.3.3-1.fc40.x86_64.rpm
+sudo dnf install ./animecix-1.3.4-1.fc40.x86_64.rpm
 ```
 
 Fedora 40+ içindir. `mpv`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
