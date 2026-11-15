@@ -163,8 +163,8 @@ kurulur. Güncellemeler uygulama içinden veya `sudo dnf upgrade` ile yapılır.
 Kendi imzalı pacman depomuzu kullanabilirsiniz (AUR gerekmez):
 
 ```bash
-curl -fsSL https://veilzon.github.io/animecix-arch/animecix.gpg \
-  | sudo pacman-key --add -
+curl -fsSL https://veilzon.github.io/animecix-arch/animecix.gpg -o /tmp/animecix.gpg
+sudo pacman-key --add /tmp/animecix.gpg
 sudo pacman-key --lsign-key 2B2361F1C5D588EF
 
 # /etc/pacman.conf
