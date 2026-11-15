@@ -49,6 +49,16 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.3.4" date="2026-11-15">
+      <description>
+        <p>Güvenlik bağımlılık güncellemeleri; Flatpak'ta mpv NDEBUG/release derlemesi ve otomatik mpv oynatma testi.</p>
+      </description>
+    </release>
+    <release version="1.3.3" date="2026-11-15">
+      <description>
+        <p>Flatpak'ta otomatik güncelleme, Fedora COPR deposu ve ortak güncelleme akışı.</p>
+      </description>
+    </release>
     <release version="1.3.2" date="2026-11-15">
       <description>
         <p>Flatpak desteği: kendi depomuzdan tek komutla kurulum, flatpak update ile güncelleme; Flatpak'ta Discord Rich Presence ve indirme klasörü erişimi.</p>
