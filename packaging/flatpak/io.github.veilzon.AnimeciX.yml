@@ -98,6 +98,12 @@ modules:
         url: https://github.com/mpv-player/mpv.git
         tag: v0.36.0
         commit: f4210f84906c3b00a65fba198c8127b6757b9350
+      # m_option_value union'ının yalnızca ilk üyesini sıfırlayan `= {0}`
+      # başlatması GCC 15/glibc 2.42'de çöp string pointer'ı bırakıp
+      # mpv --version'da talloc_free çökmesine yol açıyor. Upstream 0.37
+      # düzeltmesini (1805681aa) 0.36.0'a geri taşır.
+      - type: patch
+        path: mpv-0.36.0-m_option-value-default.patch
 
   - name: aria2
     buildsystem: autotools
