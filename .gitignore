@@ -23,3 +23,7 @@ src/bin/scrolltest.rs
 flathub/
 worker/.wrangler/
 worker/node_modules/
+
+# Python önbelleği
+__pycache__/
+*.pyc
