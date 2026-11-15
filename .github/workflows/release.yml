@@ -52,6 +52,9 @@ jobs:
           echo "tag=$TAG cargo=$VER"
           [ "$TAG" = "$VER" ] || { echo "Tag v$TAG != Cargo.toml $VER"; exit 1; }
 
+      - name: Metainfo sürümü (Cargo.toml ile aynı)
+        run: python3 packaging/update-metainfo.py --check
+
       - name: Tests
         run: |
           xvfb-run -a cargo test --release --bin animecix -- --test-threads=1

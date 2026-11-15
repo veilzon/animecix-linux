@@ -49,6 +49,9 @@ jobs:
       - name: Format check
         run: cargo fmt --all -- --check
 
+      - name: Metainfo sürümü (Cargo.toml ile aynı)
+        run: python3 packaging/update-metainfo.py --check
+
       - name: Clippy (all targets, errors fail)
         run: cargo clippy --release --all-targets --message-format=short 2>&1 | tee /tmp/clippy.log; test ${PIPESTATUS[0]} -eq 0
 

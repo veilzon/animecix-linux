@@ -54,6 +54,9 @@ echo "==> Sürüm yükseltildi: v$OLD_VER -> v$NEW_VER"
 
 VERSION=$(grep -m1 '^version =' Cargo.toml | cut -d '"' -f2)
 
+# Flatpak/AppStream metainfo sürüm kaydını da aynı sürüme getir.
+python3 packaging/update-metainfo.py --write
+
 # Otomatik GitHub Release: GITHUB_TOKEN tanımlıysa AppImage'ı bir release olarak yayınlar.
 publish_release() {
   local token="${GITHUB_TOKEN:-}"
