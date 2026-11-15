@@ -67,6 +67,7 @@ modules:
   - name: mpv
     buildsystem: meson
     config-opts:
+      - -Dbuildtype=release
       - -Dcplayer=true
       - -Dlibmpv=false
       - -Dlua=disabled
