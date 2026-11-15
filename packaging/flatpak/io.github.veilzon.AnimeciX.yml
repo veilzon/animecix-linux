@@ -19,8 +19,11 @@ finish-args:
   # İndirme yöneticisi kullanıcı seçtiği klasöre yazabilsin.
   - --filesystem=home
   # Discord RPC: native Discord ve Flatpak Discord/Vesktop soketleri.
-  - --filesystem=xdg-run/app
-  - --filesystem=xdg-run/.flatpak
+  - --filesystem=xdg-run/app/com.discordapp.Discord
+  - --filesystem=xdg-run/app/com.discordapp.DiscordCanary
+  - --filesystem=xdg-run/.flatpak/dev.vencord.Vesktop/xdg-run
+  - --filesystem=xdg-run/.flatpak/com.discordapp.Discord/xdg-run
+  - --filesystem=xdg-run/.flatpak/com.discordapp.DiscordCanary/xdg-run
   - --filesystem=xdg-run/snap.discord
   - --filesystem=xdg-run/snap.discord-canary
   - --filesystem=xdg-run/discord-ipc-0
