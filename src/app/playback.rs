@@ -1085,7 +1085,6 @@ impl App {
                         .arg("--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5")
                         .arg("--network-timeout=10")
                         .arg("--hwdec=auto-safe")
-                        .arg("--ytdl-format=bestvideo[height<=1080]+bestaudio/best")
                         .args(crate::api::upscale_mpv_args(&upscale_c, match upscale_c.as_str() {
                             "hafif" => crate::app::resolve_upscale_shader("Anime4K_Upscale_DTD_x2.glsl"),
                             "ultra" => crate::app::resolve_upscale_shader("Anime4K_Upscale_CNN_x2_UL.glsl"),

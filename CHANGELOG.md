@@ -1,3 +1,9 @@
+# Changelog — v1.3.5 (güncel sürüm notları)
+
+- **Flatpak oynatma düzeltmesi:** mpv'nin ytdl desteği olmayan derlemelerinde
+  `--ytdl-format` argümanı ölümcül hataya yol açıyordu; doğrudan video
+  URL'leri için gereksiz olan argüman kaldırıldı.
+
 # Changelog — v1.3.4 (güncel sürüm notları)
 
 - **Güvenlik güncellemeleri:** TLS sertifika doğrulaması (rustls-webpki,

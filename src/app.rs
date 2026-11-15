@@ -3869,6 +3869,12 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.3.5" => Some((
+            "Yenilikler (v1.3.5)",
+            vec![
+                "Flatpak: mpv'nin ytdl desteği olmayan derlemelerinde oynatmayı engelleyen gereksiz '--ytdl-format' argümanı kaldırıldı.",
+            ],
+        )),
         "1.3.4" => Some((
             "Yenilikler (v1.3.4)",
             vec![
@@ -4132,6 +4138,7 @@ mod decide_retry_tests {
 
     #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.3.5").is_some());
         assert!(super::changelog_items("1.3.4").is_some());
         assert!(super::changelog_items("1.3.3").is_some());
         assert!(super::changelog_items("1.3.2").is_some());
