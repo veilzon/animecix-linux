@@ -48,6 +48,8 @@ jobs:
         run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
 
       - name: Smoke test
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: |
           xvfb-run -a ./AnimeciX-x86_64.AppImage --check-shaders
           xvfb-run -a ./AnimeciX-x86_64.AppImage --check-icons
