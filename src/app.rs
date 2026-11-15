@@ -3869,6 +3869,14 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.3.4" => Some((
+            "Yenilikler (v1.3.4)",
+            vec![
+                "Güvenlik: TLS sertifika doğrulaması, tokio ve zstd bağımlılıkları güncellendi.",
+                "Flatpak: mpv NDEBUG/release derlemesi ve kısa video oynatma testi CI'da doğrulanıyor.",
+                "Flatpak güncellemeleri açılışta denetleniyor; güncelleme tek tıkla kurulup uygulama yeniden başlıyor.",
+            ],
+        )),
         "1.3.3" => Some((
             "Yenilikler (v1.3.3)",
             vec![
@@ -4124,6 +4132,7 @@ mod decide_retry_tests {
 
     #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.3.4").is_some());
         assert!(super::changelog_items("1.3.3").is_some());
         assert!(super::changelog_items("1.3.2").is_some());
         assert!(super::changelog_items("1.3.1").is_some());

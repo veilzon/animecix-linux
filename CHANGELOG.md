@@ -1,3 +1,13 @@
+# Changelog — v1.3.4 (güncel sürüm notları)
+
+- **Güvenlik güncellemeleri:** TLS sertifika doğrulaması (rustls-webpki,
+  webpki-roots), tokio ve zstd bağımlılıkları güncellendi; yeni RustSec
+  duyuruları kapatıldı.
+- **Flatpak mpv düzeltmesi:** Flatpak'taki mpv, `NDEBUG` etkin release olarak derleniyor;
+  `mpv --version` ve kısa video oynatma artık CI'da otomatik test ediliyor.
+- **Flatpak CI güvenilirliği:** Cache'ten gelen eski kurulum temizlenerek
+  her zaman yeni build'in test edilmesi sağlandı.
+
 # Changelog — v1.3.3 (güncel sürüm notları)
 
 - **Flatpak'ta otomatik güncelleme:** Uygulama açılışta Flatpak deposunu

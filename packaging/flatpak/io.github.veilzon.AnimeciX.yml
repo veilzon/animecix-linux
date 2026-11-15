@@ -68,6 +68,9 @@ modules:
     buildsystem: meson
     config-opts:
       - -Dbuildtype=release
+      # Meson'da release tek başına NDEBUG tanımlamaz; talloc'un hata
+      # ayıklama kanaryası yüzünden mpv --version bile çöküyordu.
+      - -Db_ndebug=if-release
       - -Dcplayer=true
       - -Dlibmpv=false
       - -Dlua=disabled
