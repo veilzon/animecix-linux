@@ -160,7 +160,14 @@ kurulur. Güncellemeler uygulama içinden veya `sudo dnf upgrade` ile yapılır.
 
 ### Arch Linux
 
-Kendi imzalı pacman depomuzu kullanabilirsiniz (AUR gerekmez):
+Kendi imzalı pacman depomuz (AUR gerekmez). Tek komut:
+
+```bash
+curl -fsSL https://veilzon.github.io/animecix-arch/install.sh -o /tmp/animecix-install.sh
+sudo bash /tmp/animecix-install.sh
+```
+
+Manuel kurulum:
 
 ```bash
 curl -fsSL https://veilzon.github.io/animecix-arch/animecix.gpg -o /tmp/animecix.gpg
