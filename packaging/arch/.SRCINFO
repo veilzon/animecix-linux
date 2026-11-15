@@ -19,6 +19,7 @@ pkgbase = animecix
 	depends = mpv
 	depends = aria2
 	options = !lto
+	options = !debug
 	source = animecix-1.3.5.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v1.3.5.tar.gz
 	sha256sums = fad08b2f3b4902db10d3b9fca43566437498d1792513d519c324c13132eaeaab
 
