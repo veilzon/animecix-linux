@@ -73,6 +73,9 @@ jobs:
       - name: Skip harness (mpv stamp logic)
         run: python3 tests/skip_harness.py
 
+      - name: Flatpak updater contract (fake flatpak-spawn)
+        run: python3 tests/flatpak_updater.py
+
   coverage:
     runs-on: ubuntu-24.04
     container:
