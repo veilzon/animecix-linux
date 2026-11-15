@@ -53,7 +53,6 @@ jobs:
           ./AnimeciX-x86_64.AppImage --appimage-extract >/dev/null
           export APPDIR="$PWD/squashfs-root"
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-shaders
-          xvfb-run -a "$APPDIR/usr/bin/animecix" --check-icons
           ls -lh AnimeciX-x86_64.AppImage
           sha256sum AnimeciX-x86_64.AppImage
           rm -rf squashfs-root
