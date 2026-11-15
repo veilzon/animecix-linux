@@ -90,6 +90,25 @@ pub fn cleanup_user() -> Result<(), String> {
     run(&["cleanup", "--user"]).map(|_| ())
 }
 
+/// Flatpak remote'unda bu uygulama için güncelleme var mı?
+/// Flatpak dışında `flatpak-spawn` olmadığından güvenli biçimde `false` döner.
+pub fn flatpak_update_available() -> bool {
+    let Ok(path) = script_path() else {
+        return false;
+    };
+    let status = Command::new("/bin/bash")
+        .arg(&path)
+        .arg("check-flatpak")
+        .status();
+    let _ = std::fs::remove_file(&path);
+    status.map(|s| s.success()).unwrap_or(false)
+}
+
+/// Flatpak güncellemesini host üzerinde çalıştırır; polkit gerekirse sorar.
+pub fn update_flatpak() -> Result<(), String> {
+    run(&["update-flatpak"]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

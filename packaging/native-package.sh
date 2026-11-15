@@ -160,6 +160,21 @@ cleanup_all_users() {
     done
 }
 
+check_flatpak() {
+    command -v flatpak-spawn >/dev/null 2>&1 || return 1
+    local out
+    out=$(flatpak-spawn --host flatpak remote-ls --updates --columns=application 2>/dev/null || true)
+    if printf '%s\n' "$out" | grep -qx 'io.github.veilzon.AnimeciX'; then
+        return 0
+    fi
+    return 1
+}
+
+update_flatpak() {
+    command -v flatpak-spawn >/dev/null 2>&1 || die "flatpak-spawn bulunamadı"
+    flatpak-spawn --host flatpak update -y io.github.veilzon.AnimeciX
+}
+
 status() {
     printf 'owner=%s\nmanager=%s\n' "$(owner)" "$(manager)"
 }
@@ -191,7 +206,13 @@ case "$cmd" in
             *) die "cleanup: --user veya --all-users gerekli" ;;
         esac
         ;;
+    check-flatpak)
+        check_flatpak
+        ;;
+    update-flatpak)
+        update_flatpak
+        ;;
     *)
-        die "kullanım: native-package.sh [--dry-run] status|install <pkg>|uninstall --native|--user|cleanup --user|--all-users"
+        die "kullanım: native-package.sh [--dry-run] status|install <pkg>|uninstall --native|--user|cleanup --user|--all-users|check-flatpak|update-flatpak"
         ;;
 esac

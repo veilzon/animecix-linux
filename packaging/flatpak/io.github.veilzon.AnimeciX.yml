@@ -36,6 +36,8 @@ finish-args:
   - --filesystem=xdg-run/discord-ipc-7
   - --filesystem=xdg-run/discord-ipc-8
   - --filesystem=xdg-run/discord-ipc-9
+  # Uygulama içi Flatpak güncellemesi (flatpak-spawn --host) için.
+  - --talk-name=org.freedesktop.Flatpak
 cleanup:
   - /include
   - /lib/pkgconfig

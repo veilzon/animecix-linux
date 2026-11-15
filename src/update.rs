@@ -88,8 +88,9 @@ pub fn install_kind() -> InstallKind {
 }
 
 /// Uygulama içi güncelleme bu kurulumda destekleniyor mu.
+/// Flatpak'ta güncelleme `flatpak-spawn --host flatpak update` ile yapılır.
 pub fn self_update_supported() -> bool {
-    !crate::flatpak::is_flatpak() && install_kind() != InstallKind::Unknown
+    crate::flatpak::is_flatpak() || install_kind() != InstallKind::Unknown
 }
 
 fn deb_package_installed() -> bool {
@@ -460,6 +461,23 @@ pub fn spawn_restart(exe: &Path) {
 /// "/usr/bin/animecix (deleted)" dönebildiği ve o yol spawn edilemediği için
 /// (uygulama sessizce kapanıyordu) sabit sistem yolu tercih edilir.
 fn restart_app(appimage_target: Option<&str>) -> ! {
+    if crate::flatpak::is_flatpak() {
+        let mut cmd = Command::new("flatpak-spawn");
+        cmd.args(["--host", "flatpak", "run", "io.github.veilzon.AnimeciX"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+        #[cfg(unix)]
+        unsafe {
+            use std::os::unix::process::CommandExt;
+            cmd.pre_exec(|| {
+                libc::setsid();
+                Ok(())
+            });
+        }
+        let _ = cmd.spawn();
+        std::process::exit(0);
+    }
     let exe = match appimage_target {
         Some(p) if !p.trim().is_empty() => PathBuf::from(p),
         _ => {
@@ -481,13 +499,7 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
     on_suppress_uptodate: impl Fn() + 'static,
 ) {
     if crate::flatpak::is_flatpak() {
-        if show_if_uptodate {
-            present_info(
-                window,
-                "Flatpak Güncellemesi",
-                "Flatpak sürümü terminalde `flatpak update` ile güncellenir.",
-            );
-        }
+        check_flatpak_and_prompt(window, show_if_uptodate, on_suppress_uptodate);
         return;
     }
     let kind = install_kind();
@@ -557,6 +569,100 @@ fn present_info<W: IsA<gtk::Window>>(window: &W, heading: &str, body: &str) {
         .build();
     dialog.set_transient_for(Some(window));
     dialog.present();
+}
+
+fn check_flatpak_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
+    window: &W,
+    show_if_uptodate: bool,
+    on_suppress_uptodate: impl Fn() + 'static,
+) {
+    let (tx, rx) = channel::<bool>();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::native_package::flatpak_update_available());
+    });
+    let win = window.clone();
+    let mut on_suppress = Some(on_suppress_uptodate);
+    glib::idle_add_local(move || match rx.try_recv() {
+        Ok(true) => {
+            present_flatpak_update_dialog(win.clone());
+            ControlFlow::Break
+        }
+        Ok(false) => {
+            if show_if_uptodate {
+                if let Some(f) = on_suppress.take() {
+                    present_uptodate(&win, f);
+                }
+            }
+            ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => ControlFlow::Continue,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+    });
+}
+
+fn present_flatpak_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(window: W) {
+    let dialog = adw::MessageDialog::builder()
+        .heading("Yeni Flatpak Sürümü")
+        .body(
+            "AnimeciX için yeni bir Flatpak güncellemesi var. Güncellemek için yetki istenebilir.",
+        )
+        .close_response("later")
+        .default_response("later")
+        .build();
+    dialog.add_response("later", "Daha Sonra");
+    dialog.add_response("update", "Güncelle ve Yeniden Başlat");
+    dialog.set_response_appearance("update", adw::ResponseAppearance::Suggested);
+    dialog.set_transient_for(Some(&window));
+    dialog.connect_response(None, move |dlg, resp| {
+        if resp == "update" {
+            dlg.close();
+            run_flatpak_update(window.clone());
+        }
+    });
+    dialog.present();
+}
+
+fn run_flatpak_update<W: IsA<gtk::Window> + Clone + 'static>(window: W) {
+    let dlg = adw::Window::builder()
+        .title("Güncelleniyor")
+        .modal(true)
+        .transient_for(&window)
+        .default_width(380)
+        .build();
+    dlg.set_deletable(false);
+    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    box_.set_margin_top(18);
+    box_.set_margin_bottom(18);
+    box_.set_margin_start(18);
+    box_.set_margin_end(18);
+    let spinner = gtk::Spinner::new();
+    spinner.start();
+    let label = gtk::Label::new(Some("Flatpak güncelleniyor… (yetki istenebilir)"));
+    label.set_wrap(true);
+    box_.append(&spinner);
+    box_.append(&label);
+    dlg.set_content(Some(&box_));
+    dlg.present();
+
+    let (tx, rx) = channel::<Result<(), String>>();
+    std::thread::spawn(move || {
+        let _ = tx.send(crate::native_package::update_flatpak());
+    });
+    let dlg_c = dlg.clone();
+    let win_c = window.clone();
+    glib::idle_add_local(move || match rx.try_recv() {
+        Ok(Ok(())) => {
+            dlg_c.close();
+            restart_app(None);
+        }
+        Ok(Err(e)) => {
+            dlg_c.close();
+            present_info(&win_c, "Güncelleme Başarısız", &e);
+            ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => ControlFlow::Continue,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+    });
 }
 
 fn present_uptodate<W: IsA<gtk::Window>>(window: &W, on_suppress: impl Fn() + 'static) {

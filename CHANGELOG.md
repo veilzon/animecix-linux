@@ -1,4 +1,14 @@
-# Changelog — v1.3.2 (güncel sürüm notları)
+# Changelog — v1.3.3 (güncel sürüm notları)
+
+- **Flatpak'ta otomatik güncelleme:** Uygulama açılışta Flatpak deposunu
+  denetler; yeni sürüm varsa tek tıkla güncelleme başlatılır, polkit izni
+  istenir ve uygulama yeniden başlar.
+- **Fedora COPR deposu:** `sudo dnf copr enable veilzon/animecix` ile kurulum
+  ve `sudo dnf upgrade animecix` ile güncelleme.
+- **Ortak güncelleme akışı:** Flatpak, deb ve rpm güncellemeleri aynı gömülü
+  betik üzerinden yürütülür; yetki istemi korunur.
+
+# Changelog — v1.3.2
 
 - **Flatpak desteği:** AnimeciX artık kendi Flatpak depomuzdan tek komutla
   kuruluyor. `flatpak install --from https://veilzon.github.io/animecix-flatpak/animecix.flatpakref`

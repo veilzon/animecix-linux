@@ -857,7 +857,7 @@ impl SettingsView {
         let flatpak = crate::flatpak::is_flatpak();
         let update_supported = crate::update::self_update_supported();
         let update_desc = if flatpak {
-            "Flatpak sürümü terminalde `flatpak update` ile güncellenir"
+            "Flatpak güncellemesini denetler; güncelleme varsa yetki isteyerek kurar"
         } else {
             match crate::update::install_kind() {
                 crate::update::InstallKind::AppImage => {
@@ -1198,7 +1198,7 @@ impl SettingsView {
             status.set_xalign(0.0);
             status.set_margin_top(4);
             info_group.add(&status);
-            let update_hint = gtk::Label::new(Some("Güncellemeler: terminalde `flatpak update`"));
+            let update_hint = gtk::Label::new(Some("Güncellemeler Flatpak üzerinden denetlenir"));
             update_hint.add_css_class("dim-label");
             update_hint.set_xalign(0.0);
             update_hint.set_margin_bottom(4);

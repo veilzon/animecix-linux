@@ -1,5 +1,5 @@
 Name:           animecix
-Version:        1.3.2
+Version:        1.3.3
 Release:        1%{?dist}
 Summary:        Türkçe anime, dizi ve film izleme istemcisi
 License:        MIT
@@ -74,5 +74,5 @@ sh %{_datadir}/animecix/post-install-cleanup.sh || :
 %{_datadir}/animecix
 
 %changelog
-* Sun Nov 15 2026 Yasar Efe Celik <yasar.123.sevda@gmail.com> - 1.3.2-1
-- AnimeciX 1.3.2 COPR paketi
+* Sun Nov 15 2026 Yasar Efe Celik <yasar.123.sevda@gmail.com> - 1.3.3-1
+- AnimeciX 1.3.3 COPR paketi

@@ -9,8 +9,8 @@
 **Linux için GTK4/libadwaita ile yazılmış anime, dizi ve film izleme masaüstü istemcisi.**
 
 **Flatpak** (önerilen), **.deb/.rpm** paketleri veya tek dosyalık taşınabilir
-**AppImage** olarak dağıtılır. Flatpak kendi depomuzdan kurulur ve `flatpak update`
-ile güncellenir; AppImage/deb/rpm sistemdeki GTK4, libadwaita ve mpv'yi kullanır.
+**AppImage** olarak dağıtılır. Flatpak kendi depomuzdan kurulur; güncellemeler uygulama içinden
+denetlenir ve `flatpak update` ile de yapılabilir; AppImage/deb/rpm sistemdeki GTK4, libadwaita ve mpv'yi kullanır.
 Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
@@ -33,8 +33,8 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Bellek toparlama**: MPV kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
 - **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
-- **Flatpak**: kendi Flatpak depomuzdan tek komutla kurulum; güncellemeler `flatpak update` ile
-- **Otomatik güncelleme**: AppImage, .deb ve .rpm kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (paketlerde yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
+- **Flatpak**: kendi Flatpak depomuzdan tek komutla kurulum; güncellemeler uygulama içinden denetlenir
+- **Otomatik güncelleme**: AppImage, .deb, .rpm ve Flatpak kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
 - **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, masaüstü başlatıcı, veri sıfırlama
@@ -83,7 +83,7 @@ flatpak install --from https://veilzon.github.io/animecix-flatpak/animecix.flatp
 ```
 
 Flatpak uygulamayı kendi depomuzdan kurar; yalnızca GNOME runtime'ı Flathub'dan
-gelir. Güncelleme:
+gelir. Uygulama açılışta güncellemeyi denetler; manuel güncelleme:
 
 ```bash
 flatpak update io.github.veilzon.AnimeciX
@@ -125,6 +125,21 @@ bağımlılıkları apt tarafından kurulur. Güncellemeler uygulama içinden ve
 `sudo apt upgrade` ile yapılır.
 
 ### Fedora / RPM
+
+#### COPR (önerilen)
+
+```bash
+sudo dnf copr enable veilzon/animecix
+sudo dnf install animecix
+```
+
+Güncelleme:
+
+```bash
+sudo dnf upgrade animecix
+```
+
+#### Doğrudan RPM
 
 [Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
 `animecix-1.3.2-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
