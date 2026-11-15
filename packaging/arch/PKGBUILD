@@ -1,32 +1,53 @@
 # Maintainer: veilzon <veilzon@users.noreply.github.com>
 pkgname=animecix
-pkgver=1.2.1
+pkgver=1.3.5
 pkgrel=1
 pkgdesc="Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 arch=('x86_64')
 url="https://github.com/veilzon/animecix-linux"
 license=('MIT')
 depends=('gtk4' 'libadwaita' 'mpv' 'aria2')
-makedepends=('rust' 'cargo' 'git')
+makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('SKIP') # TODO: v1.2.1 release yayınlanınca tarball hash'i yazılacak
+sha256sums=('fad08b2f3b4902db10d3b9fca43566437498d1792513d519c324c13132eaeaab')
 options=('!lto')
 
 build() {
-  cd "$pkgname-$pkgver"
-  export CARGO_TARGET_DIR="$srcdir/target"
+  cd "animecix-linux-$pkgver"
+  export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$srcdir/target}"
   cargo build --release --locked
 }
 
 package() {
-  cd "$pkgname-$pkgver"
-  install -Dm755 "$srcdir/target/release/animecix" "$pkgdir/usr/bin/animecix"
-  install -Dm644 packaging/arch/animecix.desktop "$pkgdir/usr/share/applications/animecix.desktop"
-  install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml "$pkgdir/usr/share/metainfo/io.github.veilzon.AnimeciX.metainfo.xml"
+  cd "animecix-linux-$pkgver"
+  install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix" "$pkgdir/usr/bin/animecix"
+  install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/io.github.veilzon.AnimeciX.metainfo.xml"
+
+  mkdir -p "$pkgdir/usr/share/applications"
+  cat > "$pkgdir/usr/share/applications/tr.com.animecix.desktop" <<'EOF'
+[Desktop Entry]
+Type=Application
+Name=AnimeciX
+GenericName=Anime İzleme Uygulaması
+Comment=Türkçe anime izleme istemcisi (mpv tabanlı)
+Exec=animecix
+Icon=tr.com.animecix
+Terminal=false
+Categories=AudioVideo;Video;GTK;
+StartupWMClass=tr.com.animecix
+Keywords=anime;video;player;izle;
+EOF
+
   for s in 64 128 256 512; do
-    install -Dm644 "assets/icon-$s.png" "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/animecix.png"
+    install -Dm644 "assets/icon-$s.png" \
+      "$pkgdir/usr/share/icons/hicolor/${s}x${s}/apps/tr.com.animecix.png"
   done
+
+  install -Dm644 assets/ATTRIBUTION-Adwaita.md \
+    "$pkgdir/usr/share/animecix/ATTRIBUTION-Adwaita.md"
   mkdir -p "$pkgdir/usr/share/animecix/assets"
   cp -r assets/upscale "$pkgdir/usr/share/animecix/assets/"
+  cp -r assets/hicolor "$pkgdir/usr/share/animecix/assets/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

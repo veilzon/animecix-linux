@@ -112,12 +112,12 @@ başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** i
 ### Debian / Ubuntu (.deb)
 
 [Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
-`animecix_1.3.4_amd64.deb` dosyasını indir veya doğrudan:
+`animecix_1.3.5_amd64.deb` dosyasını indir veya doğrudan:
 
-[**animecix_1.3.4_amd64.deb**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.4/animecix_1.3.4_amd64.deb)
+[**animecix_1.3.5_amd64.deb**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.5/animecix_1.3.5_amd64.deb)
 
 ```bash
-sudo apt install ./animecix_1.3.4_amd64.deb
+sudo apt install ./animecix_1.3.5_amd64.deb
 ```
 
 Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
@@ -147,16 +147,36 @@ sudo dnf upgrade animecix
 #### Doğrudan RPM
 
 [Releases](https://github.com/veilzon/animecix-linux/releases/latest) sayfasından
-`animecix-1.3.4-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
+`animecix-1.3.5-1.fc40.x86_64.rpm` dosyasını indir veya doğrudan:
 
-[**animecix-1.3.4-1.fc40.x86_64.rpm**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.4/animecix-1.3.4-1.fc40.x86_64.rpm)
+[**animecix-1.3.5-1.fc40.x86_64.rpm**](https://github.com/veilzon/animecix-linux/releases/download/v1.3.5/animecix-1.3.5-1.fc40.x86_64.rpm)
 
 ```bash
-sudo dnf install ./animecix-1.3.4-1.fc40.x86_64.rpm
+sudo dnf install ./animecix-1.3.5-1.fc40.x86_64.rpm
 ```
 
 Fedora 40+ içindir. `mpv`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
 kurulur. Güncellemeler uygulama içinden veya `sudo dnf upgrade` ile yapılır.
+
+### Arch Linux
+
+Kendi imzalı pacman depomuzu kullanabilirsiniz (AUR gerekmez):
+
+```bash
+curl -fsSL https://veilzon.github.io/animecix-arch/animecix.gpg \
+  | sudo pacman-key --add -
+sudo pacman-key --lsign-key 2B2361F1C5D588EF
+
+# /etc/pacman.conf
+[animecix]
+SigLevel = Required DatabaseOptional
+Server = https://veilzon.github.io/animecix-arch/$arch
+
+sudo pacman -Syu
+sudo pacman -S animecix
+```
+
+Güncelleme: `sudo pacman -Syu`.
 
 ### Sistem gereksinimleri
 
