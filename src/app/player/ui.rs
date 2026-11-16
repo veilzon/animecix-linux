@@ -257,7 +257,6 @@ pub struct ControlBar {
     pub quality_btn: gtk::MenuButton,
     pub quality_pop: gtk::Popover,
     pub quality_box: gtk::Box,
-    pub bot_title: gtk::Label,
     pub status: gtk::Label,
 }
 
@@ -432,7 +431,6 @@ pub fn build_control_bar(
         quality_btn,
         quality_pop,
         quality_box,
-        bot_title,
         status,
     }
 }
@@ -445,5 +443,32 @@ mod tests {
         assert!(css.contains("@accent_color") || css.contains("@accent_bg_color"));
         assert!(css.contains("rgba(0,0,0") || css.contains("rgba(14,14,18"));
         assert!(css.contains("#FFFFFF"));
+    }
+
+    #[test]
+    fn player_icons_are_bundled() {
+        const ICONS: &[&str] = &[
+            "go-previous-symbolic",
+            "go-next-symbolic",
+            "media-playback-start-symbolic",
+            "media-playback-pause-symbolic",
+            "media-playback-stop-symbolic",
+            "media-skip-forward-symbolic",
+            "audio-volume-high-symbolic",
+            "audio-volume-low-symbolic",
+            "audio-volume-medium-symbolic",
+            "audio-volume-muted-symbolic",
+            "view-fullscreen-symbolic",
+            "view-restore-symbolic",
+            "camera-photo-symbolic",
+            "dialog-information-symbolic",
+            "folder-download-symbolic",
+        ];
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("assets/hicolor/scalable/actions");
+        for icon in ICONS {
+            let p = dir.join(format!("{icon}.svg"));
+            assert!(p.is_file(), "eksik ikon: {}", p.display());
+        }
     }
 }

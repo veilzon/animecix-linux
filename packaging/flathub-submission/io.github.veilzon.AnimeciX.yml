@@ -88,7 +88,8 @@ modules:
       - install -Dm644 assets/icon-512.png /app/share/icons/hicolor/512x512/apps/io.github.veilzon.AnimeciX.png
       - mkdir -p /app/share/animecix/assets
       - cp -r assets/upscale /app/share/animecix/assets/
-      - chmod -R a-w /app/share/animecix/assets/upscale
+      - cp -r assets/changelog /app/share/animecix/assets/
+      - chmod -R a-w /app/share/animecix/assets/upscale /app/share/animecix/assets/changelog
     sources:
       - type: git
         url: https://github.com/veilzon/animecix-linux.git

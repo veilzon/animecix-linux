@@ -49,5 +49,6 @@ EOF
   mkdir -p "$pkgdir/usr/share/animecix/assets"
   cp -r assets/upscale "$pkgdir/usr/share/animecix/assets/"
   cp -r assets/hicolor "$pkgdir/usr/share/animecix/assets/"
+  cp -r assets/changelog "$pkgdir/usr/share/animecix/assets/"
   install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
 }

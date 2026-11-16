@@ -102,6 +102,7 @@ jobs:
           # Gömülü Adwaita seti (60 SVG): sistemde Adwaita yoksa bile ikonlar çalışır.
           mkdir -p girdi/usr/share/animecix/assets
           cp -r assets/hicolor girdi/usr/share/animecix/assets/
+          cp -r assets/changelog girdi/usr/share/animecix/assets/
           cp assets/ATTRIBUTION-Adwaita.md girdi/usr/share/animecix/ || true
           echo "$VER" > girdi/VER
           # Paket %post/postinst temizliği: eski sürümlerin bayat kullanıcı

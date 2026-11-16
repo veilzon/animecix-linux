@@ -53,6 +53,14 @@ jobs:
           ./AnimeciX-x86_64.AppImage --appimage-extract >/dev/null
           export APPDIR="$PWD/squashfs-root"
           test -e "$APPDIR/usr/lib/libmpv.so.2"
+          test -e "$APPDIR/usr/share/animecix/assets/changelog/ekrangoruntusu.mp4"
+          for icon in go-previous-symbolic go-next-symbolic media-playback-start-symbolic \
+            media-playback-pause-symbolic media-playback-stop-symbolic media-skip-forward-symbolic \
+            audio-volume-high-symbolic audio-volume-low-symbolic audio-volume-medium-symbolic \
+            audio-volume-muted-symbolic view-fullscreen-symbolic view-restore-symbolic \
+            camera-photo-symbolic dialog-information-symbolic folder-download-symbolic; do
+            test -f "$APPDIR/usr/share/icons/Adwaita/symbolic/actions/$icon.svg"
+          done
           ! ldd "$APPDIR/usr/lib/libmpv.so.2" | grep 'not found'
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-shaders
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-libmpv
