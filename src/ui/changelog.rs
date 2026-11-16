@@ -92,22 +92,28 @@ pub fn present(
     titlebar.set_title_widget(Some(&title));
     root.append(&titlebar);
 
-    let mut close_video: Option<gtk::Video> = None;
-    if !videos.is_empty() {
-        let (carousel_box, video) = carousel(videos, video_side);
-        close_video = Some(video);
-        root.append(&carousel_box);
-    }
-
+    // Carousel + madde listesi tek kaydırma alanında: fare tekerleği
+    // popup'ın her yerinde (video üzerindeyken de) içeriği kaydırır.
     let scroll = gtk::ScrolledWindow::new();
     scroll.set_hexpand(true);
     scroll.set_vexpand(true);
     scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
+    let content = gtk::Box::new(gtk::Orientation::Vertical, 0);
+    content.set_hexpand(true);
+
+    let mut close_video: Option<gtk::Video> = None;
+    if !videos.is_empty() {
+        let (carousel_box, video) = carousel(videos, video_side);
+        close_video = Some(video);
+        content.append(&carousel_box);
+    }
+
     let list = gtk::Box::new(gtk::Orientation::Vertical, 10);
     list.set_margin_top(16);
     list.set_margin_bottom(18);
     list.set_margin_start(18);
     list.set_margin_end(18);
+    list.set_hexpand(true);
     for it in items {
         let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let dot = gtk::Label::new(Some("•"));
@@ -121,7 +127,8 @@ pub fn present(
         row.append(&lbl);
         list.append(&row);
     }
-    scroll.set_child(Some(&list));
+    content.append(&list);
+    scroll.set_child(Some(&content));
     root.append(&scroll);
     dlg.set_content(Some(&root));
 
