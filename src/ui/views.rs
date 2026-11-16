@@ -616,53 +616,85 @@ impl SettingsView {
         view_group.add(&theme_row);
         root.append(&view_group);
 
-        let player_group = adw::PreferencesGroup::new();
-        player_group.set_title("Oynatıcı Ayarları");
+        let common_group = adw::PreferencesGroup::new();
+        common_group.set_title("Ortak Oynatıcı Ayarları");
 
         let (fs_row, fs_sw) = crate::ui::components::switch_row(
             "Oynatıcı Otomatik Tam Ekran",
             "Video başladığında oynatıcıyı otomatik tam ekran modunda açar",
             settings.auto_fullscreen,
         );
-        player_group.add(&fs_row);
+        common_group.add(&fs_row);
 
         let (embed_row, embed_sw) = crate::ui::components::switch_row(
             "Gömülü Oynatıcı",
-            "Varsayılan: video uygulamanın içinde açılır. Kapatırsan harici mpv penceresi kullanılır.",
+            "Varsayılan: video uygulamanın içinde açılır. Kapatırsan normal mpv penceresi kullanılır.",
             settings.embedded_player,
         );
-        player_group.add(&embed_row);
-
-        let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
-            "İntro/Outro Bildirimleri",
-            "İntro ve outro başlayınca mpv'de bilgi gösterir ('s'/'e' tuşları hep çalışır)",
-            settings.show_intro_hint,
-        );
-        player_group.add(&intro_hint_row);
-
-        let (music_hint_row, music_hint_sw) = crate::ui::components::switch_row(
-            "Şarkıda 'Shift+M' Tuşu İpucu",
-            "Şarkı satırında şarkıyı tarayıcıda açan 'Shift+M' tuşunu hatırlatır",
-            settings.show_music_hint,
-        );
-        player_group.add(&music_hint_row);
+        common_group.add(&embed_row);
 
         let (play_q_row, play_q_sw) = crate::ui::components::switch_row(
             "Oynatırken Kalite Sor",
             "Bölüm açılırken kalite seçilsin (kapalıysa en iyi açılır)",
             settings.play_ask_quality,
         );
-        player_group.add(&play_q_row);
+        common_group.add(&play_q_row);
 
         let (auto_next_row, auto_next_sw) = crate::ui::components::switch_row(
             "Otomatik Sonraki Bölüm",
-            "Bölüm bitince sıradakini kendiliğinden açar (kapalıysa mpv'de 'n'/'p' ile geçilir)",
+            "Bölüm bitince sıradakini kendiliğinden açar (kapalıysa n/p ile geçilir)",
             settings.auto_next,
         );
-        player_group.add(&auto_next_row);
+        common_group.add(&auto_next_row);
+        root.append(&common_group);
+
+        let embedded_group = adw::PreferencesGroup::new();
+        embedded_group.set_title("Gömülü Oynatıcı");
+
+        let (embed_skip_row, embed_skip_sw) = crate::ui::components::switch_row(
+            "İntro/Outro Atla Düğmesi",
+            "Sağ alttaki atla düğmesini gösterir; S/E tuşları her zaman çalışır.",
+            settings.embedded_skip_button,
+        );
+        embedded_group.add(&embed_skip_row);
+
+        let (embed_song_row, embed_song_sw) = crate::ui::components::switch_row(
+            "Şarkı Kartı",
+            "Sol alttaki şarkı kartını gösterir.",
+            settings.embedded_song_card,
+        );
+        embedded_group.add(&embed_song_row);
+
+        let (embed_music_row, embed_music_sw) = crate::ui::components::switch_row(
+            "Şarkıda 'Shift+M' İpucu",
+            "Gömülü oynatıcıdaki şarkı kartında tarayıcı ipucunu gösterir.",
+            settings.embedded_music_hint,
+        );
+        embedded_group.add(&embed_music_row);
+        root.append(&embedded_group);
+
+        let mpv_group = adw::PreferencesGroup::new();
+        mpv_group.set_title("Normal MPV Oynatıcı");
+        let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
+            "İntro/Outro Bildirimleri",
+            "Harici mpv'de intro/outro başlayınca bilgi gösterir ('s'/'e' tuşları hep çalışır).",
+            settings.show_intro_hint,
+        );
+        mpv_group.add(&intro_hint_row);
+
+        let (music_hint_row, music_hint_sw) = crate::ui::components::switch_row(
+            "Şarkıda 'Shift+M' İpucu",
+            "Harici mpv'nin şarkı satırında tarayıcı ipucunu gösterir.",
+            settings.show_music_hint,
+        );
+        mpv_group.add(&music_hint_row);
+        root.append(&mpv_group);
+
+        let cache_group = adw::PreferencesGroup::new();
+        cache_group.set_title("Önbellek (Ortak)");
 
         let cache_fwd_row = adw::ActionRow::new();
-        cache_fwd_row.set_title("mpv İleri Önbellek (MB)");
+        cache_fwd_row.set_title("İleri Önbellek (MB)");
         cache_fwd_row.set_subtitle(
             "Varsayılan 64 MB. Yüksek değer daha akıcı tampon sağlar, daha fazla RAM kullanır.",
         );
@@ -684,10 +716,10 @@ impl SettingsView {
             crate::api::MPV_CACHE_FORWARD_MAX_MB,
         ) as f64);
         cache_fwd_row.add_suffix(&cache_fwd_spin);
-        player_group.add(&cache_fwd_row);
+        cache_group.add(&cache_fwd_row);
 
         let cache_back_row = adw::ActionRow::new();
-        cache_back_row.set_title("mpv Geri Önbellek (MB)");
+        cache_back_row.set_title("Geri Önbellek (MB)");
         cache_back_row.set_subtitle(
             "Varsayılan 16 MB. Geri sarma tamponu; yüksek değer daha iyi geri sarma, daha fazla RAM.",
         );
@@ -709,9 +741,8 @@ impl SettingsView {
             crate::api::MPV_CACHE_BACK_MAX_MB,
         ) as f64);
         cache_back_row.add_suffix(&cache_back_spin);
-        player_group.add(&cache_back_row);
-
-        root.append(&player_group);
+        cache_group.add(&cache_back_row);
+        root.append(&cache_group);
 
         let discord_group = adw::PreferencesGroup::new();
         discord_group.set_title("Discord");
@@ -932,6 +963,9 @@ impl SettingsView {
             let theme_r = theme_row.clone();
             let fs_r = fs_sw.clone();
             let emb_r = embed_sw.clone();
+            let esb_r = embed_skip_sw.clone();
+            let esc_r = embed_song_sw.clone();
+            let emh_r = embed_music_sw.clone();
             let ih_r = intro_hint_sw.clone();
             let mh_r = music_hint_sw.clone();
             let dr = discord_sw.clone();
@@ -974,6 +1008,9 @@ impl SettingsView {
                     .unwrap_or_else(|| crate::theme::DEFAULT_THEME.to_string());
                 updated.auto_fullscreen = fs_r.is_active();
                 updated.embedded_player = emb_r.is_active();
+                updated.embedded_skip_button = esb_r.is_active();
+                updated.embedded_song_card = esc_r.is_active();
+                updated.embedded_music_hint = emh_r.is_active();
                 updated.show_intro_hint = ih_r.is_active();
                 updated.show_music_hint = mh_r.is_active();
                 updated.discord_rpc_enabled = dr.is_active();
@@ -1034,6 +1071,12 @@ impl SettingsView {
         fs_sw.connect_active_notify(move |_| sa4());
         let sa_emb = save_all.clone();
         embed_sw.connect_active_notify(move |_| sa_emb());
+        let sa_esb = save_all.clone();
+        embed_skip_sw.connect_active_notify(move |_| sa_esb());
+        let sa_esc = save_all.clone();
+        embed_song_sw.connect_active_notify(move |_| sa_esc());
+        let sa_emh = save_all.clone();
+        embed_music_sw.connect_active_notify(move |_| sa_emh());
         let sa5a = save_all.clone();
         intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();
@@ -1086,7 +1129,7 @@ impl SettingsView {
         dl_dir_row.add_suffix(&dl_pick);
         dl_group.add(&dl_dir_row);
         dl_group.add(&maxpar_row);
-        root.insert_child_after(&dl_group, Some(&player_group));
+        root.insert_child_after(&dl_group, Some(&cache_group));
         {
             let s_o = s_base.clone();
             let on_o = on_save.clone();

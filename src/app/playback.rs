@@ -596,13 +596,20 @@ impl App {
             return false;
         };
 
-        let (upscale, auto_fullscreen, show_intro_hint, show_music_hint) = {
+        let (
+            upscale,
+            auto_fullscreen,
+            embedded_skip_button,
+            embedded_song_card,
+            embedded_music_hint,
+        ) = {
             let s = self.settings.borrow();
             (
                 s.upscale.clone(),
                 s.auto_fullscreen,
-                s.show_intro_hint,
-                s.show_music_hint,
+                s.embedded_skip_button,
+                s.embedded_song_card,
+                s.embedded_music_hint,
             )
         };
         let (cache_forward_mb, cache_back_mb, auto_next) = {
@@ -756,8 +763,9 @@ impl App {
             saved_pos,
             upscale,
             auto_fullscreen,
-            show_intro_hint,
-            show_music_hint,
+            show_skip_button: embedded_skip_button,
+            show_song_card: embedded_song_card,
+            show_music_hint: embedded_music_hint,
             cache_forward_mb,
             cache_back_mb,
             patience_secs,

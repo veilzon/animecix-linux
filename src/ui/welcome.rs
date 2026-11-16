@@ -209,15 +209,15 @@ impl WelcomeView {
         pref_group.add(&theme_row);
 
         let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
-            "Atlama Bildirimleri",
-            "İntro/outro başında atlama ipucu göster",
+            "MPV Atlama Bildirimleri",
+            "Harici mpv'de intro/outro başında atlama ipucu göster",
             settings.show_intro_hint,
         );
         pref_group.add(&intro_hint_row);
 
         let (music_hint_row, music_hint_sw) = crate::ui::components::switch_row(
-            "Şarkı İpucu",
-            "Şarkı satırında Shift+M ile tarayıcıda aç ipucunu göster",
+            "MPV Şarkı İpucu",
+            "Harici mpv'nin şarkı satırında Shift+M ipucunu göster",
             settings.show_music_hint,
         );
         pref_group.add(&music_hint_row);

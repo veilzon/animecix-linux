@@ -56,7 +56,8 @@ pub struct EmbedRequest {
     pub saved_pos: Option<f64>,
     pub upscale: String,
     pub auto_fullscreen: bool,
-    pub show_intro_hint: bool,
+    pub show_skip_button: bool,
+    pub show_song_card: bool,
     pub show_music_hint: bool,
     pub cache_forward_mb: u64,
     pub cache_back_mb: u64,
@@ -97,7 +98,8 @@ struct PlayerState {
     cards_kind: Option<SkipKind>,
     cards_deadline: Option<Instant>,
     cards_hidden: bool,
-    show_intro_hint: bool,
+    show_skip_button: bool,
+    show_song_card: bool,
     show_music_hint: bool,
     song_card: ui::SongCard,
     skip_pill_rev: gtk::Revealer,
@@ -386,7 +388,8 @@ pub fn build(
         cards_kind: None,
         cards_deadline: None,
         cards_hidden: false,
-        show_intro_hint: req.show_intro_hint,
+        show_skip_button: req.show_skip_button,
+        show_song_card: req.show_song_card,
         show_music_hint: req.show_music_hint,
         song_card: skip_card.clone(),
         skip_pill_rev: skip_pill_rev.clone(),
@@ -1989,7 +1992,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             } else {
                 None
             };
-            let song = if s.show_intro_hint {
+            let song = if s.show_song_card {
                 if op_active {
                     plan.music_op.clone()
                 } else if ed_active {
@@ -2014,11 +2017,16 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.cards_deadline = None;
             }
         }
-        if active.is_some() && !s.cards_hidden {
+        let cards_visible = active.is_some() && !s.cards_hidden;
+        if cards_visible && s.show_skip_button {
             if let Some(kind) = active {
                 s.skip_pill.set_label(kind.action());
                 s.skip_pill_rev.set_reveal_child(true);
             }
+        } else {
+            s.skip_pill_rev.set_reveal_child(false);
+        }
+        if cards_visible && s.show_song_card {
             if let Some(music) = song {
                 let song_label = if s.show_music_hint {
                     "Tarayıcıda aç (Shift+M)"
@@ -2034,7 +2042,6 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.song_card.hide();
             }
         } else {
-            s.skip_pill_rev.set_reveal_child(false);
             s.song_card.hide();
         }
 

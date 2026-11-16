@@ -715,6 +715,15 @@ pub struct Settings {
     /// Kapalıysa mevcut harici mpv penceresi kullanılır.
     #[serde(default = "default_true")]
     pub embedded_player: bool,
+    /// Gömülü oynatıcıda sağ alttaki İntro/Outro atla düğmesi.
+    #[serde(default = "default_true")]
+    pub embedded_skip_button: bool,
+    /// Gömülü oynatıcıda sol alttaki şarkı kartı.
+    #[serde(default = "default_true")]
+    pub embedded_song_card: bool,
+    /// Gömülü oynatıcıda şarkı kartındaki Shift+M ipucu.
+    #[serde(default = "default_true")]
+    pub embedded_music_hint: bool,
     #[serde(default = "default_true")]
     pub auto_update: bool,
     #[serde(default = "default_true")]
@@ -1237,6 +1246,9 @@ impl Default for Settings {
             search_shortcut: default_search_shortcut(),
             auto_fullscreen: default_true(),
             embedded_player: true,
+            embedded_skip_button: true,
+            embedded_song_card: true,
+            embedded_music_hint: true,
             auto_update: default_true(),
             notify_uptodate: default_true(),
             upscale: default_upscale(),
@@ -5029,6 +5041,23 @@ mod tests {
         s.cf_clearance = "BILET123".into();
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back.cf_clearance, "BILET123");
+    }
+
+    #[test]
+    fn settings_embedded_player_flags_default_and_roundtrip() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(old.embedded_skip_button, "atla düğmesi varsayılan açık");
+        assert!(old.embedded_song_card, "şarkı kartı varsayılan açık");
+        assert!(old.embedded_music_hint, "şarkı ipucu varsayılan açık");
+
+        let mut s = Settings::default();
+        s.embedded_skip_button = false;
+        s.embedded_song_card = false;
+        s.embedded_music_hint = false;
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(!back.embedded_skip_button);
+        assert!(!back.embedded_song_card);
+        assert!(!back.embedded_music_hint);
     }
 
     #[test]
