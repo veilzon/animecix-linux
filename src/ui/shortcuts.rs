@@ -60,15 +60,23 @@ fn ui_xml(search: &str, quick_search: &str, quick_enabled: bool) -> String {
             vec![item(&accel(quick_search), "Bölüm listesinde ara")],
         ));
     }
-    // Harici mpv varsayılanları (bizde gömülü oynatıcı yok).
+    // Gömülü oynatıcı (libmpv); harici mpv seçildiğinde de aynı tuşlar geçerli.
     out.push(group(
-        "Oynatıcı (mpv)",
+        "Gömülü Oynatıcı",
         vec![
             item("space", "Oynat / duraklat"),
+            item("Left", "10 sn geri"),
+            item("Right", "10 sn ileri"),
+            item("Up", "Sesi artır"),
+            item("Down", "Sesi azalt"),
             item("n", "Sonraki bölüm"),
             item("p", "Önceki bölüm"),
             item("f", "Tam ekran"),
+            item("a", "Ekranı doldur / orijinal oran"),
+            item("s", "İntroyu atla"),
+            item("e", "Outroyu atla"),
             item("m", "Sesi aç / kapat"),
+            item("M", "Çalan şarkıyı tarayıcıda aç"),
         ],
     ));
     format!(
@@ -76,7 +84,7 @@ fn ui_xml(search: &str, quick_search: &str, quick_enabled: bool) -> String {
           <object class="GtkShortcutsWindow" id="shortcuts">
             <child><object class="GtkShortcutsSection">
               <property name="section-name">shortcuts</property>
-              <property name="max-height">12</property>
+              <property name="max-height">16</property>
               {}
             </object></child>
           </object>
@@ -124,6 +132,13 @@ mod tests {
         assert!(with.contains("Aramayı aç"));
         assert!(with.contains("Tam ekran"));
         assert!(with.contains("Bölüm listesinde ara"));
+        assert!(with.contains("Gömülü Oynatıcı"));
+        assert!(with.contains("İntroyu atla"));
+        assert!(with.contains("Sonraki bölüm"));
+        assert!(with.contains("10 sn geri"));
+        assert!(with.contains("10 sn ileri"));
+        assert!(with.contains("Sesi artır"));
+        assert!(with.contains("Sesi azalt"));
 
         let without = ui_xml("Ctrl+S", "/", false);
         assert!(
