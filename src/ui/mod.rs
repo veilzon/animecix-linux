@@ -1,4 +1,5 @@
 pub mod brand_icons;
+pub mod changelog;
 pub mod components;
 pub mod downloads_view;
 pub mod episodes_view;
