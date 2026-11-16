@@ -1,5 +1,6 @@
 /target
 *.log
+/*.mp4
 state.json
 squashfs-root/
 /tmp
