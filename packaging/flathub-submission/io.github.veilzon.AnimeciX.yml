@@ -45,7 +45,7 @@ modules:
     buildsystem: meson
     config-opts:
       - -Dcplayer=true
-      - -Dlibmpv=false
+      - -Dlibmpv=true
       - -Dlua=disabled
       - -Djavascript=disabled
       - -Dlibarchive=disabled

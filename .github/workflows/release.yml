@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils libtool libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -77,6 +77,19 @@ jobs:
           echo "max glibc: $MAXGLIBC"
           TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
           [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
+
+      - name: AppImage libmpv smoke
+        run: |
+          rm -rf squashfs-root
+          ./AnimeciX-x86_64.AppImage --appimage-extract >/dev/null
+          export APPDIR="$PWD/squashfs-root"
+          test -e "$APPDIR/usr/lib/libmpv.so.2"
+          ! ldd "$APPDIR/usr/lib/libmpv.so.2" | grep 'not found'
+          xvfb-run -a "$APPDIR/usr/bin/animecix" --check-libmpv
+          ffmpeg -y -f lavfi -i testsrc=size=320x180:rate=24 -t 2 -pix_fmt yuv420p /tmp/animecix-smoke.mp4 >/dev/null 2>&1
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 "$APPDIR/usr/bin/animecix" --player-smoke /tmp/animecix-smoke.mp4
+          stat -c 'AppImage boyut: %s bayt' AnimeciX-x86_64.AppImage
+          rm -rf squashfs-root
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

@@ -4,7 +4,7 @@ name: Paketle (deb/rpm + ekran görüntüleri)
 # thin deb/rpm üretip aynı release'e ekler. Neden kaynaktan?
 # Release AppImage'ındaki binary bakımcı makinesinde derlenir (glibc 2.38+),
 # Ubuntu 22.04/Debian 12'de çalışmaz. Dağıtım paketi = dağıtım tabanında derleme.
-# Destek: Debian 12+, Ubuntu 24.04+, Fedora 40+ (thin: sistem mpv/GTK kullanır).
+# Destek: Debian 12+, Ubuntu 24.04+, Fedora 40+ (thin: sistem libmpv/GTK kullanır).
 on:
   workflow_dispatch:
     inputs:
@@ -148,8 +148,9 @@ jobs:
           Depends: mpv, libgtk-4-1, libadwaita-1-0, aria2
           Section: video
           Priority: optional
-          Description: Anime, dizi ve film izleme istemcisi (GTK4, thin: sistem mpv kullanır)
-           Harici mpv + sistem GTK ile çalışan ince paket. Debian 12+ / Ubuntu 24.04+ gerekir.
+          Description: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
+           Uygulama içi libmpv oynatıcı + sistem GTK kullanan ince paket.
+           Debian 12+ / Ubuntu 24.04+ gerekir.
           EOF
           # Eski sürümlerin ~/.local/bin ikili kopyasını ve ona işaret eden
           # kullanıcı kısayolunu temizleyen postinst (güncelleme döngüsü fix'i).
@@ -165,6 +166,7 @@ jobs:
           apt-get install -y "./animecix_${VER}_amd64.deb" desktop-file-utils xvfb gh
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
+          xvfb-run -a animecix --check-libmpv
           rm -rf /var/lib/apt/lists/*
 
       - name: Deb'i paylaş (ekran job'u için)
@@ -212,12 +214,12 @@ jobs:
           Name: animecix
           Version: $VER
           Release: 1%{?dist}
-          Summary: Anime, dizi ve film izleme istemcisi (GTK4, thin)
+          Summary: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
           License: MIT
           Requires: mpv, gtk4, libadwaita, aria2
           %define debug_package %{nil}
           %description
-          Harici mpv + sistem GTK ile calisan ince paket.
+          Uygulama içi libmpv oynatıcı ve sistem GTK ile çalışan ince paket.
           %files
           /usr/bin/animecix
           /usr/share/applications/tr.com.animecix.desktop
@@ -241,6 +243,7 @@ jobs:
           dnf install -y "./$RPM"
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
+          xvfb-run -a animecix --check-libmpv
 
       - name: Release'e yükle
         run: |

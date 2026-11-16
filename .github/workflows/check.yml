@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -73,6 +73,15 @@ jobs:
           xvfb-run -a cargo test --release --bin animecix -- --test-threads=1
           cargo test --release --test refcell_guard --test next_episode
 
+      - name: Embedded player smoke (libmpv + GLArea)
+        run: |
+          cargo build --release --bin animecix
+          LIBMPV=$(ldconfig -p | awk '/libmpv\.so\.2 /{print $NF; exit}')
+          test -n "$LIBMPV"
+          ffmpeg -y -f lavfi -i testsrc=size=320x180:rate=24 -t 2 -pix_fmt yuv420p /tmp/animecix-smoke.mp4 >/dev/null 2>&1
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ANIMECIX_LIBMPV_PATH="$LIBMPV" ./target/release/animecix --check-libmpv
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 ANIMECIX_LIBMPV_PATH="$LIBMPV" ./target/release/animecix --player-smoke /tmp/animecix-smoke.mp4
+
       - name: Skip harness (mpv stamp logic)
         run: python3 tests/skip_harness.py
 
@@ -95,7 +104,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv xvfb xauth binutils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 

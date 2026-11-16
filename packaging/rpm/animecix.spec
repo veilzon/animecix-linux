@@ -26,7 +26,7 @@ Requires:       libadwaita
 Requires:       aria2
 
 %description
-AnimeciX; GTK4/libadwaita ile yazılmış, mpv tabanlı Türkçe anime,
+AnimeciX; GTK4/libadwaita ile yazılmış, gömülü libmpv tabanlı Türkçe anime,
 dizi ve film izleme istemcisidir. İndirme yöneticisi, Discord Rich
 Presence, intro/outro atlama ve çevrimdışı oynatma içerir.
 

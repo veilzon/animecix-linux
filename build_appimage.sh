@@ -141,6 +141,55 @@ if [ -f "$ICON_SRC" ]; then
     cp "$ICON_SRC" "$APPDIR/.DirIcon"
 fi
 
+# 4a. libmpv (gömülü oynatıcı) + bağımlılıkları.
+# Loader çalışırken APPDIR/usr/lib/libmpv.so.2 arar; global LD_LIBRARY_PATH
+# verilmez. libmpv ve yanına kopyalanan tüm .so dosyaları $ORIGIN'e bakar.
+LIBMPV_SRC="${ANIMECIX_LIBMPV_PATH:-}"
+if [ -n "$LIBMPV_SRC" ] && [ -e "$LIBMPV_SRC" ]; then
+    LIBMPV_SRC="$(readlink -f "$LIBMPV_SRC")"
+else
+    LIBMPV_SRC="$(ldconfig -p 2>/dev/null | awk '/libmpv\.so\.2 /{print $NF; exit}')"
+fi
+if [ -z "$LIBMPV_SRC" ] || [ ! -f "$LIBMPV_SRC" ]; then
+    LIBMPV_SRC="$(find /usr/lib /usr/lib64 /usr/local/lib /app/lib -maxdepth 3 -name 'libmpv.so.2*' -print 2>/dev/null | sort | head -n1)"
+fi
+if [ -z "$LIBMPV_SRC" ] || [ ! -f "$LIBMPV_SRC" ]; then
+    echo "==> HATA: libmpv.so.2 bulunamadı. 'mpv' veya 'libmpv-dev' kurun."
+    exit 1
+fi
+if ! command -v patchelf >/dev/null 2>&1; then
+    echo "==> HATA: patchelf gerekli (paket: patchelf)."
+    exit 1
+fi
+mkdir -p "$APPDIR/usr/lib"
+LIBMPV_REAL="$(basename "$LIBMPV_SRC")"
+cp -f "$LIBMPV_SRC" "$APPDIR/usr/lib/$LIBMPV_REAL"
+ln -sf "$LIBMPV_REAL" "$APPDIR/usr/lib/libmpv.so.2"
+ln -sf "$LIBMPV_REAL" "$APPDIR/usr/lib/libmpv.so"
+
+copy_dep() {
+    local lib="$1" base
+    base="$(basename "$lib")"
+    case "$base" in
+        libc.so*|libm.so*|libpthread.so*|libdl.so*|librt.so*|libresolv.so*|ld-linux*|libnss*|libstdc++.so*|libgcc_s.so*) return ;;
+    esac
+    [ -e "$APPDIR/usr/lib/$base" ] || cp -L "$lib" "$APPDIR/usr/lib/$base"
+}
+for lib in $(ldd "$LIBMPV_SRC" 2>/dev/null | awk '/=> \//{print $3}'); do
+    copy_dep "$lib"
+done
+# Kopyalanan her kütüphanenin kendi bağımlılıklarını da tara.
+for copied in "$APPDIR"/usr/lib/*.so*; do
+    [ -f "$copied" ] || continue
+    while IFS= read -r lib; do
+        copy_dep "$lib"
+    done < <(ldd "$copied" 2>/dev/null | awk '/=> \//{print $3}')
+done
+while IFS= read -r -d '' so; do
+    patchelf --set-rpath '$ORIGIN' "$so"
+done < <(find "$APPDIR/usr/lib" -maxdepth 1 -type f -name '*.so*' -print0)
+echo "==> libmpv paketlendi: $(basename "$LIBMPV_SRC")"
+
 # 4b. Adwaita symbolic ikonları standart hicolor konumuna kopyala
 # (XDG_DATA_DIRS üzerinden bulunur; CC-BY-SA atıf dosyasıyla birlikte).
 if [ -d "assets/hicolor/scalable/actions" ]; then

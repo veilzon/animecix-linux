@@ -83,7 +83,7 @@ modules:
       # ayıklama kanaryası yüzünden mpv --version bile çöküyordu.
       - -Db_ndebug=if-release
       - -Dcplayer=true
-      - -Dlibmpv=false
+      - -Dlibmpv=true
       - -Dlua=luajit
       - -Djavascript=disabled
       - -Dlibarchive=disabled
