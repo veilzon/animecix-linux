@@ -1868,7 +1868,13 @@ impl Client {
     }
 
     pub fn enrich_title(&self, t: &Title) -> Title {
-        if t.genres.is_some() || t.runtime.is_some() || t.release_date.is_some() {
+        let has_genres = t.genres.as_ref().is_some_and(|g| !g.is_empty());
+        let has_runtime = t.runtime.is_some_and(|r| r > 0);
+        let has_release = t
+            .release_date
+            .as_ref()
+            .is_some_and(|s| !s.trim().is_empty());
+        if has_genres && has_runtime && has_release {
             return t.clone();
         }
         if let Ok(cats) = self.home_lists() {

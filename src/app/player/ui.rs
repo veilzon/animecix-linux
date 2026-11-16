@@ -77,6 +77,14 @@ pub fn player_css() -> String {
     }
     .player-skip-card .title-4 { color: #FFFFFF; }
     .player-skip-card .dim-label { color: rgba(255,255,255,0.72); }
+    .embed-edge { background: rgba(255,255,255,0.38); border-radius: 999px; }
+    .ep-panel {
+        background: rgba(10,10,14,0.92); border-radius: 14px 0 0 14px;
+        padding: 10px; border-left: 1px solid alpha(@accent_color, 0.35);
+    }
+    .ep-panel-title { font-weight: 800; letter-spacing: 0.08em; color: #FFFFFF; }
+    .season-tab { border-radius: 999px; padding: 2px 10px; }
+    .ep-current { border: 2px solid alpha(@accent_color, 0.9); border-radius: 10px; }
     "#.to_string()
 }
 

@@ -1,3 +1,4 @@
+pub mod episodes;
 pub mod source;
 pub mod ui;
 
@@ -19,6 +20,7 @@ use crate::embed_mpv::render::RenderContext;
 use crate::skip::SkipPlan;
 use crate::ui::operation_stack::OperationStack;
 
+use self::episodes::EpisodeDrawer;
 use self::source::{resume_after_switch, Source, SourceQueue};
 
 /// Gömülü oynatıcının uygulamaya bağlanan callback'leri.
@@ -83,6 +85,9 @@ struct PlayerState {
     auto_next_enabled: bool,
     auto_next_fired: bool,
     next_ep: Option<Episode>,
+    drawer: EpisodeDrawer,
+    episodes: Vec<Episode>,
+    episode_rx: Option<std::sync::mpsc::Receiver<Result<Vec<Episode>, String>>>,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
     root: gtk::Box,
@@ -308,6 +313,26 @@ pub fn build(
     }
     let controls = ui::build_control_bar(&stage, start_volume, start_muted, &media_title);
     let topbar = ui::build_topbar(&stage);
+    let drawer = episodes::build(&stage);
+    let initial_episodes = req.episodes.clone();
+    let on_play_episode = host.on_play_episode.clone();
+    let episode_rx = if initial_episodes.len() <= 1 {
+        let (tx, rx) = std::sync::mpsc::channel::<Result<Vec<Episode>, String>>();
+        let client = host.client.clone();
+        let title = req.title.clone();
+        std::thread::spawn(move || {
+            let result = client
+                .episodes(&client.enrich_title(&title))
+                .map(|mut eps| {
+                    eps.sort_by_key(|e| (e.season, e.episode));
+                    eps
+                });
+            let _ = tx.send(result);
+        });
+        Some(rx)
+    } else {
+        None
+    };
 
     let alive = Arc::new(AtomicBool::new(true));
     let click_pending = Rc::new(Cell::new(false));
@@ -338,6 +363,9 @@ pub fn build(
         auto_next_enabled: req.auto_next,
         auto_next_fired: false,
         next_ep: req.next_ep.clone(),
+        drawer: drawer.clone(),
+        episodes: initial_episodes.clone(),
+        episode_rx,
         window: parent.clone(),
         gl_area: gl_area.clone(),
         root: root.clone(),
@@ -776,6 +804,14 @@ pub fn build(
 
     // İlk kaynak, GLArea realize olup render context kurulduktan sonra
     // connect_realize içinde yüklenir (libmpv render API sözleşmesi).
+    episodes::render(
+        &drawer,
+        &initial_episodes,
+        req.ep.season,
+        req.ep.episode,
+        req.title.runtime,
+        &on_play_episode,
+    );
 
     // 500 ms süpervizör.
     {
@@ -1056,6 +1092,52 @@ fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
 }
 
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
+    // Bölüm listesi arka plandan geldi mi?
+    let episodes_updated = {
+        let mut s = match st.try_borrow_mut() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let mut updated = false;
+        if let Some(rx) = s.episode_rx.as_ref() {
+            match rx.try_recv() {
+                Ok(Ok(eps)) => {
+                    s.episode_rx = None;
+                    if !eps.is_empty() {
+                        s.episodes = eps;
+                        updated = true;
+                    }
+                }
+                Ok(Err(e)) => {
+                    eprintln!("[EMBED] bölüm listesi alınamadı: {e}");
+                    s.episode_rx = None;
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    s.episode_rx = None;
+                }
+            }
+        }
+        updated
+    };
+    if episodes_updated {
+        let (drawer, eps, season, episode, runtime, cb) = {
+            let s = match st.try_borrow() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            (
+                s.drawer.clone(),
+                s.episodes.clone(),
+                s.ep.season,
+                s.ep.episode,
+                s.title.runtime,
+                s.host.on_play_episode.clone(),
+            )
+        };
+        episodes::render(&drawer, &eps, season, episode, runtime, &cb);
+    }
+
     // Embed çözümleme sonucu geldi mi?
     let resolved = {
         let mut s = match st.try_borrow_mut() {
