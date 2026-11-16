@@ -12,8 +12,8 @@ DEST="${MINIMAL_LIBMPV_DIR:-$ROOT/target/minimal-libmpv}"
 PREFIX="$DEST/usr"
 SRC="$DEST/src"
 JOBS="${JOBS:-$(nproc)}"
-FFMPEG_VER="${FFMPEG_VER:-7.1.1}"
-MPV_VER="${MPV_VER:-0.40.0}"
+FFMPEG_VER="${FFMPEG_VER:-6.1.1}"
+MPV_VER="${MPV_VER:-0.36.0}"
 
 if [ -f "$PREFIX/lib/libmpv.so.2" ] && [ "${MINIMAL_MPV_FORCE:-0}" != "1" ]; then
     echo "==> minimal libmpv hazır: $PREFIX/lib/libmpv.so.2"
@@ -96,6 +96,8 @@ meson setup "$DEST/build-mpv" "$SRC/mpv-$MPV_VER" \
     -Dzlib=enabled \
     -Diconv=enabled \
     -Dvulkan=disabled \
+    -Dlibplacebo=disabled \
+    -Dlibplacebo-next=disabled \
     -Dzimg=disabled \
     -Duchardet=disabled \
     -Dvapoursynth=disabled \
