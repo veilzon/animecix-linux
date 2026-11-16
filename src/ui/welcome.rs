@@ -180,8 +180,8 @@ impl WelcomeView {
         pref_group.set_title("Hızlı Tercihler");
 
         let (fs_row, fs_sw) = crate::ui::components::switch_row(
-            "MPV Otomatik Tam Ekran",
-            "Video başladığında MPV tam ekranda açılır",
+            "Oynatıcı Otomatik Tam Ekran",
+            "Video başladığında oynatıcı tam ekranda açılır",
             settings.auto_fullscreen,
         );
         pref_group.add(&fs_row);

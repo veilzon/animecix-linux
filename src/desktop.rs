@@ -25,14 +25,15 @@ pub fn check_all_dependencies() -> Vec<DepStatus> {
     let (distro_name, mpv_cmd) = detect_distro_info();
     let (_, pkg_cmd) = detect_package_manager_cmd();
 
+    let has_libmpv = crate::embed_mpv::loader::load().is_ok();
     let has_mpv = check_command("mpv");
     let has_curl = check_command("curl");
     let has_xdg = check_command("xdg-open");
 
     vec![
         DepStatus {
-            name: "Video Oynatıcı (mpv)",
-            installed: has_mpv,
+            name: "Video Oynatıcı (libmpv / mpv)",
+            installed: player_dependency_available(has_libmpv, has_mpv),
             install_cmd: Some(format!("{mpv_cmd}   # ({distro_name})")),
         },
         DepStatus {
@@ -46,6 +47,11 @@ pub fn check_all_dependencies() -> Vec<DepStatus> {
             install_cmd: Some(format!("{pkg_cmd} xdg-utils")),
         },
     ]
+}
+
+/// Gömülü oynatıcı için libmpv yeterli; libmpv yoksa harici mpv de kabul.
+fn player_dependency_available(libmpv: bool, external_mpv: bool) -> bool {
+    libmpv || external_mpv
 }
 
 pub fn check_desktop_entry_installed() -> bool {
@@ -341,6 +347,13 @@ fn detect_distro_info() -> (&'static str, &'static str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn player_dependency_accepts_libmpv_or_external_mpv() {
+        assert!(player_dependency_available(true, false));
+        assert!(player_dependency_available(false, true));
+        assert!(!player_dependency_available(false, false));
+    }
 
     #[test]
     fn desktop_exec_target_uses_stable_copy_for_appimage() {

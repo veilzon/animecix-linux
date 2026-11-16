@@ -620,8 +620,8 @@ impl SettingsView {
         player_group.set_title("Oynatıcı Ayarları");
 
         let (fs_row, fs_sw) = crate::ui::components::switch_row(
-            "MPV Otomatik Tam Ekran",
-            "Video başladığında MPV'yi otomatik tam ekran modunda açar",
+            "Oynatıcı Otomatik Tam Ekran",
+            "Video başladığında oynatıcıyı otomatik tam ekran modunda açar",
             settings.auto_fullscreen,
         );
         player_group.add(&fs_row);
