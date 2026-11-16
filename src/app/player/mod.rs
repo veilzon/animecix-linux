@@ -39,7 +39,6 @@ pub struct PlayerHost {
     pub on_download: Rc<dyn Fn(Episode)>,
     pub on_ready: Rc<dyn Fn()>,
     pub on_terminal: Rc<dyn Fn(crate::app::PlayTerminal, String)>,
-    pub on_external: Rc<dyn Fn()>,
 }
 
 pub struct EmbedRequest {
@@ -64,8 +63,6 @@ pub struct EmbedRequest {
     pub patience_secs: u64,
     pub auto_next: bool,
     pub episodes: Vec<Episode>,
-    pub prev_ep: Option<Episode>,
-    pub next_ep: Option<Episode>,
 }
 
 struct PlayerState {
@@ -90,7 +87,6 @@ struct PlayerState {
     host_saved: bool,
     auto_next_enabled: bool,
     auto_next_fired: bool,
-    next_ep: Option<Episode>,
     plan: Option<SkipPlan>,
     plan_rx: Option<std::sync::mpsc::Receiver<Option<SkipPlan>>>,
     plan_requested: bool,
@@ -113,14 +109,11 @@ struct PlayerState {
     fansub_id: i64,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
-    root: gtk::Box,
     topbar: gtk::Revealer,
     shade: gtk::Revealer,
     controls: gtk::Revealer,
     center: gtk::Revealer,
     play_btn: gtk::Button,
-    back10: gtk::Button,
-    fwd10: gtk::Button,
     seek: gtk::Scale,
     cur_lbl: gtk::Label,
     dur_lbl: gtk::Label,
@@ -128,13 +121,11 @@ struct PlayerState {
     vol_scale: gtk::Scale,
     fs_btn: gtk::Button,
     status: gtk::Label,
-    speed_btn: gtk::MenuButton,
     speed_pop: gtk::Popover,
     quality_btn: gtk::MenuButton,
     quality_box: gtk::Box,
     quality_pop: gtk::Popover,
     ctx_pop: gtk::Popover,
-    bot_title: gtk::Label,
     last_motion: Instant,
     last_mx: f64,
     last_my: f64,
@@ -167,17 +158,10 @@ impl EmbeddedPlayer {
             .unwrap_or(0.0)
     }
 
-    pub fn duration(&self) -> f64 {
-        self.state
-            .borrow()
-            .player
-            .as_ref()
-            .map(|p| p.dur())
-            .unwrap_or(0.0)
-    }
-
-    pub fn is_alive(&self) -> bool {
-        self.state.borrow().guard.is_alive()
+    /// Klavye odağını video alanına verir; oynatıcı açılır açılmaz
+    /// Space/F/S/E gibi tuşlar ilk tıklama olmadan çalışsın.
+    pub fn focus(&self) {
+        self.state.borrow().gl_area.grab_focus();
     }
 
     /// Oynatmayı durdurur, GL bağlamını mpv'den önce bırakır.
@@ -392,7 +376,6 @@ pub fn build(
         host_saved: false,
         auto_next_enabled: req.auto_next,
         auto_next_fired: false,
-        next_ep: req.next_ep.clone(),
         plan: req.plan.clone(),
         plan_rx: None,
         plan_requested: false,
@@ -415,14 +398,11 @@ pub fn build(
         fansub_id: req.fansub_id,
         window: parent.clone(),
         gl_area: gl_area.clone(),
-        root: root.clone(),
         topbar: topbar.revealer.clone(),
         shade: shade.clone(),
         controls: controls.controls_revealer.clone(),
         center: controls.center_rev.clone(),
         play_btn: controls.play_btn.clone(),
-        back10: controls.back10_btn.clone(),
-        fwd10: controls.fwd10_btn.clone(),
         seek: controls.seek.clone(),
         cur_lbl: controls.cur_lbl.clone(),
         dur_lbl: controls.dur_lbl.clone(),
@@ -430,13 +410,11 @@ pub fn build(
         vol_scale: controls.vol_scale.clone(),
         fs_btn: topbar.fullscreen.clone(),
         status: controls.status.clone(),
-        speed_btn: controls.speed_btn.clone(),
         speed_pop: controls.speed_pop.clone(),
         quality_btn: controls.quality_btn.clone(),
         quality_box: controls.quality_box.clone(),
         quality_pop: controls.quality_pop.clone(),
         ctx_pop: ctx_pop.clone(),
-        bot_title: controls.bot_title.clone(),
         last_motion: Instant::now(),
         last_mx: -1.0,
         last_my: -1.0,
@@ -903,6 +881,13 @@ pub fn build(
             }
         });
         root.add_controller(key);
+    }
+    {
+        // Sayfa stack'e eklenip görünür olunca odağı klavye kontrolüne ver.
+        let area = gl_area.clone();
+        gl_area.connect_map(move |_| {
+            area.grab_focus();
+        });
     }
 
     // İlk kaynak, GLArea realize olup render context kurulduktan sonra
@@ -2217,10 +2202,6 @@ fn sibnet_referer(url: &str) -> Option<String> {
     })
 }
 
-pub fn player_page_name(title_id: u64, season: u64, episode: u64) -> String {
-    format!("player-{title_id}-{season}-{episode}")
-}
-
 pub fn fmt_time(seconds: f64) -> String {
     crate::embed_mpv::fmt_time(seconds)
 }
@@ -2234,11 +2215,6 @@ mod tests {
         let s: crate::api::Settings = serde_json::from_str("{}").expect("defaults");
         assert!(s.embedded_player);
         assert!(crate::api::Settings::default().embedded_player);
-    }
-
-    #[test]
-    fn player_page_name_is_stable() {
-        assert_eq!(player_page_name(42, 1, 3), "player-42-1-3");
     }
 
     #[test]

@@ -1541,6 +1541,10 @@ impl App {
                         gtk::StackTransitionType::Crossfade,
                         widget,
                     );
+                    self.window.present();
+                    if let Some(p) = self.player.borrow().as_ref() {
+                        p.focus();
+                    }
                 } else {
                     switch(
                         &self.stack,
