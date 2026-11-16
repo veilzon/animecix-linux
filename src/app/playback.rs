@@ -1,4 +1,6 @@
 use gtk::prelude::*;
+use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::api::{self, Episode, Title};
 use crate::app::{
@@ -345,7 +347,7 @@ impl App {
     /// Komşu bölüme geç: bölüm listesini worker'da çekip sıralar, yöndeki
     /// komşuyu bulur, `Msg::NextEp` ile oynatır. Sınırda toast'lık hata döner
     /// (filmde liste boşsa da aynı yol). `dir`: +1 sonraki, -1 önceki.
-    fn request_neighbor(&self, title: &Title, cur: &Episode, dir: i8) {
+    pub(crate) fn request_neighbor(&self, title: &Title, cur: &Episode, dir: i8) {
         if title.title_type.as_deref() == Some("movie") {
             self.ops.info(
                 "Filmde sonraki bölüm yok",
@@ -471,6 +473,269 @@ impl App {
     }
 
     /// Eski indirme kayıtlarında başlık kimliğini yerel verilerden çözer.
+    /// Aktif gömülü oynatıcıyı kapatır. Idempotent.
+    pub(crate) fn shutdown_player(&self) {
+        if let Some(p) = self.player.borrow_mut().take() {
+            p.shutdown();
+        }
+    }
+
+    /// Gömülü oynatıcıyı dener. Başarılıysa true döner; aksi halde
+    /// çağıran harici mpv yoluna devam eder.
+    fn try_embedded(
+        &self,
+        title: &Title,
+        ep: &Episode,
+        candidates: &[String],
+        fast_embeds: &[String],
+        fallback_embeds: &[String],
+        plan: Option<crate::skip::SkipPlan>,
+    ) -> bool {
+        let api = match crate::embed_mpv::loader::load()
+            .and_then(crate::embed_mpv::player::MpvApi::from_loaded)
+        {
+            Ok(api) => Rc::new(api),
+            Err(e) => {
+                if !self.embed_warned.replace(true) {
+                    self.ops.info(
+                        "Gömülü oynatıcı yok",
+                        "libmpv bulunamadı; harici mpv penceresinde açılıyor.",
+                        std::time::Duration::from_secs(6),
+                    );
+                    eprintln!("[EMBED] kullanılamıyor: {e}");
+                }
+                return false;
+            }
+        };
+
+        let Some(app_weak) = self
+            .self_weak
+            .borrow()
+            .clone()
+            .filter(|w| w.strong_count() > 0)
+        else {
+            return false;
+        };
+
+        let (upscale, auto_fullscreen, show_intro_hint, show_music_hint) = {
+            let s = self.settings.borrow();
+            (
+                s.upscale.clone(),
+                s.auto_fullscreen,
+                s.show_intro_hint,
+                s.show_music_hint,
+            )
+        };
+        let (cache_forward_mb, cache_back_mb, auto_next) = {
+            let s = self.settings.borrow();
+            (
+                s.mpv_cache_forward_mb
+                    .clamp(api::MPV_CACHE_FORWARD_MIN_MB, api::MPV_CACHE_FORWARD_MAX_MB),
+                s.mpv_cache_back_mb
+                    .clamp(api::MPV_CACHE_BACK_MIN_MB, api::MPV_CACHE_BACK_MAX_MB),
+                s.auto_next,
+            )
+        };
+        let patience_secs = self.client.load_settings().source_patience_secs.max(10);
+        let saved_pos = self.client.start_pos(title.id, ep.season, ep.episode);
+        let episodes = self
+            .page_history
+            .borrow()
+            .iter()
+            .rev()
+            .find_map(|p| match p {
+                crate::app::Page::Episodes { title: t, eps }
+                | crate::app::Page::Movie { title: t, eps }
+                    if t.id == title.id =>
+                {
+                    Some(eps.clone())
+                }
+                _ => None,
+            })
+            .unwrap_or_default();
+        let (prev_ep, next_ep) = if title.title_type.as_deref() == Some("movie") {
+            (None, None)
+        } else {
+            (
+                api::neighbor_episode(&episodes, ep.season, ep.episode, -1),
+                api::neighbor_episode(&episodes, ep.season, ep.episode, 1),
+            )
+        };
+
+        let media_title = format!(
+            "{} — {}",
+            title.name,
+            components::episode_label_compact(ep.season, ep.episode, &ep.name)
+        );
+        let op_id = format!("play:{}:{}:{}", title.id, ep.season, ep.episode);
+        self.ops.begin(&op_id, "Açılıyor", &media_title);
+        *self.opening_op_id.borrow_mut() = Some(op_id.clone());
+        *self.opening_op_shown_at.borrow_mut() = Some(std::time::Instant::now());
+
+        let app_ready = app_weak.clone();
+        let op_ready = op_id.clone();
+        let on_ready: Rc<dyn Fn()> = Rc::new(move || {
+            let Some(app) = app_ready.upgrade() else {
+                return;
+            };
+            if app.opening_op_id.borrow().as_deref() != Some(op_ready.as_str()) {
+                return;
+            }
+            let shown_at = app.opening_op_shown_at.borrow_mut().take();
+            let finish = {
+                let app_finish = app_ready.clone();
+                let id_finish = op_ready.clone();
+                move || {
+                    if let Some(app) = app_finish.upgrade() {
+                        if app.opening_op_id.borrow().as_deref() == Some(id_finish.as_str()) {
+                            app.ops.finish(
+                                &id_finish,
+                                OperationState::Done,
+                                std::time::Duration::ZERO,
+                            );
+                            app.opening_op_id.borrow_mut().take();
+                            app.opening_op_shown_at.borrow_mut().take();
+                        }
+                    }
+                }
+            };
+            match shown_at {
+                Some(shown_at) => match opening_finish_delay(shown_at.elapsed()) {
+                    Some(remain) => {
+                        glib::timeout_add_local_once(remain, finish);
+                    }
+                    None => finish(),
+                },
+                None => finish(),
+            }
+        });
+        let app_term = app_weak.clone();
+        let op_term = op_id.clone();
+        let on_terminal: Rc<dyn Fn(PlayTerminal, String)> = Rc::new(move |state, msg| {
+            let Some(app) = app_term.upgrade() else {
+                return;
+            };
+            if app.opening_op_id.borrow().as_deref() != Some(op_term.as_str()) {
+                return;
+            }
+            match state {
+                PlayTerminal::Done => {
+                    app.ops
+                        .finish(&op_term, OperationState::Done, std::time::Duration::ZERO);
+                }
+                PlayTerminal::Failed => {
+                    app.ops.begin(&op_term, "Açılamadı", &msg);
+                    app.ops.finish(
+                        &op_term,
+                        OperationState::Error,
+                        std::time::Duration::from_secs(6),
+                    );
+                }
+            }
+            app.opening_op_id.borrow_mut().take();
+            app.opening_op_shown_at.borrow_mut().take();
+        });
+        let app_back = app_weak.clone();
+        let on_back: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(app) = app_back.upgrade() {
+                app.go_back();
+            }
+        });
+        let app_ep = app_weak.clone();
+        let title_ep = title.clone();
+        let on_play_episode: Rc<dyn Fn(Episode)> = Rc::new(move |next| {
+            if let Some(app) = app_ep.upgrade() {
+                app.play(&title_ep, &next);
+            }
+        });
+        let app_neighbor = app_weak.clone();
+        let title_neighbor = title.clone();
+        let ep_neighbor = ep.clone();
+        let on_neighbor: Rc<dyn Fn(i8)> = Rc::new(move |dir| {
+            if let Some(app) = app_neighbor.upgrade() {
+                app.request_neighbor(&title_neighbor, &ep_neighbor, dir);
+            }
+        });
+        let app_dl = app_weak.clone();
+        let title_dl = title.clone();
+        let on_download: Rc<dyn Fn(Episode)> = Rc::new(move |next| {
+            if let Some(app) = app_dl.upgrade() {
+                app.download_episode(title_dl.clone(), next);
+            }
+        });
+        let app_external = app_weak.clone();
+        let title_ext = title.clone();
+        let ep_ext = ep.clone();
+        let on_external: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(app) = app_external.upgrade() {
+                let mut s = app.settings.borrow_mut();
+                s.embedded_player = false;
+                drop(s);
+                app.play(&title_ext, &ep_ext);
+            }
+        });
+
+        let host = crate::app::player::PlayerHost {
+            client: self.client.clone(),
+            ops: self.ops.clone(),
+            discord: self.discord_rpc.clone(),
+            progress: self.progress.clone(),
+            on_back,
+            on_play_episode,
+            on_neighbor,
+            on_download,
+            on_ready,
+            on_terminal,
+            on_external,
+        };
+        let req = crate::app::player::EmbedRequest {
+            title: title.clone(),
+            ep: ep.clone(),
+            candidates: candidates.to_vec(),
+            fast_embeds: fast_embeds.to_vec(),
+            fallback_embeds: fallback_embeds.to_vec(),
+            quality_map: HashMap::new(),
+            plan,
+            saved_pos,
+            upscale,
+            auto_fullscreen,
+            show_intro_hint,
+            show_music_hint,
+            cache_forward_mb,
+            cache_back_mb,
+            patience_secs,
+            auto_next,
+            episodes,
+            prev_ep,
+            next_ep,
+        };
+
+        self.shutdown_player();
+        let Some(player) = crate::app::player::build(&self.window, host, req, api) else {
+            self.ops
+                .begin(&op_id, "Açılamadı", "Gömülü oynatıcı başlatılamadı");
+            self.ops.finish(
+                &op_id,
+                OperationState::Error,
+                std::time::Duration::from_secs(4),
+            );
+            self.opening_op_id.borrow_mut().take();
+            self.opening_op_shown_at.borrow_mut().take();
+            return false;
+        };
+        *self.player.borrow_mut() = Some(player);
+        let page = crate::app::Page::Player {
+            title: title.clone(),
+            ep: ep.clone(),
+        };
+        {
+            let mut hist = self.page_history.borrow_mut();
+            crate::app::push_page_history(&mut hist, page.clone());
+        }
+        self.show_page(&page);
+        true
+    }
+
     fn download_title_id(&self, rec: &crate::download::DownloadRecord) -> u64 {
         if rec.title_id != 0 {
             return rec.title_id;
@@ -544,6 +809,18 @@ impl App {
             std::thread::spawn(move || {
                 c.put_title(&t, &e);
             });
+        }
+        if self.settings.borrow().embedded_player
+            && self.try_embedded(
+                title,
+                ep,
+                candidates,
+                fast_embeds,
+                fallback_embeds,
+                plan.clone(),
+            )
+        {
+            return;
         }
         eprintln!(
             "[PLAY-CAND] yeni mpv başlatılıyor: {} S{:02}E{:02} (kaynak sayısı={}, plan={})",

@@ -11,6 +11,25 @@ use super::ffi::{
 };
 use super::player::MpvApi;
 
+/// Şu an bağlı olan GL DRAW_FRAMEBUFFER id'si.
+pub fn current_fbo() -> c_int {
+    const GL_DRAW_FRAMEBUFFER_BINDING: u32 = 0x8CA6;
+    type GlGetIntegervFn = unsafe extern "C" fn(u32, *mut c_int);
+    let sym = unsafe {
+        libc::dlsym(
+            libc::RTLD_DEFAULT,
+            b"glGetIntegerv\0".as_ptr() as *const c_char,
+        )
+    };
+    if sym.is_null() {
+        return 0;
+    }
+    let f: GlGetIntegervFn = unsafe { std::mem::transmute(sym) };
+    let mut fbo: c_int = 0;
+    unsafe { f(GL_DRAW_FRAMEBUFFER_BINDING, &mut fbo) };
+    fbo
+}
+
 type Callback = Box<dyn Fn() + Send + 'static>;
 
 unsafe extern "C" fn get_proc_addr(_ctx: *mut c_void, name: *const c_char) -> *mut c_void {

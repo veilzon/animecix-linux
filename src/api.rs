@@ -708,6 +708,10 @@ pub struct Settings {
     pub search_shortcut: String,
     #[serde(default = "default_true")]
     pub auto_fullscreen: bool,
+    /// Video varsayılan olarak uygulama içinde mi oynatılsın?
+    /// Kapalıysa mevcut harici mpv penceresi kullanılır.
+    #[serde(default = "default_true")]
+    pub embedded_player: bool,
     #[serde(default = "default_true")]
     pub auto_update: bool,
     #[serde(default = "default_true")]
@@ -1229,6 +1233,7 @@ impl Default for Settings {
             quick_search_shortcut: default_shortcut(),
             search_shortcut: default_search_shortcut(),
             auto_fullscreen: default_true(),
+            embedded_player: true,
             auto_update: default_true(),
             notify_uptodate: default_true(),
             upscale: default_upscale(),

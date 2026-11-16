@@ -626,6 +626,13 @@ impl SettingsView {
         );
         player_group.add(&fs_row);
 
+        let (embed_row, embed_sw) = crate::ui::components::switch_row(
+            "Gömülü Oynatıcı",
+            "Varsayılan: video uygulamanın içinde açılır. Kapatırsan harici mpv penceresi kullanılır.",
+            settings.embedded_player,
+        );
+        player_group.add(&embed_row);
+
         let (intro_hint_row, intro_hint_sw) = crate::ui::components::switch_row(
             "İntro/Outro Bildirimleri",
             "İntro ve outro başlayınca mpv'de bilgi gösterir ('s'/'e' tuşları hep çalışır)",
@@ -924,6 +931,7 @@ impl SettingsView {
             let nf_r = news_font_row.clone();
             let theme_r = theme_row.clone();
             let fs_r = fs_sw.clone();
+            let emb_r = embed_sw.clone();
             let ih_r = intro_hint_sw.clone();
             let mh_r = music_hint_sw.clone();
             let dr = discord_sw.clone();
@@ -965,6 +973,7 @@ impl SettingsView {
                     .map(|(id, _)| id.to_string())
                     .unwrap_or_else(|| crate::theme::DEFAULT_THEME.to_string());
                 updated.auto_fullscreen = fs_r.is_active();
+                updated.embedded_player = emb_r.is_active();
                 updated.show_intro_hint = ih_r.is_active();
                 updated.show_music_hint = mh_r.is_active();
                 updated.discord_rpc_enabled = dr.is_active();
@@ -1023,6 +1032,8 @@ impl SettingsView {
         theme_row.connect_selected_notify(move |_| sa_theme());
         let sa4 = save_all.clone();
         fs_sw.connect_active_notify(move |_| sa4());
+        let sa_emb = save_all.clone();
+        embed_sw.connect_active_notify(move |_| sa_emb());
         let sa5a = save_all.clone();
         intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();

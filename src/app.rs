@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use std::cell::{Cell, RefCell};
 use std::collections::{HashMap, HashSet};
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::Arc;
 
 use crate::api::{self, Client, Episode, Title};
@@ -14,6 +14,7 @@ use crate::ui::views;
 
 mod pages;
 mod playback;
+mod player;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
@@ -36,6 +37,11 @@ pub enum Page {
     Movie {
         title: Title,
         eps: Vec<Episode>,
+    },
+    /// Uygulama içi gömülü oynatıcı sayfası.
+    Player {
+        title: Title,
+        ep: Episode,
     },
     /// Hesap sayfası (giriş formu / profil).
     Account,
@@ -186,6 +192,14 @@ pub struct App {
     /// Son başlatılan mpv sürecinin PID'i (0 = yok). Yeni oynatmada eskisi
     /// sonlandırılır; süreçler üst üste birikmez.
     pub current_mpv_pid: Arc<std::sync::atomic::AtomicU64>,
+    /// Aktif gömülü oynatıcı (varsa).
+    pub player: Rc<RefCell<Option<crate::app::player::EmbeddedPlayer>>>,
+    /// Gömülü oynatıcı kullanılamıyorsa kullanıcıyı bir kez uyar.
+    pub embed_warned: Rc<Cell<bool>>,
+    /// Kanonik App Rc'sine zayıf referans; callback döngüsünü kırar.
+    pub self_weak: Rc<RefCell<Option<Weak<App>>>>,
+    pub header_bar: adw::HeaderBar,
+    pub sidebar_sep: gtk::Separator,
     pub home_acts: Rc<RefCell<Vec<Option<usize>>>>,
     pub dl_manager: crate::download::DownloadManager,
     /// Discord Rich Presence arka plan bağlantısı.
@@ -571,8 +585,8 @@ impl App {
         content.append(&main_stack);
         let body = gtk::Box::new(gtk::Orientation::Horizontal, 0);
         body.append(&sidebar_box);
-        let sep = gtk::Separator::new(gtk::Orientation::Vertical);
-        body.append(&sep);
+        let sidebar_sep = gtk::Separator::new(gtk::Orientation::Vertical);
+        body.append(&sidebar_sep);
         body.append(&content);
 
         let ops = OperationStack::new();
@@ -636,6 +650,11 @@ impl App {
             opening_op_shown_at: Rc::new(RefCell::new(None)),
             play_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             current_mpv_pid: Arc::new(std::sync::atomic::AtomicU64::new(0)),
+            player: Rc::new(RefCell::new(None)),
+            embed_warned: Rc::new(Cell::new(false)),
+            self_weak: Rc::new(RefCell::new(None)),
+            header_bar: header.clone(),
+            sidebar_sep: sidebar_sep.clone(),
             home_acts: Rc::new(RefCell::new(Vec::new())),
             dl_manager,
             discord_rpc,
@@ -658,6 +677,7 @@ impl App {
             server_history: Rc::new(RefCell::new(Vec::new())),
             scale_css: Self::make_scale_css(),
         });
+        *app_inst.self_weak.borrow_mut() = Some(Rc::downgrade(&app_inst));
         {
             // Yan ray satırları (Lowell sidebar uyarlaması).
             let pages: [(Page, &str, &str); 11] = [
@@ -898,7 +918,11 @@ impl App {
         }
         {
             let rpc_close = app_inst.discord_rpc.clone();
+            let player_close = app_inst.player.clone();
             app_inst.window.connect_close_request(move |_| {
+                if let Some(p) = player_close.borrow_mut().take() {
+                    p.shutdown();
+                }
                 rpc_close.shutdown();
                 glib::Propagation::Proceed
             });
@@ -928,6 +952,11 @@ impl App {
             opening_op_shown_at: self.opening_op_shown_at.clone(),
             play_gen: self.play_gen.clone(),
             current_mpv_pid: self.current_mpv_pid.clone(),
+            player: self.player.clone(),
+            embed_warned: self.embed_warned.clone(),
+            self_weak: self.self_weak.clone(),
+            header_bar: self.header_bar.clone(),
+            sidebar_sep: self.sidebar_sep.clone(),
             home_acts: self.home_acts.clone(),
             dl_manager: self.dl_manager.clone(),
             discord_rpc: self.discord_rpc.clone(),
@@ -1107,6 +1136,7 @@ impl App {
             Page::Calendar => Some(Page::Calendar),
             Page::News => Some(Page::News),
             Page::Account => Some(Page::Account),
+            Page::Player { .. } => None,
             _ => None,
         };
         for (p, btn, _, _) in self.sidebar_rows.borrow().iter() {
@@ -1288,6 +1318,13 @@ impl App {
 
     pub fn show_page(&self, page: &Page) {
         use gtk::prelude::IsA;
+        let is_player = matches!(page, Page::Player { .. });
+        if !is_player {
+            self.shutdown_player();
+        }
+        self.header_bar.set_visible(!is_player);
+        self.sidebar_box.set_visible(!is_player);
+        self.sidebar_sep.set_visible(!is_player);
         self.progress_bars.borrow_mut().clear();
         self.back_btn
             .set_visible(self.page_history.borrow().len() > 1);
@@ -1479,6 +1516,31 @@ impl App {
                     gtk::StackTransitionType::SlideLeft,
                     self.build_episodes_view(title, eps),
                 );
+            }
+            Page::Player { title, ep } => {
+                self.title_label.set_text(&title.name);
+                let page_name =
+                    crate::app::player::player_page_name(title.id, ep.season, ep.episode);
+                let widget = self.player.borrow().as_ref().map(|p| p.widget().clone());
+                if let Some(widget) = widget {
+                    switch(
+                        &self.stack,
+                        &page_name,
+                        gtk::StackTransitionType::Crossfade,
+                        widget,
+                    );
+                } else {
+                    switch(
+                        &self.stack,
+                        &page_name,
+                        gtk::StackTransitionType::Crossfade,
+                        components::create_status_page(
+                            "Oynatıcı kapalı",
+                            "Geri dönüp bölümü yeniden seçin.",
+                            "media-playback-stop-symbolic",
+                        ),
+                    );
+                }
             }
         }
 
