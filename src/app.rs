@@ -67,6 +67,10 @@ pub struct PlaySources {
     pub candidates: Vec<String>,
     pub fast_embeds: Vec<String>,
     pub fallback_embeds: Vec<String>,
+    /// Her `candidates` URL'sinin ait olduğu fansub/çeviri adı (varsa).
+    pub labels: Vec<String>,
+    /// Her `fallback_embeds` URL'sinin ait olduğu fansub/çeviri adı.
+    pub fallback_labels: Vec<String>,
     pub plan: Option<crate::skip::SkipPlan>,
 }
 
@@ -1216,6 +1220,9 @@ impl App {
         let mut st = self.page_history.borrow_mut();
         if st.len() > 1 {
             st.pop();
+            while st.len() > 1 && matches!(st.last(), Some(Page::Player { .. })) {
+                st.pop();
+            }
             while st.len() > 1 && st.last() == st.get(st.len() - 2) {
                 st.pop();
             }
@@ -1517,22 +1524,23 @@ impl App {
                     self.build_episodes_view(title, eps),
                 );
             }
-            Page::Player { title, ep } => {
+            Page::Player { title, .. } => {
                 self.title_label.set_text(&title.name);
-                let page_name =
-                    crate::app::player::player_page_name(title.id, ep.season, ep.episode);
+                // Tek isim: bölüm değişiminde eski player widget'ı stack'ten
+                // çıkarılır; iki player üst üste binmez.
+                let page_name = "player";
                 let widget = self.player.borrow().as_ref().map(|p| p.widget().clone());
                 if let Some(widget) = widget {
                     switch(
                         &self.stack,
-                        &page_name,
+                        page_name,
                         gtk::StackTransitionType::Crossfade,
                         widget,
                     );
                 } else {
                     switch(
                         &self.stack,
-                        &page_name,
+                        page_name,
                         gtk::StackTransitionType::Crossfade,
                         components::create_status_page(
                             "Oynatıcı kapalı",
@@ -3218,6 +3226,8 @@ impl App {
                     &src.candidates,
                     &src.fast_embeds,
                     &src.fallback_embeds,
+                    &src.labels,
+                    &src.fallback_labels,
                     src.plan,
                 ),
                 Err(e) => self.show_error(&e),
@@ -3228,7 +3238,16 @@ impl App {
                 path,
                 plan,
             } => {
-                self.play_candidates(&title, &ep, std::slice::from_ref(&path), &[], &[], plan);
+                self.play_candidates(
+                    &title,
+                    &ep,
+                    std::slice::from_ref(&path),
+                    &[],
+                    &[],
+                    &[],
+                    &[],
+                    plan,
+                );
             }
             Msg::NextEp(title, res) => match res {
                 Ok(ep) => self.play(&title, &ep),

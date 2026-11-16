@@ -1,5 +1,6 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -2232,6 +2233,134 @@ impl Client {
         }
     }
 
+    /// tau mirror'ının kalite JSON'unu (bellek/disk cache'li) getirir.
+    fn tau_quality_json(&self, mirror_url: &str) -> Result<serde_json::Value, String> {
+        let (embed_id, vid) =
+            parse_tau_embed(mirror_url).ok_or_else(|| "tau embed değil".to_string())?;
+        let key = format!("tauq:{embed_id}:{vid}");
+        self.cache_get(&key, 600, |http| {
+            let mut url = format!("{TAU}/api/video/{embed_id}");
+            if !vid.is_empty() {
+                url.push_str(&format!("?vid={vid}"));
+            }
+            http.get(&url)
+                .header("Accept", "application/json")
+                .timeout(6)
+                .send()
+                .map_err(|e| format!("tau api: {e}"))?
+                .error_for_status()
+                .map_err(|e| format!("tau api: {e}"))?
+                .json::<serde_json::Value>()
+                .map_err(|e| format!("tau json: {e}"))
+        })
+    }
+
+    fn best_tau_label(d: &serde_json::Value) -> Option<String> {
+        let labels = d["urls"]
+            .as_array()?
+            .iter()
+            .filter_map(|u| u["label"].as_str().map(str::to_string));
+        let mut best: Option<String> = None;
+        for label in labels {
+            if best
+                .as_deref()
+                .is_none_or(|b| Self::quality_rank(&label) < Self::quality_rank(b))
+            {
+                best = Some(label);
+            }
+        }
+        best
+    }
+
+    fn quality_rank(label: &str) -> u8 {
+        match label {
+            "1080p" => 0,
+            "720p" => 1,
+            "480p" => 2,
+            _ => 3,
+        }
+    }
+
+    fn resolution_from_quality(q: Option<&str>) -> Option<String> {
+        let q = q?;
+        let lower = q.to_ascii_lowercase();
+        ["1080p", "720p", "480p"]
+            .into_iter()
+            .find(|l| lower.contains(l))
+            .map(str::to_string)
+    }
+
+    /// Fansub seçim kartında gösterilecek en iyi kalite etiketi.
+    /// tau için tek API isteği; diğer hostlarda mirror kalite alanı varsa.
+    pub fn probe_fansub_quality(&self, fs: &FansubInfo) -> Option<String> {
+        for m in &fs.mirrors {
+            if let Some(q) = Self::resolution_from_quality(m.quality.as_deref()) {
+                return Some(q);
+            }
+            if parse_tau_embed(&m.url).is_some() {
+                if let Ok(d) = self.tau_quality_json(&m.url) {
+                    if let Some(label) = Self::best_tau_label(&d) {
+                        return Some(label);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Aynalar içinden en iyi kaliteli tau kaynağını seçer; tau yoksa
+    /// hızlı `resolve_first` yoluna düşer. Dönüş: (mp4, embed, etiket).
+    pub fn resolve_best_quality(
+        self: &Arc<Self>,
+        urls: &[String],
+        preferred_host: Option<&str>,
+    ) -> Result<(String, String, String), String> {
+        let tau: Vec<String> = urls
+            .iter()
+            .filter(|u| parse_tau_embed(u).is_some())
+            .take(4)
+            .cloned()
+            .collect();
+        if !tau.is_empty() {
+            let (tx, rx) = std::sync::mpsc::channel::<(String, String, String)>();
+            for url in tau {
+                let client = self.clone();
+                let tx = tx.clone();
+                std::thread::spawn(move || {
+                    if let Ok((label, mp4)) = client.resolve_mirror_quality(&url, "best") {
+                        let _ = tx.send((mp4, url, label));
+                    }
+                });
+            }
+            drop(tx);
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(4);
+            let mut best: Option<(u8, String, String, String)> = None;
+            while let Some(remain) = deadline.checked_duration_since(std::time::Instant::now()) {
+                match rx.recv_timeout(remain) {
+                    Ok((mp4, embed, label)) => {
+                        let rank = Self::quality_rank(&label);
+                        if best.as_ref().is_none_or(|(r, _, _, _)| rank < *r) {
+                            best = Some((rank, mp4, embed, label));
+                        }
+                        if rank == 0 {
+                            break;
+                        }
+                    }
+                    Err(_) => break,
+                }
+            }
+            if let Some((_, mp4, embed, label)) = best {
+                eprintln!(
+                    "[RESOLVE] en iyi kaynak: {label} ({})",
+                    Self::source_host_hint(&embed)
+                );
+                return Ok((mp4, embed, label));
+            }
+        }
+        self.resolve_first(urls, preferred_host)
+            .map(|(mp4, embed)| (mp4, embed, String::new()))
+    }
+
     /// Ayna URL'sinden kalite-sınırlı doğrudan video URL'si çözer.
     /// tau'da tercih uygulanır; diğer hostlarda mevcut tek kalite döner.
     /// Dönüş SIRASI: (etiket, mp4_url). Etiket boşsa çağıran yedeğe düşer.
@@ -2240,22 +2369,8 @@ impl Client {
         mirror_url: &str,
         quality: &str,
     ) -> Result<(String, String), String> {
-        if let Some((embed_id, vid)) = parse_tau_embed(mirror_url) {
-            let mut url = format!("{TAU}/api/video/{embed_id}");
-            if !vid.is_empty() {
-                url.push_str(&format!("?vid={vid}"));
-            }
-            let d = self
-                .http
-                .get(&url)
-                .header("Accept", "application/json")
-                .timeout(6)
-                .send()
-                .map_err(|e| format!("tau api: {e}"))?
-                .error_for_status()
-                .map_err(|e| format!("tau api: {e}"))?
-                .json::<serde_json::Value>()
-                .map_err(|e| format!("tau json: {e}"))?;
+        if parse_tau_embed(mirror_url).is_some() {
+            let d = self.tau_quality_json(mirror_url)?;
             let urls: Vec<(String, String)> = d["urls"]
                 .as_array()
                 .map(|arr| {
@@ -2708,6 +2823,70 @@ impl Client {
         let candidates: Vec<String> = urls.iter().take(k.max(1)).cloned().collect();
         let n = candidates.len();
         self.resolve_urls_from(candidates, n, None)
+    }
+
+    /// İlk çalışan kaynağı döndürür; diğer mirror'lar arka planda denenir.
+    /// Oynatma kritik yolunda tüm mirror'ları/HEAD boyutlarını beklemeyi önler.
+    /// Host grupları sırayla denenir: önce tercih edilen/tau-video, sonra
+    /// sibnet, en son diğerleri. Böylece ilk dönen ölü dood/uqload kaynağı
+    /// 20 sn timeout'a kadar videoyu kilitlemez.
+    pub fn resolve_first(
+        self: &Arc<Self>,
+        urls: &[String],
+        preferred_host: Option<&str>,
+    ) -> Result<(String, String), String> {
+        let mut groups: BTreeMap<u8, Vec<String>> = BTreeMap::new();
+        for url in urls.iter().take(8) {
+            let host = Self::source_host_hint(url);
+            let rank = if preferred_host == Some(host) {
+                0
+            } else if preferred_host.is_none() && host == "tau-video" {
+                0
+            } else if host == "tau-video" {
+                1
+            } else if host == "sibnet.ru" {
+                2
+            } else {
+                3
+            };
+            groups.entry(rank).or_default().push(url.clone());
+        }
+        if groups.is_empty() {
+            return Err("Bölüm videosu çözülemedi".to_string());
+        }
+
+        for (rank, tier) in groups {
+            let (tx, rx) = std::sync::mpsc::channel::<(String, String)>();
+            for url in tier {
+                let client = self.clone();
+                let tx = tx.clone();
+                std::thread::spawn(move || {
+                    if let Ok(mp4) = client.resolve_embed(&url) {
+                        let _ = tx.send((mp4, url));
+                    }
+                });
+            }
+            drop(tx);
+            let wait = if rank <= 1 {
+                std::time::Duration::from_secs(4)
+            } else {
+                std::time::Duration::from_secs(3)
+            };
+            match rx.recv_timeout(wait) {
+                Ok((mp4, embed)) => {
+                    eprintln!(
+                        "[RESOLVE] ilk kaynak: {} ({})",
+                        Self::source_host_hint(&embed),
+                        embed
+                    );
+                    return Ok((mp4, embed));
+                }
+                Err(_) => {
+                    eprintln!("[RESOLVE] host sınıfı {rank} zaman aşımı, sonraki sınıf");
+                }
+            }
+        }
+        Err("Bölüm videosu çözülemedi".to_string())
     }
 
     fn resolve_urls_from(

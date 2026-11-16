@@ -70,6 +70,8 @@ impl App {
                             candidates: vec![url],
                             fast_embeds: Vec::new(),
                             fallback_embeds: Vec::new(),
+                            labels: Vec::new(),
+                            fallback_labels: Vec::new(),
                             plan,
                         }),
                     )
@@ -129,6 +131,18 @@ impl App {
         let ep_s = ep.clone();
         let app_rc = self.clone_ref();
         let fansubs_for_rest = fansubs.clone();
+        let (qtx, qrx) = std::sync::mpsc::channel::<(i64, String)>();
+        for fs in &fansubs {
+            let client = self.client.clone();
+            let fs = fs.clone();
+            let tx = qtx.clone();
+            std::thread::spawn(move || {
+                if let Some(q) = client.probe_fansub_quality(&fs) {
+                    let _ = tx.send((fs.template_id, q));
+                }
+            });
+        }
+        drop(qtx);
         crate::ui::fansub_dialog::show_fansub_dialog(
             &self.window,
             &format!(
@@ -137,6 +151,7 @@ impl App {
                 components::episode_label_compact(ep.season, ep.episode, &ep.name)
             ),
             fansubs,
+            Some(qrx),
             move |chosen: api::FansubInfo| {
                 let rest: Vec<api::FansubInfo> = fansubs_for_rest
                     .iter()
@@ -202,25 +217,37 @@ impl App {
         let ep_c = ep.clone();
         let client = self.client.clone();
         let manual_c = self.settings.borrow().official_skip_secret.clone();
+        let defer_plan = self.settings.borrow().embedded_player;
+        let preferred = client.get_preferred_host(title.id);
         self.busy(true);
         self.spawn(move |_| {
             let mut tried: Vec<String> = Vec::new();
             let mut last_err = String::new();
-            let mut won: Option<(Vec<String>, Vec<String>, Vec<String>)> = None;
+            let mut won: Option<(
+                Vec<String>,
+                Vec<String>,
+                Vec<String>,
+                Vec<String>,
+                Vec<String>,
+            )> = None;
+            let t_resolve = std::time::Instant::now();
             for f in &queue {
                 let mirror_urls: Vec<String> = f.mirrors.iter().map(|m| m.url.clone()).collect();
                 let res = client
-                    .resolve_urls(&mirror_urls, mirror_urls.len().max(1))
-                    .map(|fast_pairs| {
-                        let mut fb = client
-                            .episode_candidates(title_c.id, ep_c.episode, ep_c.season)
-                            .unwrap_or_default();
-                        let tried_n = 3.min(fb.len());
-                        fb.drain(..tried_n);
-                        let fast: Vec<String> = fast_pairs.iter().map(|(m, _)| m.clone()).collect();
-                        let fast_emb: Vec<String> =
-                            fast_pairs.iter().map(|(_, e)| e.clone()).collect();
-                        (fast, fast_emb, fb)
+                    .resolve_best_quality(&mirror_urls, preferred.as_deref())
+                    .map(|(fast_url, fast_emb, quality_label)| {
+                        if !quality_label.is_empty() {
+                            eprintln!("[PLAY-FS] {} kalite: {quality_label}", f.name);
+                        }
+                        // İlk çalışan kaynak yeterli; diğer mirror'lar yedek.
+                        let fb: Vec<String> = mirror_urls
+                            .iter()
+                            .filter(|u| **u != fast_emb)
+                            .cloned()
+                            .collect();
+                        let labels = vec![f.name.clone()];
+                        let fallback_labels = vec![f.name.clone(); fb.len()];
+                        (vec![fast_url], vec![fast_emb], fb, labels, fallback_labels)
                     });
                 match res {
                     Ok(ok) => {
@@ -241,27 +268,44 @@ impl App {
                     }
                 }
             }
+            // Kaynak çözümünde tüm mirror'ları beklemiyoruz; ilk başarılı
+            // URL kritik yolu açar. Kalanlar player'ın yedek listesinde.
+            eprintln!(
+                "[PLAY-FS] ilk kaynak + yedekler hazır ({:.2}s)",
+                t_resolve.elapsed().as_secs_f64()
+            );
             let res = match won {
-                Some((mut fast, fast_emb, fb)) => {
+                Some((mut fast, fast_emb, fb, mut labels, fallback_labels)) => {
                     // Seçili kalite adayların başına konur (yedekler korunur).
                     if let Some(pq) = &forced {
                         if !fast.iter().any(|u| u == &pq.url) {
                             fast.insert(0, pq.url.clone());
+                            if let Some(first) = labels.first().cloned() {
+                                labels.insert(0, first);
+                            }
                         }
                     }
-                    let plan = crate::skip::fetch_plan_for_embeds(
-                        &client,
-                        title_c.id,
-                        ep_c.season,
-                        ep_c.episode,
-                        &fast_emb,
-                        &fb,
-                        &manual_c,
-                    );
+                    let plan = if defer_plan {
+                        // Gömülü oynatıcı planı video başladıktan sonra
+                        // arka planda çeker; açılışı bekletmez.
+                        None
+                    } else {
+                        crate::skip::fetch_plan_for_embeds(
+                            &client,
+                            title_c.id,
+                            ep_c.season,
+                            ep_c.episode,
+                            &fast_emb,
+                            &fb,
+                            &manual_c,
+                        )
+                    };
                     Ok(PlaySources {
                         candidates: fast,
                         fast_embeds: fast_emb,
                         fallback_embeds: fb,
+                        labels,
+                        fallback_labels,
                         plan,
                     })
                 }
@@ -299,6 +343,8 @@ impl App {
                     candidates: vec![u],
                     fast_embeds: Vec::new(),
                     fallback_embeds: Vec::new(),
+                    labels: Vec::new(),
+                    fallback_labels: Vec::new(),
                     plan: None,
                 })
             } else {
@@ -326,6 +372,8 @@ impl App {
                             candidates: fast,
                             fast_embeds: fast_emb,
                             fallback_embeds: fb,
+                            labels: Vec::new(),
+                            fallback_labels: Vec::new(),
                             plan,
                         })
                     })
@@ -444,7 +492,16 @@ impl App {
         self.home_dirty.set(true);
         let path = rec.dest.to_string_lossy().into_owned();
         if title.id == 0 {
-            self.play_candidates(title, ep, std::slice::from_ref(&path), &[], &[], None);
+            self.play_candidates(
+                title,
+                ep,
+                std::slice::from_ref(&path),
+                &[],
+                &[],
+                &[],
+                &[],
+                None,
+            );
             return;
         }
         let manual_s = self.settings.borrow().official_skip_secret.clone();
@@ -489,6 +546,8 @@ impl App {
         candidates: &[String],
         fast_embeds: &[String],
         fallback_embeds: &[String],
+        labels: &[String],
+        fallback_labels: &[String],
         plan: Option<crate::skip::SkipPlan>,
     ) -> bool {
         let api = match crate::embed_mpv::loader::load()
@@ -694,6 +753,8 @@ impl App {
             candidates: candidates.to_vec(),
             fast_embeds: fast_embeds.to_vec(),
             fallback_embeds: fallback_embeds.to_vec(),
+            source_labels: labels.to_vec(),
+            fallback_labels: fallback_labels.to_vec(),
             quality_map: HashMap::new(),
             plan,
             saved_pos,
@@ -730,7 +791,13 @@ impl App {
         };
         {
             let mut hist = self.page_history.borrow_mut();
-            crate::app::push_page_history(&mut hist, page.clone());
+            if matches!(hist.last(), Some(crate::app::Page::Player { .. })) {
+                if let Some(last) = hist.last_mut() {
+                    *last = page.clone();
+                }
+            } else {
+                crate::app::push_page_history(&mut hist, page.clone());
+            }
         }
         self.show_page(&page);
         true
@@ -767,6 +834,8 @@ impl App {
         candidates: &[String],
         fast_embeds: &[String],
         fallback_embeds: &[String],
+        labels: &[String],
+        fallback_labels: &[String],
         plan: Option<crate::skip::SkipPlan>,
     ) {
         let gen = self
@@ -817,6 +886,8 @@ impl App {
                 candidates,
                 fast_embeds,
                 fallback_embeds,
+                labels,
+                fallback_labels,
                 plan.clone(),
             )
         {

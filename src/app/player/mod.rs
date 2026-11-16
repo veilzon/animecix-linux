@@ -1,3 +1,4 @@
+pub mod source;
 pub mod ui;
 
 use std::cell::{Cell, RefCell};
@@ -17,6 +18,8 @@ use crate::embed_mpv::player::{options_from_cli, MpvApi, MpvEmbed};
 use crate::embed_mpv::render::RenderContext;
 use crate::skip::SkipPlan;
 use crate::ui::operation_stack::OperationStack;
+
+use self::source::{resume_after_switch, Source, SourceQueue};
 
 /// Gömülü oynatıcının uygulamaya bağlanan callback'leri.
 pub struct PlayerHost {
@@ -39,6 +42,8 @@ pub struct EmbedRequest {
     pub candidates: Vec<String>,
     pub fast_embeds: Vec<String>,
     pub fallback_embeds: Vec<String>,
+    pub source_labels: Vec<String>,
+    pub fallback_labels: Vec<String>,
     pub quality_map: HashMap<String, String>,
     pub plan: Option<SkipPlan>,
     pub saved_pos: Option<f64>,
@@ -63,13 +68,21 @@ struct PlayerState {
     host: PlayerHost,
     title: Title,
     ep: Episode,
-    candidates: Vec<String>,
-    index: usize,
+    queue: SourceQueue,
     media_loaded: bool,
     ready_sent: bool,
     terminal_sent: bool,
     source_loaded: bool,
+    resolving: bool,
+    pending_resolve: Option<std::sync::mpsc::Receiver<Result<String, String>>>,
+    load_started: Instant,
+    patience_secs: u64,
     resume: Option<f64>,
+    watched_marked: bool,
+    host_saved: bool,
+    auto_next_enabled: bool,
+    auto_next_fired: bool,
+    next_ep: Option<Episode>,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
     root: gtk::Box,
@@ -89,6 +102,9 @@ struct PlayerState {
     status: gtk::Label,
     speed_btn: gtk::MenuButton,
     speed_pop: gtk::Popover,
+    quality_btn: gtk::MenuButton,
+    quality_box: gtk::Box,
+    quality_pop: gtk::Popover,
     bot_title: gtk::Label,
     last_motion: Instant,
     last_mx: f64,
@@ -101,7 +117,6 @@ struct PlayerState {
     vol_changing: Rc<Cell<bool>>,
     progress_key: String,
     progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
-    last_report: Instant,
 }
 
 pub struct EmbeddedPlayer {
@@ -171,6 +186,7 @@ impl EmbeddedPlayer {
         s.controls.set_reveal_child(true);
         s.center.set_reveal_child(true);
         s.shade.set_reveal_child(true);
+        s.host.discord.clear();
         eprintln!("[EMBED] oynatıcı kapatıldı");
     }
 }
@@ -210,7 +226,7 @@ pub fn build(
         ("demuxer-readahead-secs".into(), "120".into()),
         ("cache-secs".into(), "120".into()),
         ("cache-pause".into(), "yes".into()),
-        ("cache-pause-wait".into(), "3".into()),
+        ("cache-pause-wait".into(), "1".into()),
         (
             "stream-lavf-o".into(),
             "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5".into(),
@@ -235,6 +251,26 @@ pub fn build(
     };
     let start_volume = player.volume();
     let start_muted = player.muted();
+    let queue = SourceQueue::new(
+        &req.candidates,
+        &req.fast_embeds,
+        &req.fallback_embeds,
+        &req.quality_map,
+        &req.source_labels,
+        &req.fallback_labels,
+    );
+    let is_movie = req.title.title_type.as_deref() == Some("movie");
+    let discord_state =
+        crate::discord_rpc::episode_state(req.ep.season, req.ep.episode, &req.ep.name, is_movie);
+    host.discord
+        .set_activity(crate::discord_rpc::Activity::from_playback(
+            &req.title.name,
+            &discord_state,
+            req.saved_pos.unwrap_or(0.0),
+            0.0,
+            false,
+            req.title.poster.as_deref(),
+        ));
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     root.add_css_class("player-root");
@@ -287,13 +323,21 @@ pub fn build(
         host,
         title: req.title.clone(),
         ep: req.ep.clone(),
-        candidates: req.candidates.clone(),
-        index: 0,
+        queue,
         media_loaded: false,
         ready_sent: false,
         terminal_sent: false,
         source_loaded: false,
+        resolving: false,
+        pending_resolve: None,
+        load_started: Instant::now(),
+        patience_secs: req.patience_secs.max(10),
         resume: req.saved_pos,
+        watched_marked: false,
+        host_saved: false,
+        auto_next_enabled: req.auto_next,
+        auto_next_fired: false,
+        next_ep: req.next_ep.clone(),
         window: parent.clone(),
         gl_area: gl_area.clone(),
         root: root.clone(),
@@ -313,6 +357,9 @@ pub fn build(
         status: controls.status.clone(),
         speed_btn: controls.speed_btn.clone(),
         speed_pop: controls.speed_pop.clone(),
+        quality_btn: controls.quality_btn.clone(),
+        quality_box: controls.quality_box.clone(),
+        quality_pop: controls.quality_pop.clone(),
         bot_title: controls.bot_title.clone(),
         last_motion: Instant::now(),
         last_mx: -1.0,
@@ -325,7 +372,6 @@ pub fn build(
         vol_changing: vol_changing.clone(),
         progress_key,
         progress: host_progress,
-        last_report: Instant::now(),
     }));
 
     // ---- GLArea render döngüsü ----
@@ -361,11 +407,12 @@ pub fn build(
                     });
                     s.render_ctx = Some(ctx);
                     let should_load = !s.source_loaded;
+                    let resume = s.resume;
                     drop(s);
                     if should_load {
                         let st_load = st.clone();
                         glib::idle_add_local_once(move || {
-                            load_initial_source(&st_load);
+                            start_source(&st_load, resume);
                         });
                     }
                     eprintln!("[EMBED] render ctx hazır");
@@ -568,17 +615,16 @@ pub fn build(
         });
         controls.speed_box.append(&b);
     }
-    // Kaynak listesi (Task 4'te kalite çözümlemesiyle genişler).
+    // Kaynak listesi.
     {
         let weak = Rc::downgrade(&state);
         topbar.back.set_visible(true);
-        controls.quality_btn.set_label("Kaynak ▾");
-        let label = gtk::Label::new(Some("Kaynak seçimi hazırlanıyor…"));
-        label.add_css_class("dim-label");
-        controls.quality_box.append(&label);
         controls.quality_pop.connect_show(move |_| {
-            let _ = weak.upgrade();
+            if let Some(st) = weak.upgrade() {
+                rebuild_quality_menu(&st);
+            }
         });
+        rebuild_quality_menu(&state);
     }
 
     // ---- tıklama / oto gizleme / klavye ----
@@ -768,56 +814,306 @@ pub fn build(
     })
 }
 
-fn load_initial_source(state: &Rc<RefCell<PlayerState>>) {
-    let (url, index) = {
-        let mut s = state.borrow_mut();
-        if s.source_loaded {
+fn start_source(state: &Rc<RefCell<PlayerState>>, resume: Option<f64>) {
+    let src = {
+        let mut s = match state.try_borrow_mut() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if s.resolving {
             return;
         }
-        s.source_loaded = true;
-        (s.candidates.get(s.index).cloned(), s.index)
-    };
-    let Some(url) = url else {
-        let s = state.borrow();
-        s.status.set_text("Oynatılacak kaynak yok");
-        s.status.set_visible(true);
-        let on_terminal = s.host.on_terminal.clone();
-        drop(s);
-        on_terminal(
-            crate::app::PlayTerminal::Failed,
-            "Oynatılacak kaynak yok".into(),
-        );
-        return;
-    };
-    let result = {
-        let s = state.borrow();
-        let Some(p) = s.player.as_ref() else {
+        let Some(src) = s.queue.current().cloned() else {
+            drop(s);
+            fail_source(state, "Oynatılacak kaynak yok");
             return;
         };
-        if let Some(referer) = sibnet_referer(&url) {
-            p.set_http_headers(&referer);
-        }
-        p.load_url(&url)
+        s.source_loaded = true;
+        s.media_loaded = false;
+        s.load_started = Instant::now();
+        s.resume = resume;
+        src
     };
-    if let Err(e) = result {
-        let s = state.borrow();
-        s.status.set_text(&format!("Yükleme hatası: {e}"));
-        s.status.set_visible(true);
-        let on_terminal = s.host.on_terminal.clone();
-        drop(s);
-        on_terminal(
-            crate::app::PlayTerminal::Failed,
-            format!("Kaynak yüklenemedi: {e}"),
-        );
+
+    match src {
+        Source::Direct(url) => {
+            let result = {
+                let s = state.borrow();
+                let Some(p) = s.player.as_ref() else { return };
+                if let Some(referer) = sibnet_referer(&url) {
+                    p.set_http_headers(&referer);
+                }
+                p.load_url(&url)
+            };
+            match result {
+                Ok(()) => {
+                    let s = state.borrow();
+                    s.status.set_text("yükleniyor…");
+                    s.status.set_visible(true);
+                }
+                Err(e) => {
+                    eprintln!("[EMBED] kaynak yüklenemedi: {e}");
+                    advance_source(state);
+                }
+            }
+        }
+        Source::Embed(url) => {
+            let (tx, rx) = std::sync::mpsc::channel::<Result<String, String>>();
+            let client = match state.try_borrow() {
+                Ok(s) => s.host.client.clone(),
+                Err(_) => return,
+            };
+            std::thread::spawn(move || {
+                let _ = tx.send(client.resolve_single(&url));
+            });
+            let mut s = match state.try_borrow_mut() {
+                Ok(s) => s,
+                Err(_) => return,
+            };
+            s.resolving = true;
+            s.pending_resolve = Some(rx);
+            s.status.set_text("yedek kaynak çözümleniyor…");
+            s.status.set_visible(true);
+        }
+    }
+}
+
+fn advance_source(state: &Rc<RefCell<PlayerState>>) {
+    let resume = match state.try_borrow() {
+        Ok(s) => s.player.as_ref().and_then(|p| {
+            let pos = p.pos();
+            let dur = p.dur();
+            resume_after_switch(pos, dur)
+        }),
+        Err(_) => None,
+    };
+    let next = match state.try_borrow_mut() {
+        Ok(mut s) => match s.queue.next_after_failure() {
+            Some(n) => {
+                s.queue.index = n;
+                Some(n)
+            }
+            None => None,
+        },
+        Err(_) => None,
+    };
+    if next.is_some() {
+        eprintln!("[EMBED] sonraki kaynağa geçiliyor");
+        start_source(state, resume);
+    } else {
+        fail_source(state, "Bölüm hiçbir kaynakta açılamadı");
+    }
+}
+
+fn fail_source(state: &Rc<RefCell<PlayerState>>, msg: &str) {
+    let (status, terminal, callback) = match state.try_borrow() {
+        Ok(s) => (
+            s.status.clone(),
+            s.terminal_sent,
+            s.host.on_terminal.clone(),
+        ),
+        Err(_) => return,
+    };
+    status.set_text(msg);
+    status.set_visible(true);
+    if !terminal {
+        if let Ok(mut s) = state.try_borrow_mut() {
+            s.terminal_sent = true;
+        }
+        callback(crate::app::PlayTerminal::Failed, msg.to_string());
+    }
+}
+
+fn rebuild_quality_menu(state: &Rc<RefCell<PlayerState>>) {
+    let (sources, quality, labels, index) = match state.try_borrow() {
+        Ok(s) => (
+            s.queue.sources.clone(),
+            s.queue.quality.clone(),
+            s.queue.labels.clone(),
+            s.queue.index,
+        ),
+        Err(_) => return,
+    };
+    let Ok(s) = state.try_borrow() else { return };
+    let box_ = s.quality_box.clone();
+    let btn = s.quality_btn.clone();
+    let mut cur = box_.first_child();
+    while let Some(child) = cur {
+        let next = child.next_sibling();
+        box_.remove(&child);
+        cur = next;
+    }
+    if sources.is_empty() {
+        let l = gtk::Label::new(Some("Kaynak yok"));
+        l.add_css_class("dim-label");
+        box_.append(&l);
         return;
     }
-    let s = state.borrow();
-    s.status.set_text("yükleniyor…");
-    s.status.set_visible(true);
-    let _ = index;
+    let heading = gtk::Label::new(Some("KAYNAKLAR"));
+    heading.add_css_class("dim-label");
+    heading.add_css_class("caption");
+    heading.set_xalign(0.0);
+    heading.set_margin_start(8);
+    heading.set_margin_bottom(4);
+    box_.append(&heading);
+    for (i, src) in sources.iter().enumerate() {
+        let host = crate::api::Client::source_host_hint(src.hint_url());
+        let host = if host.is_empty() { "Kaynak" } else { host };
+        let fansub = labels.get(i).map(String::as_str).filter(|s| !s.is_empty());
+        let q = quality
+            .get(i)
+            .and_then(|q| q.as_deref())
+            .filter(|q| !q.is_empty());
+        let title = match (fansub, q) {
+            (Some(f), Some(q)) => format!("{f} · {q} · {host}"),
+            (Some(f), None) => format!("{f} · {host}"),
+            (None, Some(q)) => format!("{q} · {host}"),
+            (None, None) => host.to_string(),
+        };
+        let label = if i == index {
+            format!("● {title}")
+        } else {
+            format!("   {title}")
+        };
+        let b = gtk::Button::with_label(&label);
+        b.add_css_class("flat");
+        b.set_halign(gtk::Align::Fill);
+        let weak = Rc::downgrade(state);
+        b.connect_clicked(move |_| {
+            if let Some(st) = weak.upgrade() {
+                pick_source(&st, i);
+            }
+        });
+        box_.append(&b);
+    }
+    let cur = sources
+        .get(index)
+        .map(|_| {
+            labels
+                .get(index)
+                .map(String::as_str)
+                .filter(|s| !s.is_empty())
+                .map(str::to_string)
+                .or_else(|| {
+                    sources
+                        .get(index)
+                        .map(|s| crate::api::Client::source_host_hint(s.hint_url()).to_string())
+                })
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "Kaynak".to_string())
+        })
+        .unwrap_or_else(|| "Kaynak".to_string());
+    btn.set_label(&format!("{cur} ▾"));
+}
+
+fn pick_source(state: &Rc<RefCell<PlayerState>>, index: usize) {
+    let resume = match state.try_borrow() {
+        Ok(s) => s
+            .player
+            .as_ref()
+            .and_then(|p| resume_after_switch(p.pos(), p.dur())),
+        Err(_) => None,
+    };
+    {
+        let Ok(mut s) = state.try_borrow_mut() else {
+            return;
+        };
+        if index >= s.queue.len() {
+            return;
+        }
+        s.queue.index = index;
+        s.pending_resolve = None;
+        s.resolving = false;
+        s.status.set_text("kaynak değiştiriliyor…");
+        s.status.set_visible(true);
+    }
+    if let Ok(s) = state.try_borrow() {
+        s.quality_pop.popdown();
+    }
+    start_source(state, resume);
+}
+
+fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
+    let result = {
+        let mut s = match state.try_borrow_mut() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        s.load_started = Instant::now();
+        s.media_loaded = false;
+        s.status.set_text("yükleniyor…");
+        s.status.set_visible(true);
+        let Some(p) = s.player.as_ref() else { return };
+        if let Some(referer) = sibnet_referer(url) {
+            p.set_http_headers(&referer);
+        }
+        p.load_url(url)
+    };
+    if let Err(e) = result {
+        eprintln!("[EMBED] çözülen kaynak yüklenemedi: {e}");
+        advance_source(state);
+    }
 }
 
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
+    // Embed çözümleme sonucu geldi mi?
+    let resolved = {
+        let mut s = match st.try_borrow_mut() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        let mut out = None;
+        if s.resolving {
+            match s.pending_resolve.as_ref().map(|rx| rx.try_recv()) {
+                Some(Ok(res)) => out = Some(res),
+                Some(Err(std::sync::mpsc::TryRecvError::Empty)) => {}
+                Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                    out = Some(Err("embed çözümleyici kapandı".to_string()));
+                }
+                None => out = Some(Err("embed çözümleyici yok".to_string())),
+            }
+            if out.is_some() {
+                s.pending_resolve = None;
+                s.resolving = false;
+            }
+        }
+        out
+    };
+    if let Some(Ok(url)) = resolved {
+        load_resolved_source(st, &url);
+        return;
+    }
+    if let Some(Err(e)) = resolved {
+        eprintln!("[EMBED] embed çözülemedi: {e}");
+        let status = st.borrow().status.clone();
+        status.set_text("Yedek kaynak çözülemedi, diğerine geçiliyor…");
+        status.set_visible(true);
+        advance_source(st);
+        return;
+    }
+
+    // Kaynak açılış zaman aşımı (embed çözülürken sayılmaz).
+    let timed_out = match st.try_borrow() {
+        Ok(s) => {
+            // İlk açılışta hızlı failover; normal oynatmada kullanıcı ayarı.
+            let limit = if s.ready_sent {
+                s.patience_secs
+            } else {
+                s.patience_secs.min(8)
+            };
+            s.source_loaded
+                && !s.media_loaded
+                && !s.resolving
+                && s.load_started.elapsed().as_secs() >= limit
+        }
+        Err(_) => false,
+    };
+    if timed_out {
+        eprintln!("[EMBED] kaynak zaman aşımı, sonrakine geçiliyor");
+        advance_source(st);
+        return;
+    }
+
     let (pos, dur, paused, idle, eof, volume, muted, first_load);
     {
         let s = match st.try_borrow() {
@@ -835,13 +1131,15 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         first_load = dur > 0.0 && !s.media_loaded;
     }
 
-    let (ready_now, finished_now) = {
+    let mut advance_now = false;
+    let (ready_now, finished_now, auto_next_now) = {
         let mut s = match st.try_borrow_mut() {
             Ok(s) => s,
             Err(_) => return,
         };
         if first_load {
             s.media_loaded = true;
+            s.terminal_sent = false;
             s.status.set_visible(false);
             if let Some(p) = s.player.as_ref() {
                 p.set_pause(false);
@@ -859,10 +1157,57 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         if ready_now {
             s.ready_sent = true;
         }
-        let finished_now = eof && dur > 0.0 && !s.terminal_sent;
-        if finished_now {
-            s.terminal_sent = true;
+
+        if s.media_loaded && pos >= 1.0 {
+            s.progress
+                .borrow_mut()
+                .insert(s.progress_key.clone(), (pos, dur));
+            s.host
+                .client
+                .save_progress(s.title.id, s.ep.season, s.ep.episode, pos, dur);
+
+            if !s.watched_marked && api::Client::played_enough(pos, dur) {
+                s.watched_marked = true;
+                let w = api::Watched {
+                    title_id: s.title.id,
+                    episode: s.ep.episode,
+                    season: s.ep.season,
+                    title_name: Some(s.title.name.clone()),
+                    title_type: s.title.title_type.clone(),
+                    ..Default::default()
+                };
+                s.host.client.save_watched(&w, &s.title.name);
+                if !s.host_saved {
+                    if let Some(src) = s.queue.current() {
+                        let hint = api::Client::source_host_hint(src.hint_url());
+                        if !hint.is_empty() {
+                            s.host.client.set_preferred_host(s.title.id, hint);
+                            s.host_saved = true;
+                        }
+                    }
+                }
+            }
         }
+
+        let mut finished_now = false;
+        let mut auto_next_now = false;
+        if eof && dur > 0.0 && !s.terminal_sent {
+            if pos < dur * 0.9 && s.load_started.elapsed().as_secs() < 60 {
+                advance_now = true;
+            } else {
+                s.terminal_sent = true;
+                finished_now = true;
+                s.host.discord.clear();
+                if s.auto_next_enabled
+                    && !s.auto_next_fired
+                    && s.title.title_type.as_deref() != Some("movie")
+                {
+                    s.auto_next_fired = true;
+                    auto_next_now = true;
+                }
+            }
+        }
+
         if !s.seeking.get() && dur > 0.0 && pos >= 1.0 {
             s.seek.set_value((pos / dur * 1000.0).clamp(0.0, 1000.0));
         }
@@ -879,35 +1224,56 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             }
             s.vol_btn.set_icon_name(vol_icon(volume, muted));
         }
-        if s.media_loaded && pos >= 1.0 {
-            s.progress
-                .borrow_mut()
-                .insert(s.progress_key.clone(), (pos, dur));
-            s.host
-                .client
-                .save_progress(s.title.id, s.ep.season, s.ep.episode, pos, dur);
-        }
+
+        let quality = s
+            .player
+            .as_ref()
+            .and_then(|p| p.video_height())
+            .map(|h| format!("{h}p"))
+            .or_else(|| s.queue.current_quality().map(str::to_string));
+        let label = s
+            .queue
+            .current_label()
+            .map(str::to_string)
+            .or_else(|| {
+                s.queue
+                    .current()
+                    .map(|src| api::Client::source_host_hint(src.hint_url()).to_string())
+                    .filter(|s| !s.is_empty())
+            })
+            .unwrap_or_else(|| "Kaynak".to_string());
+        let quality = quality.map(|q| format!(" · {q}")).unwrap_or_default();
+        s.quality_btn.set_label(&format!("{label}{quality} ▾"));
+
         if eof {
             s.status.set_text("bitti");
             s.status.set_visible(true);
         }
-        // krom oto-gizleme
+
+        // Krom oto-gizleme: duraklatılmışken/ipucu açıkken gizlenme.
         let smoke_hold = std::env::var_os("ANIMECIX_SMOKE_HOLD").is_some();
-        let pop_open = s.speed_pop.is_visible();
+        let pop_open = s.speed_pop.is_visible() || s.quality_pop.is_visible();
         let idle_time = s.last_motion.elapsed();
-        if !smoke_hold && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open {
+        let keep_chrome = paused || s.status.is_visible();
+        if !smoke_hold && !keep_chrome && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open
+        {
             s.cursor_hidden = true;
             s.gl_area.set_cursor_from_name(Some("none"));
         }
-        if !smoke_hold && !s.chrome_hidden && idle_time.as_secs() >= 2 && !pop_open {
+        if !smoke_hold && !keep_chrome && !s.chrome_hidden && idle_time.as_secs() >= 2 && !pop_open
+        {
             hide_chrome_locked(&mut s);
         }
-        if !idle {
+        if !idle || s.media_loaded {
             s.gl_area.queue_render();
         }
-        (ready_now, finished_now)
+        (ready_now, finished_now, auto_next_now)
     };
 
+    if advance_now {
+        advance_source(st);
+        return;
+    }
     if ready_now {
         let cb = st.borrow().host.on_ready.clone();
         cb();
@@ -915,6 +1281,10 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
     if finished_now {
         let cb = st.borrow().host.on_terminal.clone();
         cb(crate::app::PlayTerminal::Done, String::new());
+    }
+    if auto_next_now {
+        let cb = st.borrow().host.on_neighbor.clone();
+        cb(1);
     }
 }
 

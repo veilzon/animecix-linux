@@ -1,11 +1,14 @@
 use crate::api::FansubInfo;
 use gtk::prelude::*;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::rc::Rc;
 
 pub fn show_fansub_dialog(
     parent: &impl IsA<gtk::Window>,
     title: &str,
     fansubs: Vec<FansubInfo>,
+    quality_rx: Option<std::sync::mpsc::Receiver<(i64, String)>>,
     on_select: impl Fn(FansubInfo) + 'static,
 ) {
     let dialog = gtk::Window::builder()
@@ -44,6 +47,8 @@ pub fn show_fansub_dialog(
 
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
     let on_select = Rc::new(on_select);
+    let quality_labels = Rc::new(RefCell::new(HashMap::<i64, gtk::Label>::new()));
+    let probing = quality_rx.is_some();
 
     for fs in &fansubs {
         let row = gtk::Button::new();
@@ -56,12 +61,24 @@ pub fn show_fansub_dialog(
         hbox.set_margin_start(12);
         hbox.set_margin_end(12);
 
+        let vb = gtk::Box::new(gtk::Orientation::Vertical, 2);
+        vb.set_hexpand(true);
         let name_lbl = gtk::Label::new(Some(&fs.name));
         name_lbl.add_css_class("title-4");
         name_lbl.set_xalign(0.0);
-        name_lbl.set_hexpand(true);
         name_lbl.set_ellipsize(gtk::pango::EllipsizeMode::End);
-        hbox.append(&name_lbl);
+        vb.append(&name_lbl);
+        let q_lbl = gtk::Label::new(Some(if probing {
+            "Kalite: ölçülüyor…"
+        } else {
+            "Kalite: otomatik"
+        }));
+        q_lbl.add_css_class("dim-label");
+        q_lbl.add_css_class("caption");
+        q_lbl.set_xalign(0.0);
+        vb.append(&q_lbl);
+        quality_labels.borrow_mut().insert(fs.template_id, q_lbl);
+        hbox.append(&vb);
 
         if fs.rating > 0.0 {
             let stars = format!("★ {:.1}", fs.rating);
@@ -101,5 +118,22 @@ pub fn show_fansub_dialog(
     vbox.append(&close_btn);
 
     dialog.set_child(Some(&vbox));
+    if let Some(rx) = quality_rx {
+        let labels = quality_labels.clone();
+        let dlg = dialog.clone();
+        glib::timeout_add_local(std::time::Duration::from_millis(200), move || {
+            while let Ok((id, q)) = rx.try_recv() {
+                if let Some(lbl) = labels.borrow().get(&id) {
+                    lbl.set_text(&format!("Kalite: {q}"));
+                    lbl.remove_css_class("dim-label");
+                }
+            }
+            if dlg.is_visible() {
+                glib::ControlFlow::Continue
+            } else {
+                glib::ControlFlow::Break
+            }
+        });
+    }
     dialog.present();
 }

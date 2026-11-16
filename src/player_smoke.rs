@@ -90,6 +90,8 @@ pub fn run(path: &str) {
             candidates: vec![video.clone()],
             fast_embeds: Vec::new(),
             fallback_embeds: Vec::new(),
+            source_labels: Vec::new(),
+            fallback_labels: Vec::new(),
             quality_map: HashMap::new(),
             plan: None,
             saved_pos: None,
