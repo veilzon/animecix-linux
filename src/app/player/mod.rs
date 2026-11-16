@@ -1,4 +1,5 @@
 pub mod episodes;
+pub mod menu;
 pub mod notices;
 pub mod source;
 pub mod ui;
@@ -132,6 +133,7 @@ struct PlayerState {
     quality_btn: gtk::MenuButton,
     quality_box: gtk::Box,
     quality_pop: gtk::Popover,
+    ctx_pop: gtk::Popover,
     bot_title: gtk::Label,
     last_motion: Instant,
     last_mx: f64,
@@ -365,6 +367,9 @@ pub fn build(
     let vol_changing = Rc::new(Cell::new(false));
     let progress_key = format!("{}:{}:{}", req.title.id, req.ep.season, req.ep.episode);
     let host_progress = host.progress.clone();
+    let ctx_pop = gtk::Popover::new();
+    ctx_pop.set_parent(&gl_area);
+    ctx_pop.add_css_class("menu");
     let state = Rc::new(RefCell::new(PlayerState {
         guard: PlaybackGuard::new(),
         alive: alive.clone(),
@@ -430,6 +435,7 @@ pub fn build(
         quality_btn: controls.quality_btn.clone(),
         quality_box: controls.quality_box.clone(),
         quality_pop: controls.quality_pop.clone(),
+        ctx_pop: ctx_pop.clone(),
         bot_title: controls.bot_title.clone(),
         last_motion: Instant::now(),
         last_mx: -1.0,
@@ -752,6 +758,33 @@ pub fn build(
             }
         });
         gl_area.add_controller(gesture);
+    }
+    {
+        let pop = ctx_pop.clone();
+        let weak = Rc::downgrade(&state);
+        let pop_c = pop.clone();
+        let rc = gtk::GestureClick::new();
+        rc.set_button(3);
+        rc.connect_pressed(move |_, _, x, y| {
+            if let Some(st) = weak.upgrade() {
+                rebuild_ctx_menu(&pop_c, &st);
+                pop_c.set_pointing_to(Some(&gtk::gdk::Rectangle::new(x as i32, y as i32, 1, 1)));
+                pop_c.popup();
+            }
+        });
+        gl_area.add_controller(rc);
+        let weak = Rc::downgrade(&state);
+        pop.connect_closed(move |_| {
+            if let Some(st) = weak.upgrade() {
+                if let Ok(mut s) = st.try_borrow_mut() {
+                    s.last_motion = Instant::now();
+                    s.chrome_hidden = false;
+                    s.cursor_hidden = false;
+                    s.gl_area.set_cursor_from_name(None);
+                    show_chrome_locked(&mut s);
+                }
+            }
+        });
     }
     {
         let weak = Rc::downgrade(&state);
@@ -1318,6 +1351,352 @@ fn open_song(state: &Rc<RefCell<PlayerState>>) {
     }
 }
 
+fn ctx_row(
+    pop: &gtk::Popover,
+    parent: &gtk::Box,
+    label: &str,
+    icon: &str,
+    sensitive: bool,
+    hint: Option<&str>,
+    f: impl Fn() + 'static,
+) {
+    let b = gtk::Button::new();
+    b.add_css_class("flat");
+    b.set_sensitive(sensitive);
+    b.set_hexpand(true);
+    let row = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+    row.set_hexpand(true);
+    row.set_margin_top(4);
+    row.set_margin_bottom(4);
+    row.set_margin_start(8);
+    row.set_margin_end(8);
+    let img = gtk::Image::from_icon_name(icon);
+    img.set_pixel_size(16);
+    img.set_valign(gtk::Align::Center);
+    let lbl = gtk::Label::new(Some(label));
+    lbl.set_xalign(0.0);
+    lbl.set_hexpand(true);
+    row.append(&img);
+    row.append(&lbl);
+    if let Some(h) = hint.filter(|h| !h.is_empty()) {
+        let hl = gtk::Label::new(Some(h));
+        hl.add_css_class("dim-label");
+        hl.add_css_class("caption");
+        row.append(&hl);
+    }
+    b.set_child(Some(&row));
+    let pop_c = pop.clone();
+    b.connect_clicked(move |_| {
+        pop_c.popdown();
+        f();
+    });
+    parent.append(&b);
+}
+
+fn ctx_sep(parent: &gtk::Box) {
+    let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+    sep.set_margin_top(4);
+    sep.set_margin_bottom(4);
+    parent.append(&sep);
+}
+
+fn rebuild_ctx_menu(pop: &gtk::Popover, state: &Rc<RefCell<PlayerState>>) {
+    let (paused, fullscreen, skip, fill, title, season, episode, ep, can_download) = {
+        let Ok(s) = state.try_borrow() else { return };
+        let Some(p) = s.player.as_ref() else { return };
+        (
+            p.paused(),
+            s.window.is_fullscreen(),
+            notices::skip_target(
+                &s.plan.as_ref().map(|p| p.times.clone()).unwrap_or_default(),
+                p.pos(),
+                s.op_done,
+                s.ed_done,
+            ),
+            p.panscan() >= 0.5,
+            s.title.name.clone(),
+            s.ep.season,
+            s.ep.episode,
+            s.ep.clone(),
+            s.host.on_download.clone(),
+        )
+    };
+    let v = gtk::Box::new(gtk::Orientation::Vertical, 2);
+    v.set_margin_top(6);
+    v.set_margin_bottom(6);
+    v.set_margin_start(6);
+    v.set_margin_end(6);
+
+    {
+        let weak = Rc::downgrade(state);
+        ctx_row(
+            pop,
+            &v,
+            if paused { "Oynat" } else { "Duraklat" },
+            if paused {
+                "media-playback-start-symbolic"
+            } else {
+                "media-playback-pause-symbolic"
+            },
+            true,
+            Some("Space"),
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    if let Ok(s) = st.try_borrow() {
+                        if let Some(p) = s.player.as_ref() {
+                            p.toggle_pause();
+                        }
+                    }
+                }
+            },
+        );
+    }
+    {
+        let weak = Rc::downgrade(state);
+        ctx_row(
+            pop,
+            &v,
+            if fullscreen {
+                "Pencereli moda dön"
+            } else {
+                "Tam ekran"
+            },
+            if fullscreen {
+                "view-restore-symbolic"
+            } else {
+                "view-fullscreen-symbolic"
+            },
+            true,
+            Some("F"),
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    set_fullscreen(&st, !fullscreen);
+                }
+            },
+        );
+    }
+    ctx_sep(&v);
+    {
+        let kind = skip.map(|(_, k)| k);
+        let weak = Rc::downgrade(state);
+        let label = kind.map(SkipKind::action).unwrap_or("Atlanacak yer yok");
+        ctx_row(
+            pop,
+            &v,
+            label,
+            "media-skip-forward-symbolic",
+            kind.is_some(),
+            kind.map(|k| if k == SkipKind::Intro { "S" } else { "E" }),
+            move || {
+                if let (Some(st), Some(kind)) = (weak.upgrade(), kind) {
+                    skip_to(&st, kind);
+                }
+            },
+        );
+    }
+    {
+        let weak = Rc::downgrade(state);
+        ctx_row(
+            pop,
+            &v,
+            "Önceki bölüm",
+            "go-previous-symbolic",
+            true,
+            None,
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    let cb = st.borrow().host.on_neighbor.clone();
+                    cb(-1);
+                }
+            },
+        );
+    }
+    {
+        let weak = Rc::downgrade(state);
+        ctx_row(
+            pop,
+            &v,
+            "Sonraki bölüm",
+            "go-next-symbolic",
+            true,
+            None,
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    let cb = st.borrow().host.on_neighbor.clone();
+                    cb(1);
+                }
+            },
+        );
+    }
+    ctx_sep(&v);
+    {
+        let weak = Rc::downgrade(state);
+        ctx_row(
+            pop,
+            &v,
+            if fill {
+                "Orijinal oran"
+            } else {
+                "Ekranı doldur"
+            },
+            "view-fullscreen-symbolic",
+            true,
+            Some("A"),
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    if let Ok(s) = st.try_borrow() {
+                        if let Some(p) = s.player.as_ref() {
+                            p.set_panscan(if fill { 0.0 } else { 1.0 });
+                        }
+                        s.host.ops.info(
+                            if fill {
+                                "Orijinal oran"
+                            } else {
+                                "Ekranı doldur"
+                            },
+                            "",
+                            std::time::Duration::from_secs(2),
+                        );
+                    }
+                }
+            },
+        );
+    }
+    {
+        let weak = Rc::downgrade(state);
+        let win = state.borrow().window.clone();
+        let title_c = title.clone();
+        ctx_row(
+            pop,
+            &v,
+            "Ekran görüntüsü al",
+            "camera-photo-symbolic",
+            true,
+            None,
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    take_screenshot(&st, &win, &title_c, season, episode);
+                }
+            },
+        );
+    }
+    {
+        let weak = Rc::downgrade(state);
+        let win = state.borrow().window.clone();
+        ctx_row(
+            pop,
+            &v,
+            "Video bilgisi",
+            "dialog-information-symbolic",
+            true,
+            None,
+            move || {
+                if let Some(st) = weak.upgrade() {
+                    show_video_info(&st, &win);
+                }
+            },
+        );
+    }
+    {
+        let cb = can_download;
+        ctx_row(
+            pop,
+            &v,
+            "Bölümü indir",
+            "folder-download-symbolic",
+            true,
+            None,
+            move || {
+                cb(ep.clone());
+            },
+        );
+    }
+    pop.set_child(Some(&v));
+}
+
+fn take_screenshot(
+    state: &Rc<RefCell<PlayerState>>,
+    window: &adw::ApplicationWindow,
+    title: &str,
+    season: u64,
+    episode: u64,
+) {
+    let Some(pictures) = glib::user_special_dir(glib::UserDirectory::Pictures) else {
+        let s = state.borrow();
+        s.host.ops.error(
+            "Ekran görüntüsü",
+            "Resim klasörü bulunamadı.",
+            std::time::Duration::from_secs(3),
+        );
+        return;
+    };
+    let dir = pictures.join("AnimeciX");
+    if let Err(e) = std::fs::create_dir_all(&dir) {
+        let s = state.borrow();
+        s.host.ops.error(
+            "Ekran görüntüsü",
+            &format!("Klasör oluşturulamadı: {e}"),
+            std::time::Duration::from_secs(3),
+        );
+        return;
+    }
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let path = dir.join(menu::screenshot_filename(title, season, episode, ts));
+    let result = {
+        let Ok(s) = state.try_borrow() else { return };
+        let Some(p) = s.player.as_ref() else { return };
+        p.screenshot_to_file(&path.to_string_lossy())
+    };
+    match result {
+        Ok(()) => {
+            let file = gtk::gio::File::for_path(&path);
+            if let Ok(tex) = gtk::gdk::Texture::from_file(&file) {
+                gtk::prelude::WidgetExt::display(window)
+                    .clipboard()
+                    .set_texture(&tex);
+            }
+            let s = state.borrow();
+            s.host.ops.info(
+                "Ekran görüntüsü",
+                &path.to_string_lossy(),
+                std::time::Duration::from_secs(4),
+            );
+        }
+        Err(e) => {
+            let s = state.borrow();
+            s.host.ops.error(
+                "Ekran görüntüsü",
+                &format!("Alınamadı: {e}"),
+                std::time::Duration::from_secs(3),
+            );
+        }
+    }
+}
+
+fn show_video_info(state: &Rc<RefCell<PlayerState>>, window: &adw::ApplicationWindow) {
+    let info = {
+        let Ok(s) = state.try_borrow() else { return };
+        let Some(p) = s.player.as_ref() else { return };
+        p.video_info()
+    };
+    let heading = {
+        let s = state.borrow();
+        format!("{} — S{:02}E{:02}", s.title.name, s.ep.season, s.ep.episode)
+    };
+    let dlg = adw::MessageDialog::builder()
+        .heading(&heading)
+        .body(menu::info_text(&info))
+        .close_response("ok")
+        .default_response("ok")
+        .build();
+    dlg.add_response("ok", "Tamam");
+    dlg.set_transient_for(Some(window));
+    dlg.present();
+}
+
 fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
     let result = {
         let mut s = match state.try_borrow_mut() {
@@ -1701,7 +2080,8 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
 
         // Krom oto-gizleme: duraklatılmışken/ipucu açıkken gizlenme.
         let smoke_hold = std::env::var_os("ANIMECIX_SMOKE_HOLD").is_some();
-        let pop_open = s.speed_pop.is_visible() || s.quality_pop.is_visible();
+        let pop_open =
+            s.speed_pop.is_visible() || s.quality_pop.is_visible() || s.ctx_pop.is_visible();
         let idle_time = s.last_motion.elapsed();
         let keep_chrome = paused || s.status.is_visible();
         if !smoke_hold && !keep_chrome && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open
