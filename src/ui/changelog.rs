@@ -78,7 +78,13 @@ pub fn present(
     dlg.set_title(Some(heading));
     dlg.set_modal(true);
     dlg.set_transient_for(Some(parent));
-    dlg.set_default_size(560, if videos.is_empty() { 560 } else { 700 });
+    let (parent_w, parent_h) = if parent.width() > 0 && parent.height() > 0 {
+        (parent.width(), parent.height())
+    } else {
+        (1280, 800)
+    };
+    let (width, height, video_side) = popup_metrics(parent_w, parent_h);
+    dlg.set_default_size(width, if videos.is_empty() { 560 } else { height });
 
     let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
     let titlebar = adw::HeaderBar::new();
@@ -88,7 +94,7 @@ pub fn present(
 
     let mut close_video: Option<gtk::Video> = None;
     if !videos.is_empty() {
-        let (carousel_box, video) = carousel(videos);
+        let (carousel_box, video) = carousel(videos, video_side);
         close_video = Some(video);
         root.append(&carousel_box);
     }
@@ -131,7 +137,22 @@ pub fn present(
     dlg.present();
 }
 
-fn carousel(videos: &[ChangelogVideo]) -> (gtk::Box, gtk::Video) {
+fn popup_metrics(parent_w: i32, parent_h: i32) -> (i32, i32, i32) {
+    let width = ((parent_w as f64 * 0.92) as i32).clamp(560, 960);
+    let height = ((parent_h as f64 * 0.94) as i32).clamp(600, 900);
+    let video = (width - 80).min(height - 240).clamp(280, 620);
+    (width, height, video)
+}
+
+fn next_video_index(current: usize, len: usize) -> usize {
+    if len == 0 {
+        0
+    } else {
+        (current + 1) % len
+    }
+}
+
+fn carousel(videos: &[ChangelogVideo], video_side: i32) -> (gtk::Box, gtk::Video) {
     let videos = videos.to_vec();
     let section = gtk::Box::new(gtk::Orientation::Vertical, 6);
     section.set_margin_top(14);
@@ -141,12 +162,12 @@ fn carousel(videos: &[ChangelogVideo]) -> (gtk::Box, gtk::Video) {
     let wrap = gtk::Box::new(gtk::Orientation::Vertical, 0);
     wrap.add_css_class("changelog-video-wrap");
     wrap.set_overflow(gtk::Overflow::Hidden);
-    wrap.set_size_request(440, 440);
+    wrap.set_size_request(video_side, video_side);
     wrap.set_halign(gtk::Align::Center);
 
     let video = gtk::Video::new();
     video.set_autoplay(true);
-    video.set_loop(true);
+    video.set_loop(false);
     video.set_hexpand(true);
     video.set_vexpand(true);
     wrap.append(&video);
@@ -194,6 +215,9 @@ fn carousel(videos: &[ChangelogVideo]) -> (gtk::Box, gtk::Video) {
     let caption_c = caption.clone();
     let buttons_c = buttons.clone();
     let videos_c = videos.clone();
+    let switch_slot: std::rc::Rc<std::cell::RefCell<Option<std::rc::Weak<dyn Fn(usize)>>>> =
+        std::rc::Rc::new(std::cell::RefCell::new(None));
+    let switch_slot_c = switch_slot.clone();
     let switch: std::rc::Rc<dyn Fn(usize)> = std::rc::Rc::new(move |idx| {
         let Some(item) = videos_c.get(idx) else {
             return;
@@ -225,6 +249,15 @@ fn carousel(videos: &[ChangelogVideo]) -> (gtk::Box, gtk::Video) {
                             fallback_e.set_visible(true);
                         }
                     });
+                    let slot_e = switch_slot_c.clone();
+                    let next = next_video_index(idx, videos_c.len());
+                    stream.connect_ended_notify(move |s| {
+                        if s.is_ended() {
+                            if let Some(f) = slot_e.borrow().as_ref().and_then(|w| w.upgrade()) {
+                                f(next);
+                            }
+                        }
+                    });
                 }
             }
             None => {
@@ -237,6 +270,7 @@ fn carousel(videos: &[ChangelogVideo]) -> (gtk::Box, gtk::Video) {
         let switch = switch.clone();
         b.connect_clicked(move |_| switch(i));
     }
+    *switch_slot.borrow_mut() = Some(std::rc::Rc::downgrade(&switch));
     switch(0);
 
     (section, video)
@@ -282,5 +316,19 @@ mod tests {
     #[test]
     fn missing_video_returns_none() {
         assert!(video_path("boyle-bir-video-yok-12345.mp4").is_none());
+    }
+
+    #[test]
+    fn popup_metrics_grow_with_parent_and_cap() {
+        assert_eq!(popup_metrics(800, 800), (736, 752, 512));
+        assert_eq!(popup_metrics(1920, 1080), (960, 900, 620));
+        assert_eq!(popup_metrics(640, 480), (588, 600, 360));
+    }
+
+    #[test]
+    fn next_video_wraps() {
+        assert_eq!(next_video_index(0, 3), 1);
+        assert_eq!(next_video_index(1, 3), 2);
+        assert_eq!(next_video_index(2, 3), 0);
     }
 }
