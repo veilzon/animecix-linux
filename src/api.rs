@@ -2834,12 +2834,6 @@ impl Client {
         self.resolve_urls_from(candidates, k, preferred_host)
     }
 
-    pub fn resolve_urls(&self, urls: &[String], k: usize) -> Result<Vec<(String, String)>, String> {
-        let candidates: Vec<String> = urls.iter().take(k.max(1)).cloned().collect();
-        let n = candidates.len();
-        self.resolve_urls_from(candidates, n, None)
-    }
-
     /// İlk çalışan kaynağı döndürür; diğer mirror'lar arka planda denenir.
     /// Oynatma kritik yolunda tüm mirror'ları/HEAD boyutlarını beklemeyi önler.
     /// Host grupları sırayla denenir: önce tercih edilen/tau-video, sonra
@@ -4456,6 +4450,8 @@ mod tests {
         let c = Client::new();
         let mut t = sample("anime", Some(2021), Some(2));
         t.genres = Some(vec!["Dram".to_string()]);
+        t.runtime = Some(24);
+        t.release_date = Some("2021-01-01".to_string());
         let e = c.enrich_title(&t);
         assert_eq!(e.id, t.id);
         assert_eq!(e.genres, Some(vec!["Dram".to_string()]));

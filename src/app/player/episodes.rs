@@ -8,7 +8,6 @@ use crate::api::Episode;
 #[derive(Clone)]
 pub struct EpisodeDrawer {
     pub revealer: gtk::Revealer,
-    pub panel: gtk::Box,
     pub season_bar: gtk::Box,
     pub list: gtk::Box,
     pub count: gtk::Label,
@@ -96,7 +95,6 @@ pub fn build(stage: &gtk::Overlay) -> EpisodeDrawer {
 
     EpisodeDrawer {
         revealer,
-        panel,
         season_bar,
         list,
         count,

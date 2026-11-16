@@ -83,7 +83,6 @@ pub fn run(path: &str) {
             on_download: Rc::new(|_| {}),
             on_ready: Rc::new(|| eprintln!("PLAYER_SMOKE_READY")),
             on_terminal: Rc::new(|state, msg| eprintln!("PLAYER_SMOKE_TERMINAL: {state:?} {msg}")),
-            on_external: Rc::new(|| {}),
         };
         let req = EmbedRequest {
             title,
@@ -107,8 +106,6 @@ pub fn run(path: &str) {
             patience_secs: 10,
             auto_next: false,
             episodes: Vec::new(),
-            prev_ep: None,
-            next_ep: None,
         };
         let Some(player) = player::build(&window, host, req, api) else {
             eprintln!("PLAYER_SMOKE_FAIL: gömülü oynatıcı başlatılamadı");

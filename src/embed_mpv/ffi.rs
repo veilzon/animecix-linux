@@ -1,6 +1,6 @@
 #![allow(non_camel_case_types)]
 
-use std::ffi::{c_char, c_double, c_int, c_void};
+use std::ffi::{c_char, c_int, c_void};
 
 #[repr(C)]
 pub struct mpv_handle {
@@ -73,5 +73,3 @@ pub struct MpvFunctions {
     pub mpv_render_context_set_update_callback:
         unsafe extern "C" fn(*mut mpv_render_context, Option<mpv_update_fn>, *mut c_void),
 }
-
-pub type MpvDouble = c_double;

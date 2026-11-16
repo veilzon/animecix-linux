@@ -20,7 +20,6 @@ pub struct SourceQueue {
     pub sources: Vec<Source>,
     pub quality: Vec<Option<String>>,
     pub labels: Vec<String>,
-    pub embeds: Vec<Option<String>>,
     pub index: usize,
 }
 
@@ -36,35 +35,27 @@ impl SourceQueue {
         let mut sources = Vec::with_capacity(candidates.len() + fallback_embeds.len());
         let mut quality = Vec::with_capacity(sources.capacity());
         let mut labels = Vec::with_capacity(sources.capacity());
-        let mut embeds = Vec::with_capacity(sources.capacity());
         for (i, c) in candidates.iter().enumerate() {
             let emb = fast_embeds.get(i).cloned();
             quality.push(emb.as_ref().and_then(|e| quality_map.get(e).cloned()));
             labels.push(source_labels.get(i).cloned().unwrap_or_default());
-            embeds.push(emb);
             sources.push(Source::Direct(c.clone()));
         }
         for (i, e) in fallback_embeds.iter().enumerate() {
             quality.push(quality_map.get(e).cloned());
             labels.push(fallback_labels.get(i).cloned().unwrap_or_default());
-            embeds.push(Some(e.clone()));
             sources.push(Source::Embed(e.clone()));
         }
         Self {
             sources,
             quality,
             labels,
-            embeds,
             index: 0,
         }
     }
 
     pub fn len(&self) -> usize {
         self.sources.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.sources.is_empty()
     }
 
     pub fn current(&self) -> Option<&Source> {

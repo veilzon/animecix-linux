@@ -632,14 +632,6 @@ impl App {
                 _ => None,
             })
             .unwrap_or_default();
-        let (prev_ep, next_ep) = if title.title_type.as_deref() == Some("movie") {
-            (None, None)
-        } else {
-            (
-                api::neighbor_episode(&episodes, ep.season, ep.episode, -1),
-                api::neighbor_episode(&episodes, ep.season, ep.episode, 1),
-            )
-        };
 
         let media_title = format!(
             "{} — {}",
@@ -735,17 +727,6 @@ impl App {
                 app.download_episode(title_dl.clone(), next);
             }
         });
-        let app_external = app_weak.clone();
-        let title_ext = title.clone();
-        let ep_ext = ep.clone();
-        let on_external: Rc<dyn Fn()> = Rc::new(move || {
-            if let Some(app) = app_external.upgrade() {
-                let mut s = app.settings.borrow_mut();
-                s.embedded_player = false;
-                drop(s);
-                app.play(&title_ext, &ep_ext);
-            }
-        });
 
         let host = crate::app::player::PlayerHost {
             client: self.client.clone(),
@@ -759,7 +740,6 @@ impl App {
             on_download,
             on_ready,
             on_terminal,
-            on_external,
         };
         let req = crate::app::player::EmbedRequest {
             title: title.clone(),
@@ -783,8 +763,6 @@ impl App {
             patience_secs,
             auto_next,
             episodes,
-            prev_ep,
-            next_ep,
         };
 
         self.shutdown_player();

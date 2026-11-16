@@ -90,36 +90,6 @@ pub struct MpvEmbed {
     ctx: *mut mpv_handle,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct Track {
-    pub id: i64,
-    pub kind: String,
-    pub lang: Option<String>,
-    pub title: Option<String>,
-    pub selected: bool,
-}
-
-impl Track {
-    pub fn label(&self) -> String {
-        let mut parts = Vec::new();
-        if let Some(l) = &self.lang {
-            if !l.is_empty() && l != "und" {
-                parts.push(l.clone());
-            }
-        }
-        if let Some(t) = &self.title {
-            if !t.is_empty() {
-                parts.push(t.clone());
-            }
-        }
-        if parts.is_empty() {
-            format!("#{}", self.id)
-        } else {
-            format!("#{} · {}", self.id, parts.join(" · "))
-        }
-    }
-}
-
 impl MpvEmbed {
     pub fn new(
         api: Rc<MpvApi>,
@@ -181,14 +151,6 @@ impl MpvEmbed {
             api.loaded.path
         );
         Ok(Self { api, ctx })
-    }
-
-    pub fn api(&self) -> &Rc<MpvApi> {
-        &self.api
-    }
-
-    pub fn raw_ptr(&self) -> *mut mpv_handle {
-        self.ctx
     }
 
     pub fn create_render_context(&self) -> Result<RenderContext, String> {
@@ -254,15 +216,6 @@ impl MpvEmbed {
         set_prop_flag(&self.api, self.ctx, "mute", m);
     }
 
-    pub fn speed(&self) -> f64 {
-        let v = get_double(&self.api, self.ctx, "speed");
-        if v > 0.0 {
-            v
-        } else {
-            1.0
-        }
-    }
-
     pub fn set_speed(&self, v: f64) {
         set_prop_double(&self.api, self.ctx, "speed", v.clamp(0.25, 4.0));
     }
@@ -279,42 +232,6 @@ impl MpvEmbed {
         set_prop_double(&self.api, self.ctx, "panscan", v.clamp(0.0, 1.0));
     }
 
-    pub fn tracks(&self) -> Vec<Track> {
-        let count = get_i64(&self.api, self.ctx, "track-list/count").unwrap_or(0);
-        (0..count)
-            .filter_map(|i| {
-                let kind = get_string(&self.api, self.ctx, &format!("track-list/{i}/type"))?;
-                let id = get_i64(&self.api, self.ctx, &format!("track-list/{i}/id")).unwrap_or(0);
-                let lang = get_string(&self.api, self.ctx, &format!("track-list/{i}/lang"));
-                let title = get_string(&self.api, self.ctx, &format!("track-list/{i}/title"));
-                let selected = get_flag(
-                    &self.api,
-                    self.ctx,
-                    &format!("track-list/{i}/selected"),
-                    false,
-                );
-                Some(Track {
-                    id,
-                    kind,
-                    lang,
-                    title,
-                    selected,
-                })
-            })
-            .collect()
-    }
-
-    pub fn set_audio(&self, id: i64) {
-        set_prop_i64(&self.api, self.ctx, "aid", id);
-    }
-
-    pub fn set_sub(&self, id: Option<i64>) {
-        match id {
-            Some(v) => set_prop_i64(&self.api, self.ctx, "sid", v),
-            None => set_prop_str(&self.api, self.ctx, "sid", "no"),
-        }
-    }
-
     pub fn paused(&self) -> bool {
         get_flag(&self.api, self.ctx, "pause", true)
     }
@@ -325,15 +242,6 @@ impl MpvEmbed {
 
     pub fn eof(&self) -> bool {
         get_flag(&self.api, self.ctx, "eof-reached", false)
-    }
-
-    pub fn core_idle(&self) -> bool {
-        get_flag(&self.api, self.ctx, "core-idle", false)
-    }
-
-    pub fn show_text(&self, msg: &str, ms: u64) {
-        let ms = ms.to_string();
-        let _ = self.command(&["show-text", msg, &ms]);
     }
 
     pub fn screenshot_to_file(&self, path: &str) -> Result<(), String> {
@@ -504,21 +412,6 @@ fn set_prop_double(api: &MpvApi, ctx: *mut mpv_handle, name: &str, val: f64) {
             ctx,
             n.as_ptr(),
             MPV_FORMAT_DOUBLE,
-            &mut v as *mut _ as *mut c_void,
-        );
-    }
-}
-
-fn set_prop_i64(api: &MpvApi, ctx: *mut mpv_handle, name: &str, val: i64) {
-    let Ok(n) = CString::new(name) else {
-        return;
-    };
-    let mut v: i64 = val;
-    unsafe {
-        (api.f.mpv_set_property)(
-            ctx,
-            n.as_ptr(),
-            MPV_FORMAT_INT64,
             &mut v as *mut _ as *mut c_void,
         );
     }
