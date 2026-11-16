@@ -20,6 +20,7 @@ mod music;
 mod native_package;
 mod play_quality;
 mod player;
+mod player_smoke;
 mod segmented;
 mod skip;
 mod startup;
@@ -55,6 +56,10 @@ fn main() {
     let raw_args: Vec<String> = std::env::args().collect();
     if raw_args.iter().any(|a| a == "--check-libmpv") {
         return diagnostics::cmd_check_libmpv();
+    }
+    if let Some(pos) = raw_args.iter().position(|a| a == "--player-smoke") {
+        let path = raw_args.get(pos + 1).cloned().unwrap_or_default();
+        return player_smoke::run(&path);
     }
     if raw_args.iter().any(|a| a == "--check-shaders") {
         return diagnostics::cmd_check_shaders();

@@ -141,7 +141,9 @@ impl MpvEmbed {
         };
 
         set_opt_required(&api, ctx, "vo", "libmpv")?;
-        set_opt_log(&api, ctx, "hwdec", "auto-safe");
+        // Gömülü render'da NVIDIA/CUDA/VDPAU interop'u siyah video üretiyor.
+        // Ses gelip görüntü gelmiyorsa kök neden hwdec'tir; yazılım decode kullan.
+        set_opt_log(&api, ctx, "hwdec", "no");
         set_opt_log(&api, ctx, "hr-seek", "yes");
         set_opt_log(&api, ctx, "keep-open", "yes");
         set_opt_log(&api, ctx, "cache", "yes");
@@ -166,6 +168,11 @@ impl MpvEmbed {
             return Err(format!("mpv_initialize başarısız: {}", api.error(ret)));
         }
         set_prop_double(&api, ctx, "volume", 100.0);
+        eprintln!(
+            "[EMBED] vo={:?} hwdec={:?}",
+            get_string(&api, ctx, "vo"),
+            get_string(&api, ctx, "hwdec")
+        );
         guard.armed = false;
 
         eprintln!(

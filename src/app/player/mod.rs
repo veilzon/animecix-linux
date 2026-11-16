@@ -4,7 +4,7 @@ use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU32, Ordering},
     Arc,
 };
 use std::time::{Duration, Instant};
@@ -14,7 +14,7 @@ use adw::prelude::*;
 use crate::api::{self, Client, Episode, Title};
 use crate::discord_rpc::DiscordRpc;
 use crate::embed_mpv::player::{options_from_cli, MpvApi, MpvEmbed};
-use crate::embed_mpv::render::{current_fbo, RenderContext};
+use crate::embed_mpv::render::RenderContext;
 use crate::skip::SkipPlan;
 use crate::ui::operation_stack::OperationStack;
 
@@ -68,6 +68,7 @@ struct PlayerState {
     media_loaded: bool,
     ready_sent: bool,
     terminal_sent: bool,
+    source_loaded: bool,
     resume: Option<f64>,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
@@ -264,8 +265,11 @@ pub fn build(
         .build();
     shade.set_reveal_child(true);
     shade.set_can_target(false);
-    stage.add_overlay(&shade);
 
+    let shade_enabled = std::env::var_os("ANIMECIX_PLAYER_NO_SHADE").is_none();
+    if shade_enabled {
+        stage.add_overlay(&shade);
+    }
     let controls = ui::build_control_bar(&stage, start_volume, start_muted, &media_title);
     let topbar = ui::build_topbar(&stage);
 
@@ -288,6 +292,7 @@ pub fn build(
         media_loaded: false,
         ready_sent: false,
         terminal_sent: false,
+        source_loaded: false,
         resume: req.saved_pos,
         window: parent.clone(),
         gl_area: gl_area.clone(),
@@ -325,6 +330,7 @@ pub fn build(
 
     // ---- GLArea render döngüsü ----
     let needs_render = Arc::new(AtomicBool::new(false));
+    let render_count = Arc::new(AtomicU32::new(0));
     {
         let weak = Rc::downgrade(&state);
         let flag = needs_render.clone();
@@ -354,6 +360,14 @@ pub fn build(
                         }
                     });
                     s.render_ctx = Some(ctx);
+                    let should_load = !s.source_loaded;
+                    drop(s);
+                    if should_load {
+                        let st_load = st.clone();
+                        glib::idle_add_local_once(move || {
+                            load_initial_source(&st_load);
+                        });
+                    }
                     eprintln!("[EMBED] render ctx hazır");
                 }
                 Err(e) => {
@@ -384,6 +398,7 @@ pub fn build(
     {
         let weak = Rc::downgrade(&state);
         let alive_c = alive.clone();
+        let render_count_c = render_count.clone();
         gl_area.connect_render(move |area, _ctx| {
             if !alive_c.load(Ordering::Relaxed) {
                 return glib::Propagation::Stop;
@@ -392,15 +407,27 @@ pub fn build(
                 return glib::Propagation::Stop;
             };
             let Ok(s) = st.try_borrow() else {
+                eprintln!("[EMBED] render: state borrow meşgul");
                 return glib::Propagation::Stop;
             };
             if let Some(ctx) = s.render_ctx.as_ref() {
-                let fbo = current_fbo();
+                let fbo = ctx.current_fbo();
                 let scale = area.scale_factor();
-                if let Err(e) = ctx.render(fbo, area.width() * scale, area.height() * scale, true) {
+                let w = area.width() * scale;
+                let h = area.height() * scale;
+                let n = render_count_c.fetch_add(1, Ordering::Relaxed);
+                if n < 5 {
+                    eprintln!(
+                        "[EMBED] render #{n} fbo={fbo} {w}x{h} backend={:?}",
+                        ctx.backend()
+                    );
+                }
+                if let Err(e) = ctx.render(fbo, w, h, true) {
                     eprintln!("[EMBED] render hatası: {e}");
                 }
                 ctx.report_swap();
+            } else if render_count_c.fetch_add(1, Ordering::Relaxed) < 3 {
+                eprintln!("[EMBED] render: ctx yok");
             }
             glib::Propagation::Stop
         });
@@ -701,8 +728,8 @@ pub fn build(
         root.add_controller(key);
     }
 
-    // İlk kaynağı hemen yükle.
-    load_initial_source(&state);
+    // İlk kaynak, GLArea realize olup render context kurulduktan sonra
+    // connect_realize içinde yüklenir (libmpv render API sözleşmesi).
 
     // 500 ms süpervizör.
     {
@@ -743,7 +770,11 @@ pub fn build(
 
 fn load_initial_source(state: &Rc<RefCell<PlayerState>>) {
     let (url, index) = {
-        let s = state.borrow();
+        let mut s = state.borrow_mut();
+        if s.source_loaded {
+            return;
+        }
+        s.source_loaded = true;
         (s.candidates.get(s.index).cloned(), s.index)
     };
     let Some(url) = url else {
@@ -861,13 +892,14 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             s.status.set_visible(true);
         }
         // krom oto-gizleme
+        let smoke_hold = std::env::var_os("ANIMECIX_SMOKE_HOLD").is_some();
         let pop_open = s.speed_pop.is_visible();
         let idle_time = s.last_motion.elapsed();
-        if !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open {
+        if !smoke_hold && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open {
             s.cursor_hidden = true;
             s.gl_area.set_cursor_from_name(Some("none"));
         }
-        if !s.chrome_hidden && idle_time.as_secs() >= 2 && !pop_open {
+        if !smoke_hold && !s.chrome_hidden && idle_time.as_secs() >= 2 && !pop_open {
             hide_chrome_locked(&mut s);
         }
         if !idle {

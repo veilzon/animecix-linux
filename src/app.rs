@@ -14,7 +14,7 @@ use crate::ui::views;
 
 mod pages;
 mod playback;
-mod player;
+pub(crate) mod player;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
