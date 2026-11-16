@@ -3791,53 +3791,26 @@ impl App {
     /// başlıksız tek liste olarak konur (okunması kolay, kaydırmalı).
     pub(crate) fn maybe_show_changelog(&self) {
         let cur = crate::update::CURRENT_VERSION;
-        if self.settings.borrow().seen_changelog == cur {
+        let preview = std::env::var_os("ANIMECIX_CHANGELOG_PREVIEW").is_some();
+        let seen = self.settings.borrow().seen_changelog.clone();
+        if !should_show_changelog(cur, &seen, preview) {
             return;
         }
-        {
+        if !preview {
             let mut s = self.settings.borrow_mut();
             s.seen_changelog = cur.to_string();
             self.client.save_settings(&s);
         }
-        let Some((heading, items)) = changelog_items(cur) else {
+        let version = if preview {
+            crate::ui::changelog::PREVIEW_VERSION
+        } else {
+            cur
+        };
+        let Some((heading, items)) = changelog_items(version) else {
             return;
         };
-        let dlg = adw::Window::new();
-        dlg.set_title(Some(heading));
-        dlg.set_modal(true);
-        dlg.set_transient_for(Some(&self.window));
-        dlg.set_default_size(520, 560);
-        let root = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        let titlebar = adw::HeaderBar::new();
-        let title = adw::WindowTitle::new(heading, "");
-        titlebar.set_title_widget(Some(&title));
-        root.append(&titlebar);
-        let scroll = gtk::ScrolledWindow::new();
-        scroll.set_hexpand(true);
-        scroll.set_vexpand(true);
-        scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
-        let list = gtk::Box::new(gtk::Orientation::Vertical, 10);
-        list.set_margin_top(16);
-        list.set_margin_bottom(18);
-        list.set_margin_start(18);
-        list.set_margin_end(18);
-        for it in items {
-            let row = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-            let dot = gtk::Label::new(Some("•"));
-            dot.set_valign(gtk::Align::Start);
-            dot.add_css_class("dim-label");
-            row.append(&dot);
-            let lbl = gtk::Label::new(Some(it));
-            lbl.set_xalign(0.0);
-            lbl.set_wrap(true);
-            lbl.set_hexpand(true);
-            row.append(&lbl);
-            list.append(&row);
-        }
-        scroll.set_child(Some(&list));
-        root.append(&scroll);
-        dlg.set_content(Some(&root));
-        dlg.present();
+        let videos = crate::ui::changelog::videos_for(version);
+        crate::ui::changelog::present(&self.window, heading, &items, videos);
     }
 
     /// Açılış/giriş sessiz senkronu: favori birleşir + sunucu geçmişi
@@ -3954,10 +3927,24 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
     entry.set_position(-1);
 }
 
+fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
+    preview || seen != current
+}
+
 /// Sürüm yenilik maddeleri (bilinmeyen sürüm → None, sessiz geçilir).
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.0" => Some((
+            "Yenilikler (v1.4.0)",
+            vec![
+                "Uygulama içi oynatıcı varsayılan oldu: libmpv tabanlı oynatıcı; harici mpv Ayarlar'dan seçilebiliyor.",
+                "Fansub ve kaynak seçimi oynatıcı içindeki menüye taşındı; Mega.nz kaynakları destekleniyor.",
+                "Bölüm çekmecesi, önceki/sonraki bölüm ve intro/outro atlama; şarkı/atla kartları 10 sn sonra gizleniyor.",
+                "Sağ tık menüsü: ekran görüntüsü, video bilgisi, ekranı doldurma ve bölüm indirme.",
+                "Oynatma hızı 0.5x–2.0x; F1 kısayol paneli yeni oynatıcı tuşlarıyla güncellendi.",
+            ],
+        )),
         "1.3.5" => Some((
             "Yenilikler (v1.3.5)",
             vec![
@@ -4226,7 +4213,23 @@ mod decide_retry_tests {
     }
 
     #[test]
+    fn changelog_140_has_five_items_and_videos() {
+        let (_, items) = super::changelog_items("1.4.0").expect("1.4.0 kaydı");
+        assert_eq!(items.len(), 5);
+        assert!(!items.iter().any(|i| i.to_lowercase().contains("paket")));
+        assert_eq!(crate::ui::changelog::videos_for("1.4.0").len(), 3);
+    }
+
+    #[test]
+    fn preview_shows_without_touching_seen_state() {
+        assert!(super::should_show_changelog("1.3.5", "1.3.5", true));
+        assert!(!super::should_show_changelog("1.3.5", "1.3.5", false));
+        assert!(super::should_show_changelog("1.3.5", "1.3.4", false));
+    }
+
+    #[test]
     fn changelog_known_and_unknown() {
+        assert!(super::changelog_items("1.4.0").is_some());
         assert!(super::changelog_items("1.3.5").is_some());
         assert!(super::changelog_items("1.3.4").is_some());
         assert!(super::changelog_items("1.3.3").is_some());
