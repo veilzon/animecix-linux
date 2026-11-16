@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libfuse2 libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libfuse2 libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev meson ninja-build nasm yasm libass-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libunibreak-dev libdav1d-dev libpulse-dev libegl-dev libgl-dev libxkbcommon-dev
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -44,8 +44,17 @@ jobs:
         with:
           prefix-key: bookworm-appimage
 
+      - name: Cache minimal libmpv
+        uses: actions/cache@v4
+        with:
+          path: target/minimal-libmpv
+          key: minimal-libmpv-${{ runner.os }}-${{ hashFiles('packaging/build-minimal-libmpv.sh') }}
+
+      - name: Build minimal libmpv
+        run: bash packaging/build-minimal-libmpv.sh
+
       - name: Build AppImage (minimal aria2)
-        run: GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
+        run: MINIMAL_LIBMPV_DIR=target/minimal-libmpv GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
 
       - name: Smoke test
         run: |
@@ -54,6 +63,9 @@ jobs:
           export APPDIR="$PWD/squashfs-root"
           test -e "$APPDIR/usr/lib/libmpv.so.2"
           test -e "$APPDIR/usr/share/animecix/assets/changelog/ekrangoruntusu.mp4"
+          for bad in libicudata libtesseract libflite liblpcnetfreedv librav1e libSvtAv1Enc; do
+            ! ls "$APPDIR/usr/lib/$bad"* >/dev/null 2>&1
+          done
           for icon in go-previous-symbolic go-next-symbolic media-playback-start-symbolic \
             media-playback-pause-symbolic media-playback-stop-symbolic media-skip-forward-symbolic \
             audio-volume-high-symbolic audio-volume-low-symbolic audio-volume-medium-symbolic \
@@ -67,7 +79,9 @@ jobs:
           ffmpeg -y -f lavfi -i testsrc=size=320x180:rate=24 -t 2 -pix_fmt yuv420p /tmp/animecix-smoke.mp4 >/dev/null 2>&1
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 "$APPDIR/usr/bin/animecix" --player-smoke /tmp/animecix-smoke.mp4
           ls -lh AnimeciX-x86_64.AppImage
-          stat -c 'AppImage boyut: %s bayt' AnimeciX-x86_64.AppImage
+          SIZE=$(stat -c%s AnimeciX-x86_64.AppImage)
+          echo "AppImage boyut: $SIZE bayt"
+          test "$SIZE" -lt 60000000
           sha256sum AnimeciX-x86_64.AppImage
           rm -rf squashfs-root
 

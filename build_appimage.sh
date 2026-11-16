@@ -145,6 +145,14 @@ fi
 # Loader çalışırken APPDIR/usr/lib/libmpv.so.2 arar; global LD_LIBRARY_PATH
 # verilmez. libmpv ve yanına kopyalanan tüm .so dosyaları $ORIGIN'e bakar.
 LIBMPV_SRC="${ANIMECIX_LIBMPV_PATH:-}"
+MINIMAL_LIBMPV_DIR="${MINIMAL_LIBMPV_DIR:-}"
+if [ -n "$MINIMAL_LIBMPV_DIR" ] && [ ! -e "$MINIMAL_LIBMPV_DIR/usr/lib/libmpv.so.2" ]; then
+    echo "==> HATA: minimal libmpv yok: $MINIMAL_LIBMPV_DIR/usr/lib/libmpv.so.2"
+    exit 1
+fi
+if [ -z "$LIBMPV_SRC" ] && [ -n "$MINIMAL_LIBMPV_DIR" ] && [ -e "$MINIMAL_LIBMPV_DIR/usr/lib/libmpv.so.2" ]; then
+    LIBMPV_SRC="$MINIMAL_LIBMPV_DIR/usr/lib/libmpv.so.2"
+fi
 if [ -n "$LIBMPV_SRC" ] && [ -e "$LIBMPV_SRC" ]; then
     LIBMPV_SRC="$(readlink -f "$LIBMPV_SRC")"
 else
@@ -162,10 +170,21 @@ if ! command -v patchelf >/dev/null 2>&1; then
     exit 1
 fi
 mkdir -p "$APPDIR/usr/lib"
+if [ -n "$MINIMAL_LIBMPV_DIR" ] && [ -d "$MINIMAL_LIBMPV_DIR/usr/lib" ]; then
+    cp -a "$MINIMAL_LIBMPV_DIR/usr/lib/"*.so* "$APPDIR/usr/lib/" 2>/dev/null || true
+fi
 LIBMPV_REAL="$(basename "$LIBMPV_SRC")"
 cp -f "$LIBMPV_SRC" "$APPDIR/usr/lib/$LIBMPV_REAL"
 ln -sf "$LIBMPV_REAL" "$APPDIR/usr/lib/libmpv.so.2"
 ln -sf "$LIBMPV_REAL" "$APPDIR/usr/lib/libmpv.so"
+
+ldd_libmpv() {
+    if [ -n "$MINIMAL_LIBMPV_DIR" ]; then
+        LD_LIBRARY_PATH="$MINIMAL_LIBMPV_DIR/usr/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" ldd "$1" 2>/dev/null
+    else
+        ldd "$1" 2>/dev/null
+    fi
+}
 
 copy_dep() {
     local lib="$1" base
@@ -175,7 +194,7 @@ copy_dep() {
     esac
     [ -e "$APPDIR/usr/lib/$base" ] || cp -L "$lib" "$APPDIR/usr/lib/$base"
 }
-for lib in $(ldd "$LIBMPV_SRC" 2>/dev/null | awk '/=> \//{print $3}'); do
+for lib in $(ldd_libmpv "$LIBMPV_SRC" | awk '/=> \//{print $3}'); do
     copy_dep "$lib"
 done
 # Kopyalanan her kütüphanenin kendi bağımlılıklarını da tara.
@@ -183,7 +202,7 @@ for copied in "$APPDIR"/usr/lib/*.so*; do
     [ -f "$copied" ] || continue
     while IFS= read -r lib; do
         copy_dep "$lib"
-    done < <(ldd "$copied" 2>/dev/null | awk '/=> \//{print $3}')
+    done < <(ldd_libmpv "$copied" | awk '/=> \//{print $3}')
 done
 while IFS= read -r -d '' so; do
     patchelf --set-rpath '$ORIGIN' "$so"
