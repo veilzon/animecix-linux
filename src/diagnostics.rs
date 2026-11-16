@@ -1,6 +1,22 @@
 use crate::icons;
 use gtk::prelude::*;
 
+pub(crate) fn cmd_check_libmpv() {
+    match crate::embed_mpv::loader::load() {
+        Ok(loaded) => {
+            println!(
+                "libmpv: {} (API {})",
+                loaded.path,
+                crate::embed_mpv::loader::version_label(loaded.api_version)
+            );
+        }
+        Err(e) => {
+            eprintln!("libmpv bulunamadı: {e}");
+            std::process::exit(1);
+        }
+    }
+}
+
 pub(crate) fn cmd_check_icons() {
     // GTK'yı başlatsız tema okunamaz; init başarısızsa liste basılamaz.
     if gtk::init().is_err() {

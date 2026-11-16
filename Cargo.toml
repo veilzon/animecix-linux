@@ -24,6 +24,7 @@ sha2 = "0.10"
 aes-gcm = "0.10"
 ring = "0.17"
 base64 = "0.22"
+libloading = "0.8"
 
 [profile.release]
 lto = true

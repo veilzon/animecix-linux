@@ -85,6 +85,7 @@ dependencies = [
  "hmac",
  "libadwaita",
  "libc",
+ "libloading",
  "reqwest",
  "ring",
  "serde",

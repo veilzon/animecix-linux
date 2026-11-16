@@ -8,6 +8,7 @@ mod diagnostics;
 mod discord_rpc;
 mod download;
 mod download_folders;
+mod embed_mpv;
 mod flatpak;
 mod font;
 mod http;
@@ -52,6 +53,9 @@ fn main() {
         libc::mallopt(libc::M_ARENA_MAX, 2);
     }
     let raw_args: Vec<String> = std::env::args().collect();
+    if raw_args.iter().any(|a| a == "--check-libmpv") {
+        return diagnostics::cmd_check_libmpv();
+    }
     if raw_args.iter().any(|a| a == "--check-shaders") {
         return diagnostics::cmd_check_shaders();
     }
