@@ -1,3 +1,18 @@
+# Changelog — Geliştirme (yayınlanmadı)
+
+- **Uygulama içi oynatıcı:** libmpv + GtkGLArea tabanlı gömülü oynatıcı varsayılan
+  oldu; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn sonra
+  gizlenen şarkı/atla kartları ve tek ok geri düğmesi eklendi.
+- **Kaynak ve çeviri seçimi:** Kaynak menüsünde fansublar ve host/kalite listesi;
+  seçilen fansub yeniden çözülüyor, Mega.nz kaynakları yerel AES-CTR proxy ile
+  oynatılıyor. Fansub seçimi kapalıyken son çeviri otomatik kullanılıyor.
+- **Bölümler ve atlama:** Oynatıcı içinden bölüm çekmecesi, önceki/sonraki bölüm,
+  intro/outro atlama; şarkı ve atla kartları 10 sn sonra gizleniyor.
+- **Sağ tık menüsü:** Oynat/duraklat, tam ekran, atla, oran, ekran görüntüsü,
+  video bilgisi ve bölüm indirme.
+- **Hız ve kısayollar:** 0.5x–2.0x oynatma hızı; F1 kısayol penceresi yeni
+  oynatıcı tuşlarıyla güncellendi (Space, ←/→, ↑/↓, F, A, S/E, N/P, M, Shift+M).
+
 # Changelog — v1.3.5 (güncel sürüm notları)
 
 - **Flatpak oynatma düzeltmesi:** mpv'nin ytdl desteği olmayan derlemelerinde

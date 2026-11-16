@@ -10,7 +10,9 @@
 
 **Flatpak** (önerilen), **.deb/.rpm** paketleri veya tek dosyalık taşınabilir
 **AppImage** olarak dağıtılır. Flatpak kendi depomuzdan kurulur; güncellemeler uygulama içinden
-denetlenir ve `flatpak update` ile de yapılabilir; AppImage/deb/rpm sistemdeki GTK4, libadwaita ve mpv'yi kullanır.
+denetlenir ve `flatpak update` ile de yapılabilir. Flatpak kendi libmpv'sini taşır; AppImage
+libmpv'yi paket içinde getirir, deb/rpm sistemdeki libmpv'yi (`mpv` paketi) ve GTK4/libadwaita'yı kullanır.
+Harici mpv oynatıcısı Ayarlar'dan isteğe bağlı seçilebilir.
 Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 
 > ⚠️ Bu uygulama **gayriresmî** ve eğitim/kişisel kullanım amaçlıdır; herkese açık bir API
@@ -25,12 +27,12 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
 - **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
 - **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
-- **Oynatıcı**: MPV ile oynatma, otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), isteğe bağlı oynatma kalite seçici; indirilmiş bölümlerde de intro/outro atlama çalışır
+- **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
 - **Discord Rich Presence**: Discord'da izlediğin anime/film ve bölüm bilgisi görünür; varsayılan açık, Ayarlar → Discord'dan kapatılabilir veya socket yolu değiştirilebilir
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme; indirilen bölümler listede işaretlenir, sağ tıkla indirilebilir ve normal oynatmada yerel dosyadan öncelikli açılır
-- **Bellek toparlama**: MPV kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
+- **Bellek toparlama**: Oynatıcı kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
 - **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
 - **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
 - **Flatpak**: kendi Flatpak depomuzdan tek komutla kurulum; güncellemeler uygulama içinden denetlenir
@@ -105,9 +107,10 @@ flatpak uninstall io.github.veilzon.AnimeciX
    ./AnimeciX-x86_64.AppImage
    ```
 
-AppImage tek dosyadır; sistemde GTK4, libadwaita ve mpv varsa ek kurulum gerektirmez.
-Minimal aria2 paket içinde gelir; ayrıca `aria2` kurmana gerek yoktur. İstersen masaüstü
-başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** ile ekleyebilirsin.
+AppImage tek dosyadır; sistemde GTK4 ve libadwaita varsa ek kurulum gerektirmez.
+libmpv ve bağımlılıkları paketin içinde gelir. Minimal aria2 de paket içindedir; ayrıca
+`aria2` kurmana gerek yoktur. Harici mpv kullanmak istersen sistemde `mpv` bulunmalıdır.
+İstersen masaüstü başlatıcısını **Ayarlar → Masaüstü Başlatıcısını Sistemime Kur** ile ekleyebilirsin.
 
 ### Debian / Ubuntu (.deb)
 
@@ -185,11 +188,15 @@ sudo pacman -S animecix
 
 Güncelleme: `sudo pacman -Syu`.
 
+Arch paketi `mpv` bağımlılığını kullanır; bu paket gömülü oynatıcı için libmpv'yi de
+sağlar. Arch paket derlemeleri ayrı CI deposunda test edilir.
+
 ### Sistem gereksinimleri
 
 - **Ortak:** x86_64 Linux (Wayland veya X11) ve internet bağlantısı.
 - **Flatpak:** Flatpak kurulu olmalı; GNOME runtime'ı Flathub'dan otomatik gelir.
-- **AppImage:** glibc ≥ 2.36, GTK ≥ 4.8, libadwaita ≥ 1.2 ve `mpv` (`PATH`'te).
+- **AppImage:** glibc ≥ 2.36, GTK ≥ 4.8 ve libadwaita ≥ 1.2. Gömülü oynatıcı için
+  libmpv paket içinde gelir; harici mpv isteğe bağlıdır.
   `libfuse.so.2` yoksa `./AnimeciX-x86_64.AppImage --appimage-extract-and-run` kullan.
 - **.deb:** Debian 12+ / Ubuntu 24.04+; bağımlılıklar apt tarafından kurulur.
 - **.rpm:** Fedora 40+; bağımlılıklar dnf tarafından kurulur.
@@ -198,23 +205,31 @@ AppImage için dağıtım paketleri:
 
 ```bash
 # Debian/Ubuntu (libfuse2 adı sürüme göre libfuse2t64 olabilir)
-sudo apt install libgtk-4-1 libadwaita-1-0 mpv libfuse2
+sudo apt install libgtk-4-1 libadwaita-1-0 libfuse2
 
 # Fedora
-sudo dnf install gtk4 libadwaita mpv fuse-libs
+sudo dnf install gtk4 libadwaita fuse-libs
 
 # Arch
-sudo pacman -S gtk4 libadwaita mpv fuse2
+sudo pacman -S gtk4 libadwaita fuse2
 ```
 
 > Tüm sürümler ve eski paketler: [Releases](https://github.com/veilzon/animecix-linux/releases).
+
+### Oynatıcı
+
+Varsayılan olarak video **uygulama içinde** libmpv + GtkGLArea ile açılır; ayrı bir mpv
+penceresi oluşmaz. **Ayarlar → Gömülü Oynatıcı** kapatılırsa eskisi gibi harici `mpv`
+penceresi kullanılır. Gömülü oynatıcı libmpv bulamazsa (ör. eksik sistem paketi) harici
+oynatıcıya düşer. AppImage ve Flatpak libmpv'yi kendi içinde taşır; deb/rpm `mpv`
+paketinin sağladığı libmpv'yi kullanır.
 
 ### Kaynaktan derleme
 
 Gerekli sistem bağımlılıkları:
 
-- **Debian/Ubuntu:** `sudo apt install libgtk-4-dev libadwaita-1-dev mpv pkg-config build-essential cmake libclang-dev`
-- **Fedora:** `sudo dnf install gtk4-devel libadwaita-devel mpv pkgconf-pkg-config gcc-c++ make cmake clang-devel`
+- **Debian/Ubuntu:** `sudo apt install libgtk-4-dev libadwaita-1-dev mpv libmpv-dev pkg-config build-essential cmake libclang-dev`
+- **Fedora:** `sudo dnf install gtk4-devel libadwaita-devel mpv mpv-libs-devel pkgconf-pkg-config gcc-c++ make cmake clang-devel`
 - **Arch:** `sudo pacman -S gtk4 libadwaita mpv pkgconf base-devel cmake clang`
 
 Güncel stable Rust kurulu olmalı:
@@ -287,9 +302,12 @@ Sürüm hazırlığı:
 | `F11` | Tam ekran |
 | `/` | Bölüm ekranında hızlı bölüm arama |
 | `Ctrl+S` | Ana ekranda arama çubuğuna odaklan |
-| `s` | Oynatıcıda intro sonuna atla |
-| `e` | Oynatıcıda outro sonuna atla |
-| `n` / `p` | Oynatıcıda sonraki / önceki bölüm |
+| `Space` | Oynatıcıda oynat / duraklat |
+| `F` | Oynatıcıda tam ekran |
+| `A` | Oynatıcıda ekranı doldur / orijinal oran |
+| `S` / `E` | Oynatıcıda introyu / outroyu atla |
+| `N` / `P` | Oynatıcıda sonraki / önceki bölüm |
+| `M` | Oynatıcıda sesi aç / kapat |
 | `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm |
 | `Shift+M` (`M`) | Çalan şarkıyı tarayıcıda aç (şarkı bilgisi varsa) |
 | `Esc` | Geri / aramayı kapat |
