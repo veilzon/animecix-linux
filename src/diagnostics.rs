@@ -2,19 +2,22 @@ use crate::icons;
 use gtk::prelude::*;
 
 pub(crate) fn cmd_check_libmpv() {
-    match crate::embed_mpv::loader::load() {
-        Ok(loaded) => {
-            println!(
-                "libmpv: {} (API {})",
-                loaded.path,
-                crate::embed_mpv::loader::version_label(loaded.api_version)
-            );
-        }
+    match run_check_libmpv() {
+        Ok(line) => println!("{line}"),
         Err(e) => {
             eprintln!("libmpv bulunamadı: {e}");
             std::process::exit(1);
         }
     }
+}
+
+fn run_check_libmpv() -> Result<String, String> {
+    let loaded = crate::embed_mpv::loader::load()?;
+    let path = loaded.path.clone();
+    let label = crate::embed_mpv::loader::version_label(loaded.api_version);
+    let api = std::rc::Rc::new(crate::embed_mpv::player::MpvApi::from_loaded(loaded)?);
+    let _player = crate::embed_mpv::player::MpvEmbed::new(api, &[], None)?;
+    Ok(format!("libmpv: {path} (API {label}), başsız mpv hazır"))
 }
 
 pub(crate) fn cmd_check_icons() {
