@@ -646,6 +646,18 @@ impl SettingsView {
             settings.auto_next,
         );
         common_group.add(&auto_next_row);
+
+        let (outro_skip_row, outro_skip_sw) = crate::ui::components::switch_row(
+            "Outro'yu Otomatik Atla",
+            "Outro başlayınca sonunu beklemeden sonraki bölüme geçer.",
+            settings.auto_skip_outro,
+        );
+        outro_skip_row.set_sensitive(settings.auto_next);
+        common_group.add(&outro_skip_row);
+        {
+            let row_c = outro_skip_row.clone();
+            auto_next_sw.connect_active_notify(move |sw| row_c.set_sensitive(sw.is_active()));
+        }
         root.append(&common_group);
 
         let embedded_group = adw::PreferencesGroup::new();
@@ -972,6 +984,7 @@ impl SettingsView {
             let ds = discord_socket_entry.clone();
             let pq_r = play_q_sw.clone();
             let an_r = auto_next_sw.clone();
+            let os_r = outro_skip_sw.clone();
             let au_r = auto_update_sw.clone();
             let notify_r = notify_sw.clone();
             let up_r = upscale_row.clone();
@@ -1022,6 +1035,7 @@ impl SettingsView {
                 };
                 updated.play_ask_quality = pq_r.is_active();
                 updated.auto_next = an_r.is_active();
+                updated.auto_skip_outro = os_r.is_active();
                 updated.auto_update = au_r.is_active();
                 updated.notify_uptodate = notify_r.is_active();
                 updated.upscale = match up_r.selected() {
@@ -1093,6 +1107,8 @@ impl SettingsView {
         play_q_sw.connect_active_notify(move |_| sa5c());
         let sa5d = save_all.clone();
         auto_next_sw.connect_active_notify(move |_| sa5d());
+        let sa5e = save_all.clone();
+        outro_skip_sw.connect_active_notify(move |_| sa5e());
         let sa6 = save_all.clone();
         auto_update_sw.connect_active_notify(move |_| sa6());
         let sa7 = save_all.clone();

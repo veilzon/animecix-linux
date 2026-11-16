@@ -16,17 +16,17 @@ struct Feature {
 
 const FEATURES: [Feature; 3] = [
     Feature {
-        icon: "⏩",
+        icon: "media-skip-forward-symbolic",
         title: "Akıllı Atlama",
         desc: "'s' / 'e' ile intro/outro sonuna atla, şarkıyı gör ('Shift+M' ile aç)",
     },
     Feature {
-        icon: "⬇",
+        icon: "folder-download-symbolic",
         title: "Çevrimdışı İndirme",
         desc: "Bölümleri kalite seçerek indir, kuyruktan izle",
     },
     Feature {
-        icon: "🎨",
+        icon: "applications-graphics-symbolic",
         title: "Temalar",
         desc: "Bordo, Orman, Lacivert, Mor — tek tıkla değişir",
     },
@@ -43,60 +43,76 @@ impl WelcomeView {
         scroll.add_css_class("clear-scroll");
         let flatpak = crate::flatpak::is_flatpak();
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
-        root.set_margin_top(24);
-        root.set_margin_bottom(24);
-        root.set_margin_start(24);
-        root.set_margin_end(24);
+        root.set_margin_top(28);
+        root.set_margin_bottom(32);
+        root.set_margin_start(28);
+        root.set_margin_end(28);
+
+        root.add_css_class("welcome-root");
 
         // Hero.
-        let hero = gtk::Box::new(gtk::Orientation::Vertical, 8);
-        hero.set_halign(gtk::Align::Center);
+        let hero = gtk::Box::new(gtk::Orientation::Vertical, 10);
+        hero.add_css_class("welcome-hero");
+        hero.set_halign(gtk::Align::Fill);
+        hero.set_hexpand(true);
+        hero.set_margin_bottom(6);
+
+        let badge = gtk::Label::new(Some("YENİ OYNATICI · GÖMÜLÜ LIBMPV"));
+        badge.add_css_class("welcome-badge");
+        badge.set_halign(gtk::Align::Center);
+        hero.append(&badge);
+
         let icon = gtk::Image::from_icon_name("tr.com.animecix");
-        icon.set_pixel_size(72);
+        icon.add_css_class("welcome-icon");
+        icon.set_pixel_size(76);
         hero.append(&icon);
+
         let title = gtk::Label::new(Some("AnimeciX"));
-        title.add_css_class("title-1");
+        title.add_css_class("welcome-title");
+        title.set_halign(gtk::Align::Center);
         hero.append(&title);
+
         let tag = gtk::Label::new(Some(if flatpak {
             "Flatpak sürümü — bağımlılıklar ve menü girdisi paketle gelir."
         } else {
-            "Anime, dizi ve film — tek tıkla, kaldığın yerden."
+            "Anime, dizi ve film — uygulama içi oynatıcıyla, kaldığın yerden."
         }));
-        tag.add_css_class("dim-label");
-        tag.add_css_class("title-4");
+        tag.add_css_class("welcome-tagline");
+        tag.set_halign(gtk::Align::Center);
         tag.set_wrap(true);
         tag.set_justify(gtk::Justification::Center);
         hero.append(&tag);
         root.append(&hero);
 
-        // Özellik kartları.
-        let cards = gtk::Box::new(gtk::Orientation::Horizontal, 12);
-        cards.set_halign(gtk::Align::Center);
+        // Özellik kartları (dar pencerede alt satıra sarar).
+        let cards = gtk::FlowBox::new();
+        cards.set_selection_mode(gtk::SelectionMode::None);
+        cards.set_max_children_per_line(3);
+        cards.set_min_children_per_line(1);
+        cards.set_homogeneous(true);
+        cards.set_column_spacing(12);
+        cards.set_row_spacing(12);
+        cards.set_halign(gtk::Align::Fill);
         for f in FEATURES {
-            let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
-            card.add_css_class("card");
-            card.set_size_request(220, -1);
-            card.set_margin_top(8);
-            card.set_margin_bottom(8);
-            card.set_margin_start(8);
-            card.set_margin_end(8);
-            let emoji = gtk::Label::new(Some(f.icon));
-            emoji.add_css_class("title-1");
-            emoji.set_halign(gtk::Align::Center);
-            emoji.set_margin_top(8);
-            card.append(&emoji);
+            let card = gtk::Box::new(gtk::Orientation::Vertical, 7);
+            card.add_css_class("welcome-feature");
+            card.set_margin_top(2);
+            card.set_margin_bottom(2);
+            card.set_hexpand(true);
+            let icon = gtk::Image::from_icon_name(f.icon);
+            icon.add_css_class("welcome-feature-icon");
+            icon.set_pixel_size(28);
+            icon.set_halign(gtk::Align::Start);
+            card.append(&icon);
             let ft = gtk::Label::new(Some(f.title));
-            ft.add_css_class("title-4");
-            ft.set_halign(gtk::Align::Center);
+            ft.add_css_class("welcome-feature-title");
+            ft.set_xalign(0.0);
             card.append(&ft);
             let fd = gtk::Label::new(Some(f.desc));
-            fd.add_css_class("dim-label");
+            fd.add_css_class("welcome-feature-desc");
+            fd.set_xalign(0.0);
             fd.set_wrap(true);
-            fd.set_justify(gtk::Justification::Center);
-            fd.set_max_width_chars(26);
-            fd.set_margin_start(12);
-            fd.set_margin_end(12);
-            fd.set_margin_bottom(4);
+            fd.set_max_width_chars(34);
             card.append(&fd);
             cards.append(&card);
         }
@@ -186,6 +202,25 @@ impl WelcomeView {
         );
         pref_group.add(&fs_row);
 
+        let (auto_next_row, auto_next_sw) = crate::ui::components::switch_row(
+            "Otomatik Sonraki Bölüm",
+            "Bölüm bitince sıradakini kendiliğinden açar",
+            settings.auto_next,
+        );
+        pref_group.add(&auto_next_row);
+
+        let (outro_skip_row, outro_skip_sw) = crate::ui::components::switch_row(
+            "Outro'yu Otomatik Atla",
+            "Outro başlayınca sonunu beklemeden sonraki bölüme geç",
+            settings.auto_skip_outro,
+        );
+        outro_skip_row.set_sensitive(settings.auto_next);
+        {
+            let row_c = outro_skip_row.clone();
+            auto_next_sw.connect_active_notify(move |sw| row_c.set_sensitive(sw.is_active()));
+        }
+        pref_group.add(&outro_skip_row);
+
         let theme_row = adw::ComboRow::new();
         theme_row.set_title("Tema");
         theme_row.set_subtitle("Hemen dene, anında uygulanır");
@@ -225,22 +260,20 @@ impl WelcomeView {
 
         let on_finish = Rc::new(on_finish);
         // Başlat.
-        let start_btn = gtk::Button::with_label(if flatpak {
-            "Başla 🚀"
-        } else {
-            "Başlamaya Hazırım 🚀"
-        });
+        let start_btn = gtk::Button::with_label(if flatpak { "Başla" } else { "Hemen Başla" });
         start_btn.add_css_class("suggested-action");
         start_btn.add_css_class("pill");
-        start_btn.add_css_class("title-3");
+        start_btn.add_css_class("welcome-start");
         start_btn.set_halign(gtk::Align::Center);
-        start_btn.set_margin_top(12);
+        start_btn.set_margin_top(14);
         {
             let base = settings.clone();
             let f = on_finish.clone();
             start_btn.connect_clicked(move |_| {
                 let mut s = base.clone();
                 s.auto_fullscreen = fs_sw.is_active();
+                s.auto_next = auto_next_sw.is_active();
+                s.auto_skip_outro = outro_skip_sw.is_active();
                 s.show_intro_hint = intro_hint_sw.is_active();
                 s.show_music_hint = music_hint_sw.is_active();
                 s.theme = crate::theme::THEMES
@@ -250,12 +283,13 @@ impl WelcomeView {
                 f(s);
             });
         }
-        root.append(&start_btn);
+        root.insert_child_after(&start_btn, Some(&cards));
 
         // Atla: ayarla oynamadan çık (bayrak görünüm kurulurken yazıldı).
         let skip_btn = gtk::Button::with_label("Atla →");
         skip_btn.add_css_class("flat");
         skip_btn.add_css_class("pill");
+        skip_btn.add_css_class("welcome-skip");
         skip_btn.set_halign(gtk::Align::Center);
         {
             let f = on_finish.clone();
@@ -264,7 +298,16 @@ impl WelcomeView {
                 f(s.clone());
             });
         }
-        root.append(&skip_btn);
+        root.insert_child_after(&skip_btn, Some(&start_btn));
+
+        let footnote = gtk::Label::new(Some(
+            "F1 ile tüm kısayollar · Oynatıcı ve önbellek ayarları Ayarlar'da",
+        ));
+        footnote.add_css_class("welcome-footnote");
+        footnote.set_halign(gtk::Align::Center);
+        footnote.set_margin_top(2);
+        footnote.set_wrap(true);
+        root.append(&footnote);
 
         // Orta-alt kaydırma oku: dipte değilken görünür (yazısız, silik zeminli).
         let down_hint = gtk::Image::from_icon_name("go-down-symbolic");

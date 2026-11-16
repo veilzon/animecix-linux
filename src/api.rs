@@ -782,6 +782,10 @@ pub struct Settings {
     /// `n`/`p` her zaman açık ve mpv içinden çalışır).
     #[serde(default)]
     pub auto_next: bool,
+    /// Otomatik geçiş açıkken outro penceresine girilince outro sonunu
+    /// beklemeden sonraki bölüme geç (varsayılan kapalı).
+    #[serde(default)]
+    pub auto_skip_outro: bool,
     /// İndirme klasörü (boşsa Videolar/Animecix).
     #[serde(default)]
     pub download_dir: Option<String>,
@@ -1268,6 +1272,7 @@ impl Default for Settings {
             show_intro_hint: true,
             play_ask_quality: false,
             auto_next: false,
+            auto_skip_outro: false,
             theme: default_theme(),
             cover_quality: default_cover_quality(),
             download_dir: None,
@@ -5041,6 +5046,16 @@ mod tests {
         s.cf_clearance = "BILET123".into();
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert_eq!(back.cf_clearance, "BILET123");
+    }
+
+    #[test]
+    fn settings_auto_skip_outro_defaults_off_and_roundtrips() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert!(!old.auto_skip_outro);
+        let mut s = Settings::default();
+        s.auto_skip_outro = true;
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert!(back.auto_skip_outro);
     }
 
     #[test]

@@ -1330,12 +1330,13 @@ impl App {
     pub fn show_page(&self, page: &Page) {
         use gtk::prelude::IsA;
         let is_player = matches!(page, Page::Player { .. });
+        let is_welcome = matches!(page, Page::Welcome);
         if !is_player {
             self.shutdown_player();
         }
-        self.header_bar.set_visible(!is_player);
-        self.sidebar_box.set_visible(!is_player);
-        self.sidebar_sep.set_visible(!is_player);
+        self.header_bar.set_visible(!is_player && !is_welcome);
+        self.sidebar_box.set_visible(!is_player && !is_welcome);
+        self.sidebar_sep.set_visible(!is_player && !is_welcome);
         self.progress_bars.borrow_mut().clear();
         self.back_btn
             .set_visible(self.page_history.borrow().len() > 1);

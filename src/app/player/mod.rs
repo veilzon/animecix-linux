@@ -63,6 +63,7 @@ pub struct EmbedRequest {
     pub cache_back_mb: u64,
     pub patience_secs: u64,
     pub auto_next: bool,
+    pub auto_skip_outro: bool,
     pub episodes: Vec<Episode>,
 }
 
@@ -87,6 +88,7 @@ struct PlayerState {
     watched_marked: bool,
     host_saved: bool,
     auto_next_enabled: bool,
+    auto_skip_outro: bool,
     auto_next_fired: bool,
     plan: Option<SkipPlan>,
     plan_rx: Option<std::sync::mpsc::Receiver<Option<SkipPlan>>>,
@@ -377,6 +379,7 @@ pub fn build(
         watched_marked: false,
         host_saved: false,
         auto_next_enabled: req.auto_next,
+        auto_skip_outro: req.auto_skip_outro,
         auto_next_fired: false,
         plan: req.plan.clone(),
         plan_rx: None,
@@ -1972,6 +1975,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         // Sağ-alt atla pill'i + sol şarkı kartı. 10 sn sonra yanlara kaçar;
         // fare hareketi tekrar gösterir.
         let now = Instant::now();
+        let mut skip_outro_now = false;
         let (active, song) = if let Some(plan) = s.plan.as_ref() {
             let op_active = !s.op_done
                 && plan
@@ -1992,6 +1996,14 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             } else {
                 None
             };
+            if ed_active
+                && s.auto_next_enabled
+                && s.auto_skip_outro
+                && !s.auto_next_fired
+                && s.title.title_type.as_deref() != Some("movie")
+            {
+                skip_outro_now = true;
+            }
             let song = if s.show_song_card {
                 if op_active {
                     plan.music_op.clone()
@@ -2007,6 +2019,14 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         } else {
             (None, None)
         };
+        if skip_outro_now {
+            s.auto_next_fired = true;
+            s.terminal_sent = true;
+            s.ed_done = true;
+            finished_now = true;
+            auto_next_now = true;
+            s.host.discord.clear();
+        }
         if active != s.cards_kind {
             s.cards_kind = active;
             s.cards_hidden = false;

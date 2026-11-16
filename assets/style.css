@@ -561,3 +561,71 @@
 .changelog-dot.active {
     background-color: @accent_color;
 }
+
+/* === Modern karşılama ekranı === */
+.welcome-root {
+    background-color: transparent;
+}
+.welcome-hero {
+    padding: 26px 28px 28px;
+    border-radius: 24px;
+    border: 1px solid alpha(@accent_color, 0.24);
+    background-image: linear-gradient(135deg, alpha(@accent_color, 0.30), alpha(@accent_color, 0.05));
+}
+.welcome-badge {
+    padding: 3px 11px;
+    border-radius: 999px;
+    border: 1px solid alpha(currentColor, 0.12);
+    background-color: alpha(currentColor, 0.07);
+    color: alpha(currentColor, 0.78);
+    font-size: 0.72em;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+.welcome-icon {
+    margin-top: 2px;
+}
+.welcome-title {
+    font-size: 2.55em;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+}
+.welcome-tagline {
+    font-size: 1.05em;
+    color: alpha(currentColor, 0.72);
+}
+.welcome-feature {
+    padding: 16px;
+    border-radius: 18px;
+    border: 1px solid alpha(currentColor, 0.10);
+    background-color: alpha(currentColor, 0.045);
+}
+.welcome-feature:hover {
+    border-color: alpha(@accent_color, 0.35);
+    background-color: alpha(@accent_color, 0.08);
+}
+.welcome-feature-icon {
+    color: @accent_color;
+    margin-bottom: 4px;
+}
+.welcome-feature-title {
+    font-size: 1.02em;
+    font-weight: 700;
+}
+.welcome-feature-desc {
+    color: alpha(currentColor, 0.64);
+    font-size: 0.92em;
+}
+.welcome-start {
+    min-height: 46px;
+    padding: 0 30px;
+    font-size: 1.03em;
+    font-weight: 700;
+}
+.welcome-skip {
+    color: alpha(currentColor, 0.68);
+}
+.welcome-footnote {
+    color: alpha(currentColor, 0.42);
+    font-size: 0.84em;
+}

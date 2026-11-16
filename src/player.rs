@@ -119,6 +119,24 @@ pub fn should_auto_next(
         && crate::api::Client::played_enough(pos, dur)
 }
 
+/// Outro penceresine girildiğinde outro sonunu beklemeden sonraki bölüme
+/// geçilsin mi? (saf; tek-atımlık guard çağıranda).
+pub fn should_skip_outro(
+    pos: f64,
+    ed_start: Option<f64>,
+    ed_end: Option<f64>,
+    auto_next: bool,
+    auto_skip_outro: bool,
+    already_fired: bool,
+) -> bool {
+    auto_next
+        && auto_skip_outro
+        && !already_fired
+        && ed_start
+            .zip(ed_end)
+            .is_some_and(|(start, end)| pos >= start - 1.5 && pos < end)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,6 +148,59 @@ mod tests {
         assert_eq!(mpv_exit_direction(Some(0)), None);
         assert_eq!(mpv_exit_direction(None), None);
         assert_eq!(mpv_exit_direction(Some(1)), None);
+    }
+
+    #[test]
+    fn skip_outro_helper_triggers_only_in_window() {
+        assert!(should_skip_outro(
+            99.0,
+            Some(100.0),
+            Some(120.0),
+            true,
+            true,
+            false
+        ));
+        assert!(!should_skip_outro(
+            90.0,
+            Some(100.0),
+            Some(120.0),
+            true,
+            true,
+            false
+        ));
+        assert!(!should_skip_outro(
+            99.0,
+            Some(100.0),
+            Some(120.0),
+            false,
+            true,
+            false
+        ));
+        assert!(!should_skip_outro(
+            99.0,
+            Some(100.0),
+            Some(120.0),
+            true,
+            false,
+            false
+        ));
+        assert!(!should_skip_outro(
+            99.0,
+            Some(100.0),
+            Some(120.0),
+            true,
+            true,
+            true
+        ));
+        assert!(!should_skip_outro(
+            125.0,
+            Some(100.0),
+            Some(120.0),
+            true,
+            true,
+            false
+        ));
+        assert!(!should_skip_outro(99.0, None, None, true, true, false));
     }
 
     #[test]

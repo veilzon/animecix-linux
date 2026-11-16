@@ -106,6 +106,7 @@ pub fn run(path: &str) {
             cache_back_mb: 16,
             patience_secs: 10,
             auto_next: false,
+            auto_skip_outro: false,
             episodes: Vec::new(),
         };
         let Some(player) = player::build(&window, host, req, api) else {

@@ -612,7 +612,7 @@ impl App {
                 s.embedded_music_hint,
             )
         };
-        let (cache_forward_mb, cache_back_mb, auto_next) = {
+        let (cache_forward_mb, cache_back_mb, auto_next, auto_skip_outro) = {
             let s = self.settings.borrow();
             (
                 s.mpv_cache_forward_mb
@@ -620,6 +620,7 @@ impl App {
                 s.mpv_cache_back_mb
                     .clamp(api::MPV_CACHE_BACK_MIN_MB, api::MPV_CACHE_BACK_MAX_MB),
                 s.auto_next,
+                s.auto_skip_outro,
             )
         };
         let patience_secs = self.client.load_settings().source_patience_secs.max(10);
@@ -770,6 +771,7 @@ impl App {
             cache_back_mb,
             patience_secs,
             auto_next,
+            auto_skip_outro,
             episodes,
         };
 
@@ -1346,6 +1348,11 @@ impl App {
             let tid_c = title.id;
             let patience_c = self.client.load_settings().source_patience_secs.max(10);
             let auto_next_on = self.client.load_settings().auto_next;
+            let auto_skip_outro_on = self.client.load_settings().auto_skip_outro;
+            let (ed_start, ed_end) = plan
+                .as_ref()
+                .map(|p| (p.times.ed_start, p.times.ed_end))
+                .unwrap_or((None, None));
             let total = candidates.len() + fallback_embeds_c.len();
             // Otomatik geçiş tek-atımlık (oynatma başına bir kez).
             let mut auto_sent = false;
@@ -1578,6 +1585,29 @@ impl App {
                             // ayar açık + EOF + %90 eşiği (failover'da dur=0
                             // elenir). Tek-atımlık; eski mpv öldürülüp GTK
                             // anketine yön (1) yollanır.
+                            if auto_next_on && auto_skip_outro_on && !auto_sent && media_loaded {
+                                let pos = crate::player::query_mpv_prop(&sock_path_c, "time-pos")
+                                    .unwrap_or(0.0);
+                                if crate::player::should_skip_outro(
+                                    pos,
+                                    ed_start,
+                                    ed_end,
+                                    auto_next_on,
+                                    auto_skip_outro_on,
+                                    auto_sent,
+                                ) {
+                                    eprintln!(
+                                        "[SUP] outro başında otomatik geçiş (ep={}, kaynak={})",
+                                        episode, i
+                                    );
+                                    auto_sent = true;
+                                    let _ = next_tx_c.send(1);
+                                    if let Some(c) = mpv_child_c.lock().unwrap().as_mut() {
+                                        let _ = c.kill();
+                                    }
+                                    break;
+                                }
+                            }
                             if auto_next_on && !auto_sent && media_loaded {
                                 let eof =
                                     crate::player::query_mpv_prop(&sock_path_c, "eof-reached")
