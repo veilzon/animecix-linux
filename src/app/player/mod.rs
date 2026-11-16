@@ -1,4 +1,5 @@
 pub mod episodes;
+pub mod notices;
 pub mod source;
 pub mod ui;
 
@@ -21,6 +22,7 @@ use crate::skip::SkipPlan;
 use crate::ui::operation_stack::OperationStack;
 
 use self::episodes::EpisodeDrawer;
+use self::notices::SkipKind;
 use self::source::{resume_after_switch, Source, SourceQueue};
 
 /// Gömülü oynatıcının uygulamaya bağlanan callback'leri.
@@ -31,6 +33,7 @@ pub struct PlayerHost {
     pub progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
     pub on_back: Rc<dyn Fn()>,
     pub on_play_episode: Rc<dyn Fn(Episode)>,
+    pub on_select_fansub: Rc<dyn Fn(api::FansubInfo)>,
     pub on_neighbor: Rc<dyn Fn(i8)>,
     pub on_download: Rc<dyn Fn(Episode)>,
     pub on_ready: Rc<dyn Fn()>,
@@ -46,6 +49,8 @@ pub struct EmbedRequest {
     pub fallback_embeds: Vec<String>,
     pub source_labels: Vec<String>,
     pub fallback_labels: Vec<String>,
+    pub fansubs: Vec<api::FansubInfo>,
+    pub fansub_id: i64,
     pub quality_map: HashMap<String, String>,
     pub plan: Option<SkipPlan>,
     pub saved_pos: Option<f64>,
@@ -85,9 +90,26 @@ struct PlayerState {
     auto_next_enabled: bool,
     auto_next_fired: bool,
     next_ep: Option<Episode>,
+    plan: Option<SkipPlan>,
+    plan_rx: Option<std::sync::mpsc::Receiver<Option<SkipPlan>>>,
+    plan_requested: bool,
+    fast_embeds: Vec<String>,
+    fallback_embeds: Vec<String>,
+    op_done: bool,
+    ed_done: bool,
+    cards_kind: Option<SkipKind>,
+    cards_deadline: Option<Instant>,
+    cards_hidden: bool,
+    show_intro_hint: bool,
+    show_music_hint: bool,
+    song_card: ui::SongCard,
+    skip_pill_rev: gtk::Revealer,
+    skip_pill: gtk::Button,
     drawer: EpisodeDrawer,
     episodes: Vec<Episode>,
     episode_rx: Option<std::sync::mpsc::Receiver<Result<Vec<Episode>, String>>>,
+    fansubs: Vec<api::FansubInfo>,
+    fansub_id: i64,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
     root: gtk::Box,
@@ -311,6 +333,9 @@ pub fn build(
     if shade_enabled {
         stage.add_overlay(&shade);
     }
+    let skip_card = ui::build_song_card(&stage);
+    let (skip_pill_rev, skip_pill) = ui::build_skip_pill(&stage);
+    // Kartlar kontrol barının ALTINDA kalsın: bar tıklamaları öncelikli.
     let controls = ui::build_control_bar(&stage, start_volume, start_muted, &media_title);
     let topbar = ui::build_topbar(&stage);
     let drawer = episodes::build(&stage);
@@ -363,9 +388,26 @@ pub fn build(
         auto_next_enabled: req.auto_next,
         auto_next_fired: false,
         next_ep: req.next_ep.clone(),
+        plan: req.plan.clone(),
+        plan_rx: None,
+        plan_requested: false,
+        fast_embeds: req.fast_embeds.clone(),
+        fallback_embeds: req.fallback_embeds.clone(),
+        op_done: false,
+        ed_done: false,
+        cards_kind: None,
+        cards_deadline: None,
+        cards_hidden: false,
+        show_intro_hint: req.show_intro_hint,
+        show_music_hint: req.show_music_hint,
+        song_card: skip_card.clone(),
+        skip_pill_rev: skip_pill_rev.clone(),
+        skip_pill: skip_pill.clone(),
         drawer: drawer.clone(),
         episodes: initial_episodes.clone(),
         episode_rx,
+        fansubs: req.fansubs.clone(),
+        fansub_id: req.fansub_id,
         window: parent.clone(),
         gl_area: gl_area.clone(),
         root: root.clone(),
@@ -618,13 +660,13 @@ pub fn build(
     }
     // Hız menüsü (Lowell'in 0.5-2.0 listesi).
     for (label, val) in [
-        ("0.5x ▾", 0.5),
-        ("0.75x ▾", 0.75),
-        ("1.0x ▾", 1.0),
-        ("1.25x ▾", 1.25),
-        ("1.5x ▾", 1.5),
-        ("1.75x ▾", 1.75),
-        ("2.0x ▾", 2.0),
+        ("0.5x", 0.5),
+        ("0.75x", 0.75),
+        ("1.0x", 1.0),
+        ("1.25x", 1.25),
+        ("1.5x", 1.5),
+        ("1.75x", 1.75),
+        ("2.0x", 2.0),
     ] {
         let b = gtk::Button::with_label(label);
         b.add_css_class("flat");
@@ -653,6 +695,22 @@ pub fn build(
             }
         });
         rebuild_quality_menu(&state);
+    }
+    {
+        let weak = Rc::downgrade(&state);
+        skip_card.song.connect_clicked(move |_| {
+            if let Some(st) = weak.upgrade() {
+                open_song(&st);
+            }
+        });
+    }
+    {
+        let weak = Rc::downgrade(&state);
+        skip_pill.connect_clicked(move |_| {
+            if let Some(st) = weak.upgrade() {
+                do_skip(&st);
+            }
+        });
     }
 
     // ---- tıklama / oto gizleme / klavye ----
@@ -718,7 +776,7 @@ pub fn build(
     {
         let weak = Rc::downgrade(&state);
         let key = gtk::EventControllerKey::new();
-        key.connect_key_pressed(move |_, keyval, _, _| {
+        key.connect_key_pressed(move |_, keyval, _, mods| {
             let Some(st) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
@@ -767,9 +825,13 @@ pub fn build(
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::m | gtk::gdk::Key::M => {
-                    let s = st.borrow();
-                    if let Some(p) = s.player.as_ref() {
-                        p.set_mute(!p.muted());
+                    if mods.contains(gtk::gdk::ModifierType::SHIFT_MASK) {
+                        open_song(&st);
+                    } else {
+                        let s = st.borrow();
+                        if let Some(p) = s.player.as_ref() {
+                            p.set_mute(!p.muted());
+                        }
                     }
                     glib::Propagation::Stop
                 }
@@ -784,6 +846,14 @@ pub fn build(
                         let fill = p.panscan() < 0.5;
                         p.set_panscan(if fill { 1.0 } else { 0.0 });
                     }
+                    glib::Propagation::Stop
+                }
+                gtk::gdk::Key::s | gtk::gdk::Key::S => {
+                    skip_to(&st, SkipKind::Intro);
+                    glib::Propagation::Stop
+                }
+                gtk::gdk::Key::e | gtk::gdk::Key::E => {
+                    skip_to(&st, SkipKind::Outro);
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::n | gtk::gdk::Key::N => {
@@ -961,67 +1031,137 @@ fn fail_source(state: &Rc<RefCell<PlayerState>>, msg: &str) {
 }
 
 fn rebuild_quality_menu(state: &Rc<RefCell<PlayerState>>) {
-    let (sources, quality, labels, index) = match state.try_borrow() {
-        Ok(s) => (
-            s.queue.sources.clone(),
-            s.queue.quality.clone(),
-            s.queue.labels.clone(),
-            s.queue.index,
-        ),
-        Err(_) => return,
-    };
+    let (sources, quality, labels, index, fansubs, fansub_id, current_height) =
+        match state.try_borrow() {
+            Ok(s) => (
+                s.queue.sources.clone(),
+                s.queue.quality.clone(),
+                s.queue.labels.clone(),
+                s.queue.index,
+                s.fansubs.clone(),
+                s.fansub_id,
+                s.player.as_ref().and_then(|p| p.video_height()),
+            ),
+            Err(_) => return,
+        };
     let Ok(s) = state.try_borrow() else { return };
     let box_ = s.quality_box.clone();
     let btn = s.quality_btn.clone();
+    let pop = s.quality_pop.clone();
+    box_.set_size_request(300, -1);
     let mut cur = box_.first_child();
     while let Some(child) = cur {
         let next = child.next_sibling();
         box_.remove(&child);
         cur = next;
     }
+
+    section(&box_, "ÇEVİRİ", 8);
+    if fansubs.is_empty() {
+        let l = gtk::Label::new(Some("Çeviri bilgisi yok"));
+        l.add_css_class("dim-label");
+        l.set_xalign(0.0);
+        l.set_margin_start(10);
+        box_.append(&l);
+    } else {
+        for fs in &fansubs {
+            let row = gtk::Button::new();
+            row.add_css_class("flat");
+            row.add_css_class("fan-row");
+            row.set_halign(gtk::Align::Fill);
+            let h = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            h.set_margin_top(6);
+            h.set_margin_bottom(6);
+            h.set_margin_start(10);
+            h.set_margin_end(10);
+            let name = gtk::Label::new(Some(&fs.name));
+            name.add_css_class("fan-name");
+            name.set_xalign(0.0);
+            name.set_hexpand(true);
+            name.set_ellipsize(gtk::pango::EllipsizeMode::End);
+            h.append(&name);
+            let rating = gtk::Label::new(Some(&format!("★ {:.1}", fs.rating)));
+            rating.add_css_class("fan-rating");
+            h.append(&rating);
+            let check = gtk::Label::new(Some(if fs.template_id == fansub_id {
+                "✓"
+            } else {
+                " "
+            }));
+            check.add_css_class("fan-check");
+            check.set_width_chars(2);
+            h.append(&check);
+            row.set_child(Some(&h));
+            let weak = Rc::downgrade(state);
+            let chosen = fs.clone();
+            let pop_c = pop.clone();
+            row.connect_clicked(move |_| {
+                let Some(st) = weak.upgrade() else { return };
+                pop_c.popdown();
+                if chosen.template_id == st.borrow().fansub_id {
+                    return;
+                }
+                let cb = st.borrow().host.on_select_fansub.clone();
+                cb(chosen.clone());
+            });
+            box_.append(&row);
+        }
+    }
+
+    let sep = gtk::Separator::new(gtk::Orientation::Horizontal);
+    sep.set_margin_top(8);
+    sep.set_margin_bottom(6);
+    box_.append(&sep);
+    section(&box_, "KAYNAK", 10);
     if sources.is_empty() {
         let l = gtk::Label::new(Some("Kaynak yok"));
         l.add_css_class("dim-label");
+        l.set_xalign(0.0);
+        l.set_margin_start(10);
         box_.append(&l);
-        return;
-    }
-    let heading = gtk::Label::new(Some("KAYNAKLAR"));
-    heading.add_css_class("dim-label");
-    heading.add_css_class("caption");
-    heading.set_xalign(0.0);
-    heading.set_margin_start(8);
-    heading.set_margin_bottom(4);
-    box_.append(&heading);
-    for (i, src) in sources.iter().enumerate() {
-        let host = crate::api::Client::source_host_hint(src.hint_url());
-        let host = if host.is_empty() { "Kaynak" } else { host };
-        let fansub = labels.get(i).map(String::as_str).filter(|s| !s.is_empty());
-        let q = quality
-            .get(i)
-            .and_then(|q| q.as_deref())
-            .filter(|q| !q.is_empty());
-        let title = match (fansub, q) {
-            (Some(f), Some(q)) => format!("{f} · {q} · {host}"),
-            (Some(f), None) => format!("{f} · {host}"),
-            (None, Some(q)) => format!("{q} · {host}"),
-            (None, None) => host.to_string(),
-        };
-        let label = if i == index {
-            format!("● {title}")
-        } else {
-            format!("   {title}")
-        };
-        let b = gtk::Button::with_label(&label);
-        b.add_css_class("flat");
-        b.set_halign(gtk::Align::Fill);
-        let weak = Rc::downgrade(state);
-        b.connect_clicked(move |_| {
-            if let Some(st) = weak.upgrade() {
-                pick_source(&st, i);
+    } else {
+        for (i, src) in sources.iter().enumerate() {
+            let host = crate::api::Client::source_host_hint(src.hint_url());
+            let host = if host.is_empty() { "Kaynak" } else { host };
+            let q = if i == index {
+                current_height.map(|h| format!("{h}p"))
+            } else {
+                quality.get(i).and_then(|q| q.clone())
+            };
+            let row = gtk::Button::new();
+            row.add_css_class("flat");
+            row.add_css_class("source-row");
+            row.set_halign(gtk::Align::Fill);
+            let h = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+            h.set_margin_top(4);
+            h.set_margin_bottom(4);
+            h.set_margin_start(16);
+            h.set_margin_end(10);
+            let name = gtk::Label::new(Some(host));
+            name.add_css_class("source-name");
+            name.set_xalign(0.0);
+            name.set_hexpand(true);
+            h.append(&name);
+            if let Some(q) = q {
+                let ql = gtk::Label::new(Some(&q));
+                ql.add_css_class("source-quality");
+                h.append(&ql);
             }
-        });
-        box_.append(&b);
+            let check = gtk::Label::new(Some(if i == index { "✓" } else { " " }));
+            check.add_css_class("fan-check");
+            check.set_width_chars(2);
+            h.append(&check);
+            row.set_child(Some(&h));
+            let weak = Rc::downgrade(state);
+            row.connect_clicked(move |_| {
+                if let Some(st) = weak.upgrade() {
+                    pick_source(&st, i);
+                }
+            });
+            box_.append(&row);
+        }
     }
+
     let cur = sources
         .get(index)
         .map(|_| {
@@ -1039,7 +1179,17 @@ fn rebuild_quality_menu(state: &Rc<RefCell<PlayerState>>) {
                 .unwrap_or_else(|| "Kaynak".to_string())
         })
         .unwrap_or_else(|| "Kaynak".to_string());
-    btn.set_label(&format!("{cur} ▾"));
+    btn.set_label(&cur);
+}
+
+fn section(box_: &gtk::Box, text: &str, top_margin: i32) {
+    let l = gtk::Label::new(Some(text));
+    l.add_css_class("section-label");
+    l.set_xalign(0.0);
+    l.set_margin_start(10);
+    l.set_margin_top(top_margin);
+    l.set_margin_bottom(4);
+    box_.append(&l);
 }
 
 fn pick_source(state: &Rc<RefCell<PlayerState>>, index: usize) {
@@ -1069,6 +1219,105 @@ fn pick_source(state: &Rc<RefCell<PlayerState>>, index: usize) {
     start_source(state, resume);
 }
 
+fn mark_skip_done(s: &mut PlayerState, kind: SkipKind) {
+    match kind {
+        SkipKind::Intro => {
+            s.op_done = true;
+        }
+        SkipKind::Outro => {
+            s.ed_done = true;
+        }
+    }
+    s.song_card.hide();
+    s.skip_pill_rev.set_reveal_child(false);
+}
+
+fn do_skip(state: &Rc<RefCell<PlayerState>>) {
+    let target = {
+        let Ok(s) = state.try_borrow() else { return };
+        let Some(plan) = s.plan.as_ref() else { return };
+        let Some(p) = s.player.as_ref() else { return };
+        notices::skip_target(&plan.times, p.pos(), s.op_done, s.ed_done)
+    };
+    if let Some((target, kind)) = target {
+        let mut s = state.borrow_mut();
+        mark_skip_done(&mut s, kind);
+        if let Some(p) = s.player.as_ref() {
+            p.seek_abs(target);
+        }
+        s.host.ops.info(
+            &format!("{} atlandı", kind.short()),
+            "",
+            std::time::Duration::from_secs(2),
+        );
+    }
+}
+
+fn skip_to(state: &Rc<RefCell<PlayerState>>, kind: SkipKind) {
+    let target = {
+        let Ok(s) = state.try_borrow() else { return };
+        let Some(plan) = s.plan.as_ref() else {
+            return;
+        };
+        match kind {
+            SkipKind::Intro => plan.times.op_end,
+            SkipKind::Outro => plan.times.ed_end,
+        }
+    };
+    match target {
+        Some(target) => {
+            let mut s = state.borrow_mut();
+            mark_skip_done(&mut s, kind);
+            if let Some(p) = s.player.as_ref() {
+                p.seek_abs(target);
+            }
+            s.host.ops.info(
+                &format!("{} atlandı", kind.short()),
+                "",
+                std::time::Duration::from_secs(2),
+            );
+        }
+        None => {
+            let s = state.borrow();
+            s.host.ops.info(
+                &format!("{} zamanı yok", kind.short()),
+                "",
+                std::time::Duration::from_secs(2),
+            );
+        }
+    }
+}
+
+fn open_song(state: &Rc<RefCell<PlayerState>>) {
+    let (url, hint) = {
+        let Ok(s) = state.try_borrow() else { return };
+        (
+            s.plan.as_ref().and_then(|p| p.song_url.clone()),
+            s.show_music_hint,
+        )
+    };
+    if let Some(url) = url {
+        if let Ok(s) = state.try_borrow() {
+            s.window.minimize();
+        }
+        if !crate::music::open_song(&url) {
+            let s = state.borrow();
+            s.host.ops.error(
+                "Şarkı açılamadı",
+                "Tarayıcı başlatılamadı.",
+                std::time::Duration::from_secs(3),
+            );
+        }
+    } else if hint {
+        let s = state.borrow();
+        s.host.ops.info(
+            "Şarkı bilgisi yok",
+            "Bu bölüm için şarkı bağlantısı bulunamadı.",
+            std::time::Duration::from_secs(2),
+        );
+    }
+}
+
 fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
     let result = {
         let mut s = match state.try_borrow_mut() {
@@ -1092,6 +1341,33 @@ fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
 }
 
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
+    // Skip planı video başladıktan sonra arka planda geldi mi?
+    {
+        let mut s = match st.try_borrow_mut() {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+        if s.plan_rx.is_some() {
+            let recv = s.plan_rx.as_ref().map(|rx| rx.try_recv());
+            match recv {
+                Some(Ok(plan)) => {
+                    s.plan = plan;
+                    s.plan_rx = None;
+                    if s.plan.is_some() {
+                        eprintln!("[EMBED] skip planı hazır");
+                    } else {
+                        eprintln!("[EMBED] skip planı bulunamadı");
+                    }
+                }
+                Some(Err(std::sync::mpsc::TryRecvError::Empty)) => {}
+                Some(Err(std::sync::mpsc::TryRecvError::Disconnected)) => {
+                    s.plan_rx = None;
+                }
+                None => {}
+            }
+        }
+    }
+
     // Bölüm listesi arka plandan geldi mi?
     let episodes_updated = {
         let mut s = match st.try_borrow_mut() {
@@ -1233,6 +1509,25 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                     }
                 }
             }
+            if s.plan.is_none()
+                && !s.plan_requested
+                && (!s.fast_embeds.is_empty() || !s.fallback_embeds.is_empty())
+            {
+                let (tx, rx) = std::sync::mpsc::channel::<Option<SkipPlan>>();
+                let client = s.host.client.clone();
+                let (tid, season, episode) = (s.title.id, s.ep.season, s.ep.episode);
+                let fast = s.fast_embeds.clone();
+                let fallback = s.fallback_embeds.clone();
+                std::thread::spawn(move || {
+                    let manual = client.load_settings().official_skip_secret;
+                    let plan = crate::skip::fetch_plan_for_embeds(
+                        &client, tid, season, episode, &fast, &fallback, &manual,
+                    );
+                    let _ = tx.send(plan);
+                });
+                s.plan_rx = Some(rx);
+                s.plan_requested = true;
+            }
             eprintln!("[EMBED] video hazır");
         }
         let ready_now = s.media_loaded && !s.ready_sent;
@@ -1307,6 +1602,78 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             s.vol_btn.set_icon_name(vol_icon(volume, muted));
         }
 
+        // Sağ-alt atla pill'i + sol şarkı kartı. 10 sn sonra yanlara kaçar;
+        // fare hareketi tekrar gösterir.
+        let now = Instant::now();
+        let (active, song) = if let Some(plan) = s.plan.as_ref() {
+            let op_active = !s.op_done
+                && plan
+                    .times
+                    .op_start
+                    .zip(plan.times.op_end)
+                    .is_some_and(|(start, end)| pos >= start - 1.5 && pos < end);
+            let ed_active = !s.ed_done
+                && plan
+                    .times
+                    .ed_start
+                    .zip(plan.times.ed_end)
+                    .is_some_and(|(start, end)| pos >= start - 1.5 && pos < end);
+            let active = if op_active {
+                Some(SkipKind::Intro)
+            } else if ed_active {
+                Some(SkipKind::Outro)
+            } else {
+                None
+            };
+            let song = if s.show_intro_hint {
+                if op_active {
+                    plan.music_op.clone()
+                } else if ed_active {
+                    plan.music_ed.clone()
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            (active, song)
+        } else {
+            (None, None)
+        };
+        if active != s.cards_kind {
+            s.cards_kind = active;
+            s.cards_hidden = false;
+            s.cards_deadline = active.map(|_| now + Duration::from_secs(10));
+        } else if let Some(deadline) = s.cards_deadline {
+            if now >= deadline {
+                s.cards_hidden = true;
+                s.cards_deadline = None;
+            }
+        }
+        if active.is_some() && !s.cards_hidden {
+            if let Some(kind) = active {
+                s.skip_pill.set_label(kind.action());
+                s.skip_pill_rev.set_reveal_child(true);
+            }
+            if let Some(music) = song {
+                let song_label = if s.show_music_hint {
+                    "Tarayıcıda aç (Shift+M)"
+                } else {
+                    "Tarayıcıda aç"
+                };
+                s.song_card.show(
+                    &music,
+                    s.plan.as_ref().is_some_and(|p| p.song_url.is_some()),
+                    song_label,
+                );
+            } else {
+                s.song_card.hide();
+            }
+        } else {
+            s.skip_pill_rev.set_reveal_child(false);
+            s.song_card.hide();
+        }
+
         let quality = s
             .player
             .as_ref()
@@ -1325,7 +1692,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             })
             .unwrap_or_else(|| "Kaynak".to_string());
         let quality = quality.map(|q| format!(" · {q}")).unwrap_or_default();
-        s.quality_btn.set_label(&format!("{label}{quality} ▾"));
+        s.quality_btn.set_label(&format!("{label}{quality}"));
 
         if eof {
             s.status.set_text("bitti");
@@ -1399,6 +1766,8 @@ fn poke_activity(state: &Rc<RefCell<PlayerState>>, x: f64, y: f64) {
     s.last_mx = x;
     s.last_my = y;
     s.last_motion = Instant::now();
+    s.cards_hidden = false;
+    s.cards_deadline = Some(Instant::now() + Duration::from_secs(10));
     let need_show = s.chrome_hidden || s.cursor_hidden;
     if need_show {
         show_chrome_locked(&mut s);
@@ -1408,6 +1777,8 @@ fn poke_activity(state: &Rc<RefCell<PlayerState>>, x: f64, y: f64) {
 fn show_chrome(state: &Rc<RefCell<PlayerState>>) {
     if let Ok(mut s) = state.try_borrow_mut() {
         s.last_motion = Instant::now();
+        s.cards_hidden = false;
+        s.cards_deadline = Some(Instant::now() + Duration::from_secs(10));
         show_chrome_locked(&mut s);
     }
 }

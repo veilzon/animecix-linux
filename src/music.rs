@@ -32,6 +32,21 @@ pub fn pick_song_url(op: Option<&MusicData>, ed: Option<&MusicData>) -> Option<S
     op.and_then(one).or_else(|| ed.and_then(one))
 }
 
+/// Şarkıyı varsayılan tarayıcıda açar (xdg-open, yoksa gio).
+pub fn open_song(url: &str) -> bool {
+    if valid_song_url(url).is_none() {
+        return false;
+    }
+    std::process::Command::new("xdg-open")
+        .arg(url)
+        .spawn()
+        .is_ok()
+        || std::process::Command::new("gio")
+            .args(["open", url])
+            .spawn()
+            .is_ok()
+}
+
 /// `Shift+M` (`M`) tuşu satırı: şarkıyı varsayılan tarayıcıda açar (tüm distrolar:
 /// xdg-open birincil, gio yedek) + şarkı satırının altında 3sn onay OSD'si.
 pub fn music_keybind_line(url: &str) -> String {

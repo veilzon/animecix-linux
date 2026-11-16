@@ -71,6 +71,10 @@ pub struct PlaySources {
     pub labels: Vec<String>,
     /// Her `fallback_embeds` URL'sinin ait olduğu fansub/çeviri adı.
     pub fallback_labels: Vec<String>,
+    /// Seçilebilir tüm çeviriler (seçili + diğerleri).
+    pub fansubs: Vec<api::FansubInfo>,
+    /// Şu an oynayan çevirinin template id'si.
+    pub fansub_id: i64,
     pub plan: Option<crate::skip::SkipPlan>,
 }
 
@@ -3228,6 +3232,8 @@ impl App {
                     &src.fallback_embeds,
                     &src.labels,
                     &src.fallback_labels,
+                    &src.fansubs,
+                    src.fansub_id,
                     src.plan,
                 ),
                 Err(e) => self.show_error(&e),
@@ -3246,6 +3252,8 @@ impl App {
                     &[],
                     &[],
                     &[],
+                    &[],
+                    0,
                     plan,
                 );
             }

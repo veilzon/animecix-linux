@@ -49,6 +49,8 @@ pub struct Client {
     translators: std::sync::Mutex<HashMap<i64, TranslatorMeta>>,
     /// slug → (zaman, plan verisi). Bellek-içi, TTL 6sa.
     skip_plans: std::sync::Mutex<HashMap<String, (u64, CachedSkip)>>,
+    /// Mega AES-CTR proxy'lerinin yaşam boyu (Client kadar).
+    mega_proxies: std::sync::Mutex<Vec<crate::mega::MegaProxy>>,
     /// Kasa sırrı önbelleği (zaman, sır). TTL 1sa; el girdisi bypass eder.
     vault: std::sync::Mutex<(u64, String)>,
     /// Cookie oturumu (yerel modda okunmaz; tip korunur).
@@ -1372,6 +1374,7 @@ impl Client {
             cache_dir,
             translators: std::sync::Mutex::new(HashMap::new()),
             skip_plans: std::sync::Mutex::new(HashMap::new()),
+            mega_proxies: std::sync::Mutex::new(Vec::new()),
             vault: std::sync::Mutex::new((0, String::new())),
             session: std::sync::Mutex::new(crate::auth::Session::load()),
             cover_quality_mem: std::sync::Mutex::new(default_cover_quality()),
@@ -2083,6 +2086,12 @@ impl Client {
     }
 
     fn resolve_embed(&self, url: &str) -> Result<String, String> {
+        if let Some(link) = crate::mega::parse_link(url) {
+            let proxy = crate::mega::start_proxy(link)?;
+            let local = proxy.url.clone();
+            self.mega_proxies.lock().unwrap().push(proxy);
+            return Ok(local);
+        }
         if let Some((embed_id, vid)) = parse_tau_embed(url) {
             return self.tau_resolve(&embed_id, &vid);
         }

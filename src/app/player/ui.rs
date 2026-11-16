@@ -14,21 +14,24 @@ pub fn player_css() -> String {
     .player-controls { background: rgba(10,10,14,0.48); border-radius: 14px; padding: 9px 12px; }
     .player-play-btn {
         -gtk-icon-size: 32px; color: #FFFFFF; min-width: 56px; min-height: 56px;
-        padding: 0; border: none; box-shadow: none; background: transparent;
-        background-color: transparent; transition: transform 120ms ease, opacity 120ms ease;
+        padding: 0; border: 1px solid rgba(255,255,255,0.14);
+        background: rgba(0,0,0,0.48); background-color: rgba(0,0,0,0.48);
+        border-radius: 999px; box-shadow: 0 6px 24px rgba(0,0,0,0.55);
+        transition: transform 120ms ease, opacity 120ms ease, background-color 120ms ease;
     }
-    .player-play-btn:hover { background: transparent; transform: scale(1.12); opacity: 0.85; }
-    .player-play-btn:active { background: transparent; transform: scale(0.95); }
+    .player-play-btn:hover { background: rgba(0,0,0,0.64); background-color: rgba(0,0,0,0.64); transform: scale(1.06); opacity: 1; }
+    .player-play-btn:active { background: rgba(0,0,0,0.72); transform: scale(0.95); }
     .player-play-btn image { color: #FFFFFF; -gtk-icon-size: 32px; }
     .player-center-btn {
         color: #FFFFFF; min-width: 46px; min-height: 46px; padding: 0;
-        border: none; box-shadow: none; background: rgba(255,255,255,0.10);
-        background-color: rgba(255,255,255,0.10); border-radius: 999px;
+        border: 1px solid rgba(255,255,255,0.10);
+        background: rgba(0,0,0,0.38); background-color: rgba(0,0,0,0.38);
+        border-radius: 999px; box-shadow: 0 4px 16px rgba(0,0,0,0.45);
         transition: transform 120ms ease, background-color 120ms ease;
     }
-    .player-center-btn:hover { background: rgba(255,255,255,0.20); transform: scale(1.08); }
+    .player-center-btn:hover { background: rgba(0,0,0,0.58); background-color: rgba(0,0,0,0.58); transform: scale(1.06); }
     .player-center-btn:active { transform: scale(0.95); }
-    .player-center-btn label { color: #FFFFFF; font-weight: 700; }
+    .player-center-btn label { color: #FFFFFF; font-weight: 700; text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
     .embed-controls scale { padding: 0; }
     .embed-controls scale trough {
         background: rgba(255,255,255,0.3); min-height: 4px; border-radius: 2px;
@@ -85,6 +88,12 @@ pub fn player_css() -> String {
     .ep-panel-title { font-weight: 800; letter-spacing: 0.08em; color: #FFFFFF; }
     .season-tab { border-radius: 999px; padding: 2px 10px; }
     .ep-current { border: 2px solid alpha(@accent_color, 0.9); border-radius: 10px; }
+    .section-label { font-size: 0.72em; font-weight: 800; letter-spacing: 0.09em; color: rgba(255,255,255,0.55); }
+    .fan-name { font-size: 1.02em; font-weight: 600; color: #FFFFFF; }
+    .fan-rating { color: #E5C07B; font-size: 0.86em; }
+    .fan-check { color: @accent_color; font-weight: 800; }
+    .source-name { color: rgba(255,255,255,0.86); font-size: 0.93em; }
+    .source-quality { color: @accent_color; font-size: 0.84em; }
     "#.to_string()
 }
 
@@ -142,6 +151,92 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
         back,
         fullscreen,
     }
+}
+
+#[derive(Clone)]
+pub struct SongCard {
+    pub revealer: gtk::Revealer,
+    pub title: gtk::Label,
+    pub song: gtk::Button,
+}
+
+pub fn build_song_card(stage: &gtk::Overlay) -> SongCard {
+    let card = gtk::Box::new(gtk::Orientation::Vertical, 6);
+    card.add_css_class("player-skip-card");
+    card.set_halign(gtk::Align::Start);
+    card.set_valign(gtk::Align::End);
+    card.set_hexpand(false);
+    card.set_vexpand(false);
+    card.set_margin_start(16);
+    card.set_margin_end(16);
+    card.set_margin_bottom(150);
+
+    let title = gtk::Label::new(None);
+    title.add_css_class("title-4");
+    title.set_xalign(0.0);
+    title.set_wrap(true);
+    title.set_lines(2);
+    title.set_max_width_chars(30);
+    title.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    card.append(&title);
+
+    let song = gtk::Button::with_label("Tarayıcıda aç");
+    song.add_css_class("flat");
+    song.add_css_class("pill");
+    song.set_halign(gtk::Align::Start);
+    song.set_visible(false);
+    card.append(&song);
+
+    let revealer = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::Crossfade)
+        .transition_duration(180)
+        .child(&card)
+        .build();
+    revealer.set_reveal_child(false);
+    revealer.set_halign(gtk::Align::Start);
+    revealer.set_valign(gtk::Align::End);
+    revealer.set_hexpand(false);
+    revealer.set_vexpand(false);
+    stage.add_overlay(&revealer);
+
+    SongCard {
+        revealer,
+        title,
+        song,
+    }
+}
+
+impl SongCard {
+    pub fn show(&self, title: &str, song_visible: bool, song_label: &str) {
+        self.title.set_text(title);
+        self.song.set_visible(song_visible);
+        self.song.set_label(song_label);
+        self.revealer.set_reveal_child(true);
+    }
+
+    pub fn hide(&self) {
+        self.revealer.set_reveal_child(false);
+    }
+}
+
+pub fn build_skip_pill(stage: &gtk::Overlay) -> (gtk::Revealer, gtk::Button) {
+    let button = gtk::Button::with_label("İntroyu Atla");
+    button.add_css_class("suggested-action");
+    button.add_css_class("pill");
+    let revealer = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::Crossfade)
+        .transition_duration(180)
+        .child(&button)
+        .build();
+    revealer.set_reveal_child(false);
+    revealer.set_halign(gtk::Align::End);
+    revealer.set_valign(gtk::Align::End);
+    revealer.set_hexpand(false);
+    revealer.set_vexpand(false);
+    revealer.set_margin_end(16);
+    revealer.set_margin_bottom(150);
+    stage.add_overlay(&revealer);
+    (revealer, button)
 }
 
 pub struct ControlBar {
@@ -229,7 +324,7 @@ pub fn build_control_bar(
     vol_scale.set_size_request(70, -1);
 
     let speed_btn = gtk::MenuButton::builder()
-        .label("1.0x ▾")
+        .label("1.0x")
         .tooltip_text("Oynatma hızı")
         .build();
     speed_btn.add_css_class("pill-dropdown");
@@ -244,7 +339,7 @@ pub fn build_control_bar(
     speed_pop.set_child(Some(&speed_box));
 
     let quality_btn = gtk::MenuButton::builder()
-        .label("Kaynak ▾")
+        .label("Kaynak")
         .tooltip_text("Kalite / kaynak")
         .build();
     quality_btn.add_css_class("pill-dropdown");

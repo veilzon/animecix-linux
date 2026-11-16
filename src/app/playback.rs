@@ -72,6 +72,8 @@ impl App {
                             fallback_embeds: Vec::new(),
                             labels: Vec::new(),
                             fallback_labels: Vec::new(),
+                            fansubs: Vec::new(),
+                            fansub_id: 0,
                             plan,
                         }),
                     )
@@ -229,6 +231,7 @@ impl App {
                 Vec<String>,
                 Vec<String>,
                 Vec<String>,
+                i64,
             )> = None;
             let t_resolve = std::time::Instant::now();
             for f in &queue {
@@ -247,7 +250,14 @@ impl App {
                             .collect();
                         let labels = vec![f.name.clone()];
                         let fallback_labels = vec![f.name.clone(); fb.len()];
-                        (vec![fast_url], vec![fast_emb], fb, labels, fallback_labels)
+                        (
+                            vec![fast_url],
+                            vec![fast_emb],
+                            fb,
+                            labels,
+                            fallback_labels,
+                            f.template_id,
+                        )
                     });
                 match res {
                     Ok(ok) => {
@@ -275,7 +285,7 @@ impl App {
                 t_resolve.elapsed().as_secs_f64()
             );
             let res = match won {
-                Some((mut fast, fast_emb, fb, mut labels, fallback_labels)) => {
+                Some((mut fast, fast_emb, fb, mut labels, fallback_labels, fansub_id)) => {
                     // Seçili kalite adayların başına konur (yedekler korunur).
                     if let Some(pq) = &forced {
                         if !fast.iter().any(|u| u == &pq.url) {
@@ -306,6 +316,8 @@ impl App {
                         fallback_embeds: fb,
                         labels,
                         fallback_labels,
+                        fansubs: queue.clone(),
+                        fansub_id,
                         plan,
                     })
                 }
@@ -345,6 +357,8 @@ impl App {
                     fallback_embeds: Vec::new(),
                     labels: Vec::new(),
                     fallback_labels: Vec::new(),
+                    fansubs: Vec::new(),
+                    fansub_id: 0,
                     plan: None,
                 })
             } else {
@@ -374,6 +388,8 @@ impl App {
                             fallback_embeds: fb,
                             labels: Vec::new(),
                             fallback_labels: Vec::new(),
+                            fansubs: Vec::new(),
+                            fansub_id: 0,
                             plan,
                         })
                     })
@@ -500,6 +516,8 @@ impl App {
                 &[],
                 &[],
                 &[],
+                &[],
+                0,
                 None,
             );
             return;
@@ -548,6 +566,8 @@ impl App {
         fallback_embeds: &[String],
         labels: &[String],
         fallback_labels: &[String],
+        fansubs: &[api::FansubInfo],
+        fansub_id: i64,
         plan: Option<crate::skip::SkipPlan>,
     ) -> bool {
         let api = match crate::embed_mpv::loader::load()
@@ -640,33 +660,12 @@ impl App {
             if app.opening_op_id.borrow().as_deref() != Some(op_ready.as_str()) {
                 return;
             }
-            let shown_at = app.opening_op_shown_at.borrow_mut().take();
-            let finish = {
-                let app_finish = app_ready.clone();
-                let id_finish = op_ready.clone();
-                move || {
-                    if let Some(app) = app_finish.upgrade() {
-                        if app.opening_op_id.borrow().as_deref() == Some(id_finish.as_str()) {
-                            app.ops.finish(
-                                &id_finish,
-                                OperationState::Done,
-                                std::time::Duration::ZERO,
-                            );
-                            app.opening_op_id.borrow_mut().take();
-                            app.opening_op_shown_at.borrow_mut().take();
-                        }
-                    }
-                }
-            };
-            match shown_at {
-                Some(shown_at) => match opening_finish_delay(shown_at.elapsed()) {
-                    Some(remain) => {
-                        glib::timeout_add_local_once(remain, finish);
-                    }
-                    None => finish(),
-                },
-                None => finish(),
-            }
+            // Gömülü oynatıcıda video hazır olunca satır hemen kapanır;
+            // 10 sn minimumu harici mpv'nin geç açılma telafisiydi.
+            app.ops
+                .finish(&op_ready, OperationState::Done, std::time::Duration::ZERO);
+            app.opening_op_id.borrow_mut().take();
+            app.opening_op_shown_at.borrow_mut().take();
         });
         let app_term = app_weak.clone();
         let op_term = op_id.clone();
@@ -707,6 +706,20 @@ impl App {
                 app.play(&title_ep, &next);
             }
         });
+        let app_sel = app_weak.clone();
+        let title_sel = title.clone();
+        let ep_sel = ep.clone();
+        let all_fansubs = fansubs.to_vec();
+        let on_select_fansub: Rc<dyn Fn(api::FansubInfo)> = Rc::new(move |chosen| {
+            if let Some(app) = app_sel.upgrade() {
+                let rest: Vec<api::FansubInfo> = all_fansubs
+                    .iter()
+                    .filter(|f| f.template_id != chosen.template_id)
+                    .cloned()
+                    .collect();
+                app.play_with_fansub(&title_sel, &ep_sel, &chosen, rest);
+            }
+        });
         let app_neighbor = app_weak.clone();
         let title_neighbor = title.clone();
         let ep_neighbor = ep.clone();
@@ -741,6 +754,7 @@ impl App {
             progress: self.progress.clone(),
             on_back,
             on_play_episode,
+            on_select_fansub,
             on_neighbor,
             on_download,
             on_ready,
@@ -755,6 +769,8 @@ impl App {
             fallback_embeds: fallback_embeds.to_vec(),
             source_labels: labels.to_vec(),
             fallback_labels: fallback_labels.to_vec(),
+            fansubs: fansubs.to_vec(),
+            fansub_id,
             quality_map: HashMap::new(),
             plan,
             saved_pos,
@@ -836,6 +852,8 @@ impl App {
         fallback_embeds: &[String],
         labels: &[String],
         fallback_labels: &[String],
+        fansubs: &[api::FansubInfo],
+        fansub_id: i64,
         plan: Option<crate::skip::SkipPlan>,
     ) {
         let gen = self
@@ -888,6 +906,8 @@ impl App {
                 fallback_embeds,
                 labels,
                 fallback_labels,
+                fansubs,
+                fansub_id,
                 plan.clone(),
             )
         {

@@ -15,6 +15,7 @@ mod http;
 mod icons;
 mod layout;
 mod local_playback;
+mod mega;
 mod memory;
 mod music;
 mod native_package;
