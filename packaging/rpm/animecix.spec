@@ -1,5 +1,5 @@
 Name:           animecix
-Version:        1.3.5
+Version:        1.4.0
 Release:        1%{?dist}
 Summary:        Türkçe anime, dizi ve film izleme istemcisi
 License:        MIT
@@ -74,6 +74,14 @@ sh %{_datadir}/animecix/post-install-cleanup.sh || :
 %{_datadir}/animecix
 
 %changelog
-* Sun Nov 15 2026 Yasar Efe Celik <yasar.123.sevda@gmail.com> - 1.3.5-1
+* Tue Nov 17 2026 veilzon <veilzon@users.noreply.github.com> - 1.4.0-1
+- AnimeciX 1.4.0 COPR paketi
+- Gomulu libmpv oynatici varsayilan; harici mpv secenegi
+- Fansub/kaynak secimi, Mega.nz destegi ve otomatik yedek kaynak
+- Intro/outro atlama, otomatik outro atlama ve bolum cekmecesi
+- Onbellek gostergesi, yukleme dongenci ve seek geri bildirimi
+- Minimal AppImage, cok sezonlu bolum adlari ve tanitim videolari
+
+* Sun Nov 15 2026 veilzon <veilzon@users.noreply.github.com> - 1.3.5-1
 - AnimeciX 1.3.5 COPR paketi
 - Flatpak ytdl-format oynatma düzeltmesi

@@ -49,6 +49,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.0" date="2026-11-17">
+      <description>
+        <p>Uygulama içi oynatıcı varsayılan oldu: libmpv + GtkGLArea tabanlı gömülü oynatıcı; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn sonra gizlenen şarkı/atla kartları ve tek ok geri düğmesi eklendi.</p>
+      </description>
+    </release>
     <release version="1.3.5" date="2026-11-15">
       <description>
         <p>Flatpak oynatma düzeltmesi: mpv'nin ytdl desteği olmayan derlemelerinde `--ytdl-format` argümanı ölümcül hataya yol açıyordu; doğrudan video URL'leri için gereksiz olan argüman kaldırıldı.</p>

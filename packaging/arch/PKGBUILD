@@ -1,6 +1,6 @@
 # Maintainer: veilzon <veilzon@users.noreply.github.com>
 pkgname=animecix
-pkgver=1.3.5
+pkgver=1.4.0
 pkgrel=1
 pkgdesc="Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 arch=('x86_64')

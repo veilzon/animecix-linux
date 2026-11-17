@@ -1,17 +1,30 @@
-# Changelog — Geliştirme (yayınlanmadı)
+# Changelog — v1.4.0 (güncel sürüm notları)
 
-- **Uygulama içi oynatıcı:** libmpv + GtkGLArea tabanlı gömülü oynatıcı varsayılan
-  oldu; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn sonra
-  gizlenen şarkı/atla kartları ve tek ok geri düğmesi eklendi.
-- **Kaynak ve çeviri seçimi:** Kaynak menüsünde fansublar ve host/kalite listesi;
-  seçilen fansub yeniden çözülüyor, Mega.nz kaynakları yerel AES-CTR proxy ile
-  oynatılıyor. Fansub seçimi kapalıyken son çeviri otomatik kullanılıyor.
-- **Bölümler ve atlama:** Oynatıcı içinden bölüm çekmecesi, önceki/sonraki bölüm,
-  intro/outro atlama; şarkı ve atla kartları 10 sn sonra gizleniyor.
-- **Sağ tık menüsü:** Oynat/duraklat, tam ekran, atla, oran, ekran görüntüsü,
-  video bilgisi ve bölüm indirme.
-- **Hız ve kısayollar:** 0.5x–2.0x oynatma hızı; F1 kısayol penceresi yeni
-  oynatıcı tuşlarıyla güncellendi (Space, ←/→, ↑/↓, F, A, S/E, N/P, M, Shift+M).
+- **Uygulama içi oynatıcı varsayılan oldu:** libmpv + GtkGLArea tabanlı gömülü
+  oynatıcı; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn
+  sonra gizlenen şarkı/atla kartları ve tek ok geri düğmesi eklendi.
+- **Kaynak ve çeviri seçimi:** Fansub, host ve kalite tek menüde; seçilen
+  fansub yeniden çözülüyor. Mega.nz kaynakları yerel AES-CTR proxy ile
+  oynatılıyor; başarısız kaynakta otomatik yedeğe geçiliyor.
+- **Bölümler ve atlama:** Oynatıcı içi bölüm çekmecesi, önceki/sonraki bölüm,
+  intro/outro atlama ve şarkı kartı eklendi. Otomatik sonraki bölüm açıkken
+  outro'yu otomatik atlama ve seçili kaynakta plan yoksa diğer kaynaklardan
+  plan çözme desteği var.
+- **Oynatma deneyimi:** Oynatma çubuğunda önbellek doluluk göstergesi,
+  oynatma butonunda yükleme dönengeci, seek sırasında geri bildirim,
+  0.5x–2.0x hız ve sağ tık menüsünden ekran görüntüsü/video bilgisi/indirme.
+- **Ayarlar ve ilk açılış:** Ayarlar Ortak / Gömülü Oynatıcı / Normal MPV
+  olarak ayrıldı; modern welcome ekranı ve libmpv veya harici mpv kabul eden
+  bağımlılık kontrolü eklendi.
+- **Kısayollar:** F1 paneli gömülü oynatıcı tuşlarıyla güncellendi
+  (Space, ←/→, ↑/↓, F, A, S/E, N/P, M, Shift+M).
+- **Bölüm listeleri:** Birden fazla sezonu olan yapımlarda 2. sezon ve
+  sonrası için gerçek bölüm adları gösteriliyor.
+- **Tanıtım videoları:** Sürüm notlarına sağ tık menüsü, fansub/kalite seçimi
+  ve oynatma hızını gösteren üç kısa video eklendi.
+- **Paketleme:** AppImage minimal FFmpeg + mpv ile ~23 MB'a indirildi;
+  sistem mpv'si gerekmiyor. CI'da ikon, shader, libmpv ve oynatıcı smoke
+  testleri çalışıyor.
 
 # Changelog — v1.3.5 (güncel sürüm notları)
 

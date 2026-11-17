@@ -3945,11 +3945,11 @@ fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
         "1.4.0" => Some((
             "Yenilikler (v1.4.0)",
             vec![
-                "Uygulama içi oynatıcı varsayılan oldu: libmpv tabanlı oynatıcı; harici mpv Ayarlar'dan seçilebiliyor.",
-                "Fansub ve kaynak seçimi oynatıcı içindeki menüye taşındı; Mega.nz kaynakları destekleniyor.",
-                "Bölüm çekmecesi, önceki/sonraki bölüm ve intro/outro atlama; şarkı/atla kartları 10 sn sonra gizleniyor.",
-                "Sağ tık menüsü: ekran görüntüsü, video bilgisi, ekranı doldurma ve bölüm indirme.",
-                "Oynatma hızı 0.5x–2.0x; F1 kısayol paneli yeni oynatıcı tuşlarıyla güncellendi.",
+                "Uygulama içi libmpv oynatıcı varsayılan oldu; harici mpv Ayarlar'dan seçilebiliyor.",
+                "Fansub, host ve kalite tek menüde; Mega.nz kaynakları ve otomatik yedek kaynak desteği eklendi.",
+                "Bölüm çekmecesi, intro/outro atlama, şarkı kartı ve outro'yu otomatik atlama eklendi.",
+                "Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci, seek geri bildirimi ve 0.5x–2.0x hız.",
+                "Ayarlar üç gruba ayrıldı; modern welcome, güncel F1 kısayolları ve çok sezonlu yapımlarda gerçek bölüm adları.",
             ],
         )),
         "1.3.5" => Some((
