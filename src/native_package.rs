@@ -12,7 +12,9 @@ const SCRIPT: &str = include_str!("../packaging/native-package.sh");
 pub fn system_package_managed_for(kind: crate::update::InstallKind) -> bool {
     matches!(
         kind,
-        crate::update::InstallKind::Deb | crate::update::InstallKind::Rpm
+        crate::update::InstallKind::Deb
+            | crate::update::InstallKind::Rpm
+            | crate::update::InstallKind::Arch
     )
 }
 
@@ -109,6 +111,11 @@ pub fn update_flatpak() -> Result<(), String> {
     run(&["update-flatpak"]).map(|_| ())
 }
 
+/// Arch paketini pacman deposundan günceller; polkit gerekirse sorar.
+pub fn update_arch() -> Result<(), String> {
+    run(&["update-arch"]).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -119,6 +126,7 @@ mod tests {
     fn system_package_mapping() {
         assert!(system_package_managed_for(InstallKind::Deb));
         assert!(system_package_managed_for(InstallKind::Rpm));
+        assert!(system_package_managed_for(InstallKind::Arch));
         assert!(!system_package_managed_for(InstallKind::AppImage));
         assert!(!system_package_managed_for(InstallKind::Unknown));
     }

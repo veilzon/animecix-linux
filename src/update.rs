@@ -31,6 +31,7 @@ pub enum InstallKind {
     AppImage,
     Deb,
     Rpm,
+    Arch,
     Unknown,
 }
 
@@ -41,6 +42,7 @@ impl InstallKind {
             InstallKind::AppImage => "AppImage",
             InstallKind::Deb => ".deb paketi",
             InstallKind::Rpm => ".rpm paketi",
+            InstallKind::Arch => "Arch paketi",
             InstallKind::Unknown => "bilinmeyen kurulum",
         }
     }
@@ -59,6 +61,7 @@ fn fake_kind_env() -> Option<InstallKind> {
     {
         "deb" => Some(InstallKind::Deb),
         "rpm" => Some(InstallKind::Rpm),
+        "arch" => Some(InstallKind::Arch),
         "appimage" => Some(InstallKind::AppImage),
         _ => None,
     }
@@ -82,6 +85,9 @@ pub fn install_kind() -> InstallKind {
         }
         if rpm_package_installed() {
             return InstallKind::Rpm;
+        }
+        if arch_package_installed() {
+            return InstallKind::Arch;
         }
         InstallKind::Unknown
     })
@@ -112,6 +118,23 @@ fn rpm_package_installed() -> bool {
         .unwrap_or(false)
 }
 
+fn arch_package_installed() -> bool {
+    Command::new("pacman")
+        .args(["-Q", "animecix"])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
+/// `pacman -Q animecix` çıktısındaki sürüm alanı: "animecix 1.4.0-1".
+fn parse_pacman_version(stdout: &str) -> String {
+    stdout
+        .split_whitespace()
+        .nth(1)
+        .map(normalize_pkg_version)
+        .unwrap_or_default()
+}
+
 /// Test kancası: kurulu paket sürümünü taklit eder (yalnız debug derleme).
 fn fake_pkg_version_env() -> Option<String> {
     if !cfg!(debug_assertions) {
@@ -138,12 +161,21 @@ fn installed_package_version(kind: InstallKind) -> Option<String> {
             .args(["-q", "--qf", "%{VERSION}", "animecix"])
             .output()
             .ok()?,
+        InstallKind::Arch => Command::new("pacman")
+            .args(["-Q", "animecix"])
+            .output()
+            .ok()?,
         _ => return None,
     };
     if !out.status.success() {
         return None;
     }
-    let v = normalize_pkg_version(&String::from_utf8_lossy(&out.stdout));
+    let raw = String::from_utf8_lossy(&out.stdout);
+    let v = if kind == InstallKind::Arch {
+        parse_pacman_version(&raw)
+    } else {
+        normalize_pkg_version(&raw)
+    };
     (!v.is_empty()).then_some(v)
 }
 
@@ -213,6 +245,7 @@ fn pick_asset(kind: InstallKind, assets: &[GithubAsset]) -> Option<&GithubAsset>
         InstallKind::AppImage => assets.iter().find(|a| a.name == ASSET_APPIMAGE),
         InstallKind::Deb => assets.iter().find(|a| a.name.ends_with("_amd64.deb")),
         InstallKind::Rpm => assets.iter().find(|a| a.name.ends_with(".x86_64.rpm")),
+        InstallKind::Arch => None,
         InstallKind::Unknown => None,
     }
 }
@@ -226,6 +259,7 @@ fn package_magic_ok(kind: InstallKind, bytes: &[u8]) -> bool {
         }
         InstallKind::Rpm => bytes.starts_with(&[0xED, 0xAB, 0xEE, 0xDB]),
         InstallKind::AppImage => bytes.starts_with(b"\x7fELF"),
+        InstallKind::Arch => false,
         InstallKind::Unknown => false,
     }
 }
@@ -508,7 +542,7 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
             present_info(
                 window,
                 "Güncelleme Kullanılamıyor",
-                "Otomatik güncelleme yalnızca AppImage, .deb veya .rpm kurulumlarında çalışır.",
+                "Otomatik güncelleme yalnızca AppImage, .deb, .rpm veya Arch kurulumlarında çalışır.",
             );
         }
         return;
@@ -522,6 +556,10 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
                 installed_package_version(kind).unwrap_or_else(|| CURRENT_VERSION.to_string());
             if !needs_update(&base, &rel.tag_name) {
                 return Ok(None);
+            }
+            if kind == InstallKind::Arch {
+                // Arch güncellemesi GitHub asset'i indirmez; pacman deposundan kurulur.
+                return Ok(Some((rel.tag_name.clone(), String::new(), String::new())));
             }
             let asset = pick_asset(kind, &rel.assets).ok_or_else(|| {
                 format!(
@@ -724,13 +762,17 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
     } else {
         None
     };
-    let body = if kind == InstallKind::AppImage {
-        format!("AnimeciX v{tag} yayınlandı. İndirip uygulamayı güncelleyelim mi?")
-    } else {
-        format!(
+    let body = match kind {
+        InstallKind::AppImage => {
+            format!("AnimeciX v{tag} yayınlandı. İndirip uygulamayı güncelleyelim mi?")
+        }
+        InstallKind::Arch => format!(
+            "AnimeciX v{tag} yayınlandı. Arch paketi pacman deposundan güncellenecek; yetki istenecek. Güncellensin mi?"
+        ),
+        _ => format!(
             "AnimeciX v{tag} yayınlandı. {} indirilip sistem paket yöneticisiyle kurulacak; yetki istenecek. Güncellensin mi?",
             kind.label()
-        )
+        ),
     };
     let dialog = adw::MessageDialog::builder()
         .heading("Yeni Sürüm Mevcut")
@@ -752,17 +794,77 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
     dialog.connect_response(None, move |dlg, resp| {
         if resp == "update" {
             dlg.close();
-            let job = UpdateJob {
-                kind,
-                url: url.clone(),
-                asset_name: asset_name.clone(),
-                expected_version: tag.clone(),
-                appimage_target: appimage_target.clone(),
-            };
-            run_update_with_progress(window.clone(), job);
+            if kind == InstallKind::Arch {
+                run_arch_update(window.clone(), tag.clone());
+            } else {
+                let job = UpdateJob {
+                    kind,
+                    url: url.clone(),
+                    asset_name: asset_name.clone(),
+                    expected_version: tag.clone(),
+                    appimage_target: appimage_target.clone(),
+                };
+                run_update_with_progress(window.clone(), job);
+            }
         }
     });
     dialog.present();
+}
+
+/// Arch paketini pacman deposundan günceller ve sürümü doğrular.
+fn run_arch_update<W: IsA<gtk::Window> + Clone + 'static>(window: W, expected: String) {
+    let dlg = adw::Window::builder()
+        .title("Güncelleniyor")
+        .modal(true)
+        .transient_for(&window)
+        .default_width(380)
+        .build();
+    dlg.set_deletable(false);
+    let box_ = gtk::Box::new(gtk::Orientation::Vertical, 12);
+    box_.set_margin_top(18);
+    box_.set_margin_bottom(18);
+    box_.set_margin_start(18);
+    box_.set_margin_end(18);
+    let spinner = gtk::Spinner::new();
+    spinner.start();
+    let label = gtk::Label::new(Some("Arch paketi güncelleniyor… (yetki istenebilir)"));
+    label.set_wrap(true);
+    box_.append(&spinner);
+    box_.append(&label);
+    dlg.set_content(Some(&box_));
+    dlg.present();
+
+    let (tx, rx) = channel::<Result<(), String>>();
+    std::thread::spawn(move || {
+        let res = crate::native_package::update_arch().and_then(|_| {
+            let installed = installed_package_version(InstallKind::Arch);
+            if package_version_matches(installed.as_deref(), &expected) {
+                Ok(())
+            } else {
+                Err(format!(
+                    "Arch deposunda {} henüz yayında değil (kurulu: {}). Daha sonra tekrar deneyin.",
+                    expected,
+                    installed.unwrap_or_else(|| "okunamadı".to_string())
+                ))
+            }
+        });
+        let _ = tx.send(res);
+    });
+    let dlg_c = dlg.clone();
+    let win_c = window.clone();
+    glib::idle_add_local(move || match rx.try_recv() {
+        Ok(Ok(())) => {
+            dlg_c.close();
+            restart_app(None);
+        }
+        Ok(Err(e)) => {
+            dlg_c.close();
+            present_info(&win_c, "Güncelleme Başarısız", &e);
+            ControlFlow::Break
+        }
+        Err(std::sync::mpsc::TryRecvError::Empty) => ControlFlow::Continue,
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => ControlFlow::Break,
+    });
 }
 
 fn run_update_with_progress<W: IsA<gtk::Window> + Clone + 'static>(window: W, job: UpdateJob) {
@@ -967,7 +1069,15 @@ mod tests {
             Some("animecix-1.2.6-1.fc40.x86_64.rpm")
         );
         assert!(pick_asset(InstallKind::Unknown, &assets).is_none());
+        assert!(pick_asset(InstallKind::Arch, &assets).is_none());
         assert!(pick_asset(InstallKind::Deb, &assets[..2]).is_some());
+    }
+
+    #[test]
+    fn pacman_version_parse() {
+        assert_eq!(parse_pacman_version("animecix 1.4.0-1\n"), "1.4.0");
+        assert_eq!(parse_pacman_version("animecix 1.4.0-2\n"), "1.4.0");
+        assert_eq!(parse_pacman_version(""), "");
     }
 
     #[test]
@@ -983,6 +1093,7 @@ mod tests {
 
         assert!(package_magic_ok(InstallKind::AppImage, b"\x7fELFrest"));
         assert!(!package_magic_ok(InstallKind::AppImage, b"nope"));
+        assert!(!package_magic_ok(InstallKind::Arch, b"\x7fELF"));
         assert!(!package_magic_ok(InstallKind::Unknown, b"\x7fELF"));
     }
 

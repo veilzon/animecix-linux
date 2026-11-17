@@ -320,7 +320,7 @@ Geliştirme, test ve hata ayıklama için kullanılabilecek değişkenler:
 | `ANIMECIX_STATE_DIR=/tmp/animecix-test` | `state.json` için farklı bir dizin kullanır (temiz profil testi). |
 | `ANIMECIX_SMOKE_HOLD=5` | `--player-smoke` testinde videoyu 5 sn tutar; normal oynatıcıda kontrollerin otomatik gizlenmesini engeller. |
 | `ANIMECIX_SMOKE_THEME=bordo` | `--player-smoke` teması: `koyu`, `bordo`, `orman`, `lacivert`, `mor`. |
-| `ANIMECIX_FAKE_INSTALL_KIND=deb` | Yalnız debug derlemede güncelleme akışındaki kurulum türünü taklit eder (`deb`, `rpm` veya `appimage`). |
+| `ANIMECIX_FAKE_INSTALL_KIND=deb` | Yalnız debug derlemede güncelleme akışındaki kurulum türünü taklit eder (`deb`, `rpm`, `arch` veya `appimage`). |
 | `ANIMECIX_FAKE_PKG_VERSION=1.2.3` | Yalnız debug derlemede kurulu paket sürümünü taklit eder. |
 | `ANIMECIX_VAULT_URL=...` | İntro/outro kasa adresini geçici olarak değiştirir. |
 | `ANIMECIX_VAULT_KEY` | Derleme anında gömülen 64 hex’lik kasa anahtarı; çalışma anında okunmaz. |

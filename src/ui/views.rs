@@ -916,8 +916,11 @@ impl SettingsView {
                 crate::update::InstallKind::Deb | crate::update::InstallKind::Rpm => {
                     "Başlatmada yeni sürümü kontrol eder; paketi indirip sistem paket yöneticisiyle kurar (yetki istenir)"
                 }
+                crate::update::InstallKind::Arch => {
+                    "Başlatmada yeni sürümü kontrol eder; Arch paketini pacman deposundan günceller (yetki istenir)"
+                }
                 crate::update::InstallKind::Unknown => {
-                    "Yalnızca AppImage, .deb veya .rpm kurulumlarında kullanılabilir"
+                    "Yalnızca AppImage, .deb, .rpm veya Arch kurulumlarında kullanılabilir"
                 }
             }
         };

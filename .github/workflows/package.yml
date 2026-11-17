@@ -168,6 +168,8 @@ jobs:
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
           xvfb-run -a animecix --check-libmpv
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 animecix --player-smoke \
+            /usr/share/animecix/assets/changelog/ekrangoruntusu.mp4
           rm -rf /var/lib/apt/lists/*
 
       - name: Deb'i paylaş (ekran job'u için)
@@ -245,6 +247,8 @@ jobs:
           desktop-file-validate /usr/share/applications/tr.com.animecix.desktop
           xvfb-run -a animecix --check-icons
           xvfb-run -a animecix --check-libmpv
+          xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 animecix --player-smoke \
+            /usr/share/animecix/assets/changelog/ekrangoruntusu.mp4
 
       - name: Release'e yükle
         run: |

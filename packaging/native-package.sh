@@ -31,6 +31,10 @@ owner() {
         echo rpm
         return
     fi
+    if command -v pacman >/dev/null 2>&1 && pacman -Q animecix >/dev/null 2>&1; then
+        echo arch
+        return
+    fi
     echo source
 }
 
@@ -175,6 +179,11 @@ update_flatpak() {
     flatpak-spawn --host flatpak update -y io.github.veilzon.AnimeciX
 }
 
+update_arch() {
+    command -v pacman >/dev/null 2>&1 || die "pacman bulunamadı"
+    run_priv pacman -Syu --noconfirm animecix
+}
+
 status() {
     printf 'owner=%s\nmanager=%s\n' "$(owner)" "$(manager)"
 }
@@ -212,7 +221,10 @@ case "$cmd" in
     update-flatpak)
         update_flatpak
         ;;
+    update-arch)
+        update_arch
+        ;;
     *)
-        die "kullanım: native-package.sh [--dry-run] status|install <pkg>|uninstall --native|--user|cleanup --user|--all-users|check-flatpak|update-flatpak"
+        die "kullanım: native-package.sh [--dry-run] status|install <pkg>|uninstall --native|--user|cleanup --user|--all-users|check-flatpak|update-flatpak|update-arch"
         ;;
 esac
