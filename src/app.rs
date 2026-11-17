@@ -223,6 +223,8 @@ pub struct App {
     pub hero_h: Rc<Cell<i32>>,
     /// Ev görünümü kirlendi mi? (view-cache geçersizleme bayrağı)
     pub home_dirty: Rc<Cell<bool>>,
+    /// Layout değişiminde sayfa rebuild'ini debounce eden nesil sayacı.
+    pub layout_rebuild_gen: Rc<Cell<u64>>,
     /// Raf kart boyu + sütun sayısı (kuantum responsive).
     pub card_w: Rc<Cell<i32>>,
     pub grid_cols: Rc<Cell<u32>>,
@@ -455,6 +457,7 @@ fn build_shelf_pager(
     title: &str,
     total: usize,
     per: usize,
+    render: Rc<dyn Fn(&gtk::FlowBox, usize)>,
 ) -> (gtk::Box, Rc<dyn Fn(&gtk::FlowBox)>) {
     let per = per.max(1);
     let pages = total.div_ceil(per).max(1);
@@ -485,16 +488,22 @@ fn build_shelf_pager(
         let next_btn = next_btn.clone();
         let page = page.clone();
         let slot = slot.clone();
+        let render = render.clone();
         Rc::new(move || {
             let Some(flow) = slot.borrow().clone() else {
                 return;
             };
             let p = page.get().min(pages.saturating_sub(1));
             page.set(p);
-            for i in 0..total {
-                if let Some(ch) = flow.child_at_index(i as i32) {
-                    ch.set_visible(i >= p * per && i < p * per + per);
-                }
+            // Yalnızca görünen sayfanın kartlarını tut: gizli sayfa
+            // widget'ları ve dokuları bellekte kalmasın.
+            while let Some(ch) = flow.first_child() {
+                flow.remove(&ch);
+            }
+            let start = p * per;
+            let end = (start + per).min(total);
+            for i in start..end {
+                render(&flow, i);
             }
             let a = if total == 0 { 0 } else { p * per + 1 };
             let b = ((p + 1) * per).min(total);
@@ -672,6 +681,7 @@ impl App {
             sidebar_box,
             hero_h: Rc::new(Cell::new(initial_metrics.hero_h)),
             home_dirty: Rc::new(Cell::new(true)),
+            layout_rebuild_gen: Rc::new(Cell::new(0)),
             card_w: Rc::new(Cell::new(initial_metrics.card_w)),
             grid_cols: Rc::new(Cell::new(initial_metrics.grid_cols)),
             news: Rc::new(RefCell::new(None)),
@@ -974,6 +984,7 @@ impl App {
             sidebar_box: self.sidebar_box.clone(),
             hero_h: self.hero_h.clone(),
             home_dirty: self.home_dirty.clone(),
+            layout_rebuild_gen: self.layout_rebuild_gen.clone(),
             card_w: self.card_w.clone(),
             grid_cols: self.grid_cols.clone(),
             news: self.news.clone(),
@@ -1236,6 +1247,33 @@ impl App {
         self.show_page(&top);
     }
 
+    /// Layout değişimlerinde/veri yenilemelerinde görünür sayfayı hemen
+    /// yeniden kurmak yerine kısa süre debounce et. Böylece pencere
+    /// boyutlandırma ve fullscreen geçişleri sırasında ard arda gelen
+    /// metrik güncellemeleri tek bir kuruluma iner.
+    pub(crate) fn schedule_layout_rebuild(&self) {
+        let gen = self.layout_rebuild_gen.get().wrapping_add(1);
+        self.layout_rebuild_gen.set(gen);
+        let Some(weak) = self.self_weak.borrow().clone() else {
+            return;
+        };
+        glib::timeout_add_local_once(std::time::Duration::from_millis(180), move || {
+            let Some(app) = weak.upgrade() else { return };
+            if app.layout_rebuild_gen.get() != gen {
+                return;
+            }
+            if app.stack.is_transition_running() {
+                app.schedule_layout_rebuild();
+                return;
+            }
+            match app.stack.visible_child_name().as_deref() {
+                Some("home") if app.home_dirty.get() => app.show_page(&Page::Home),
+                Some("kesfet") => app.show_page(&Page::Kesfet),
+                _ => {}
+            }
+        });
+    }
+
     pub fn busy(&self, on: bool) {
         if on {
             self.ops.begin("loading", "Yükleniyor…", "");
@@ -1257,22 +1295,13 @@ impl App {
             store_internet_status(st);
             let _ = tx.send(());
         });
-        let stack = self.stack.clone();
         let this = self.clone_ref();
         glib::idle_add_local(move || match rx.try_recv() {
             Ok(()) => {
-                // İnternet kontrolü arka planda biterken kullanıcı başka
-                // sayfadaysa onu Home'a kaçırma; sadece Home görünürse tazele.
-                let was_home = stack.visible_child_name().as_deref() == Some("home");
-                let widget = this.build_home_view();
-                if let Some(prev) = stack.child_by_name("home") {
-                    stack.remove(&prev);
-                }
-                stack.add_named(&widget, Some("home"));
-                this.home_dirty.set(false);
-                if was_home {
-                    stack.set_visible_child_name("home");
-                }
+                // Kullanıcı başka sayfadaysa Home'u burada kurma; sadece
+                // kirli işaretle. Home'a dönüldüğünde kurulur.
+                this.home_dirty.set(true);
+                this.schedule_layout_rebuild();
                 glib::ControlFlow::Break
             }
             Err(_) => glib::ControlFlow::Continue,
@@ -1571,6 +1600,7 @@ impl App {
                 Self::focus_visible_scroll(&visible);
             }
         });
+        crate::memory::trim_after_navigation(&self.covers);
     }
 
     /// Görünür sayfadaki ilk kaydırma alanına odak verir.
@@ -1709,23 +1739,20 @@ impl App {
         self.create_title_card_sub(t, w, None)
     }
 
-    /// Kapak yalnızca kart görünür olduğunda istenir. İlk aşamada unmap'te
-    /// doku bırakılmaz; böylece pager'da gizli kartlar kapak yüklemez ama
-    /// bir kez yüklenen kapak asla kaybolmaz.
+    /// Kapak yalnızca kart görünür olduğunda istenir; sayfa gizlenince
+    /// doku referansı bırakılır ve geri dönünce L1 önbelleğinden bağlanır.
     fn lazy_cover_picture(&self, url: Option<&str>, w: i32, h: i32) -> gtk::Picture {
         let pic = crate::covers::new_sized_picture(w, h);
         let Some(url) = url.map(str::to_string) else {
             return pic;
         };
         let covers = self.covers.clone_ref();
-        let loaded = Rc::new(Cell::new(false));
         let load: Rc<dyn Fn()> = {
             let covers = covers.clone_ref();
             let pic_c = pic.clone();
-            let loaded = loaded.clone();
             let url = url.clone();
             Rc::new(move || {
-                if !loaded.replace(true) {
+                if pic_c.paintable().is_none() {
                     covers.load_cover(Some(&url), &pic_c, w, h);
                 }
             })
@@ -1734,6 +1761,11 @@ impl App {
             let load = load.clone();
             pic.connect_map(move |_| load());
         }
+        // Sayfa gizlenince dokuyu bırak; geri dönünce L1 önbelleğinden
+        // yeniden bağlanır. Görünmeyen kartların doku referansı tutulmaz.
+        pic.connect_unmap(move |pic| {
+            pic.set_paintable(None::<&gtk::gdk::Texture>);
+        });
         // Nadir de olsa sinyal bağlanmadan önce mapped olmuşsa kaçırma.
         if pic.is_mapped() {
             load();
@@ -2128,8 +2160,23 @@ impl App {
         // Raflar kuantum boyda: PER = sütun x 2 (her genişlikte 2 satır).
         let per_home = (self.grid_cols.get() * 2).max(2) as usize;
         let card_w = self.card_w.get();
+        let card_h = card_w * 3 / 2 + 60;
         for cat in cats.iter() {
-            let (head, wire) = build_shelf_pager(&cat.name, cat.items.len(), per_home);
+            let rows = if cat.items.len() > self.grid_cols.get() as usize {
+                2
+            } else {
+                1
+            };
+            let render: Rc<dyn Fn(&gtk::FlowBox, usize)> = {
+                let this = self.clone_ref();
+                let items = cat.items.clone();
+                Rc::new(move |flow, idx| {
+                    if let Some(t) = items.get(idx) {
+                        flow.append(&this.create_title_card_sized(t, card_w));
+                    }
+                })
+            };
+            let (head, wire) = build_shelf_pager(&cat.name, cat.items.len(), per_home, render);
             main_box.append(&head);
             let flow = gtk::FlowBox::new();
             flow.set_halign(gtk::Align::Center);
@@ -2140,9 +2187,9 @@ impl App {
             flow.set_row_spacing(20);
             flow.set_max_children_per_line(self.grid_cols.get());
             flow.set_min_children_per_line(1);
-            for t in &cat.items {
-                flow.append(&self.create_title_card_sized(t, card_w));
-            }
+            // Pager sayfa değiştirince kartları yeniden kurar; 1/2 satırlık
+            // sabit yükseklik geçişte zıplamayı önler.
+            flow.set_size_request(-1, card_h * rows + 20 * (rows - 1) + 8);
             wire(&flow);
             main_box.append(&flow);
         }
@@ -3188,9 +3235,7 @@ impl App {
                 Ok(cats) => {
                     *self.cats.borrow_mut() = cats;
                     self.home_dirty.set(true);
-                    if self.page_history.borrow().last() == Some(&Page::Home) {
-                        self.show_page(&Page::Home);
-                    }
+                    self.schedule_layout_rebuild();
                 }
                 Err(e) => self.show_error(&e),
             },
@@ -4276,6 +4321,29 @@ mod decide_retry_tests {
 mod search_caret_tests {
     use super::set_search_text_caret_end;
     use gtk::prelude::*;
+    use std::rc::Rc;
+
+    #[gtk::test]
+    fn shelf_pager_builds_only_visible_page() {
+        let (_, wire) = super::build_shelf_pager(
+            "Test",
+            50,
+            10,
+            Rc::new(|flow, idx| {
+                let l = gtk::Label::new(Some(&idx.to_string()));
+                flow.append(&l);
+            }),
+        );
+        let flow = gtk::FlowBox::new();
+        wire(&flow);
+        let mut count = 0;
+        let mut child = flow.first_child();
+        while let Some(c) = child {
+            count += 1;
+            child = c.next_sibling();
+        }
+        assert_eq!(count, 10, "yalnızca ilk sayfanın kartları kurulmalı");
+    }
 
     #[gtk::test]
     fn search_text_sets_caret_to_end() {

@@ -5,7 +5,7 @@
 //! yaşar. Sidebar/header fullscreen'de de görünür kalır; ölçü yalnızca
 //! sidebar'ın sağındaki içerik alanını doldurur.
 
-use crate::app::{App, Page};
+use crate::app::App;
 use adw::prelude::*;
 use std::cell::Cell;
 use std::rc::Rc;
@@ -197,12 +197,7 @@ fn apply_metrics(app: &App, next: LayoutMetrics) {
     app.card_w.set(next.card_w);
     app.grid_cols.set(next.grid_cols);
     app.home_dirty.set(true);
-
-    match app.stack.visible_child_name().as_deref() {
-        Some("home") => app.show_page(&Page::Home),
-        Some("kesfet") => app.show_page(&Page::Kesfet),
-        _ => {}
-    }
+    app.schedule_layout_rebuild();
 }
 
 #[cfg(test)]

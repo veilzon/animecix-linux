@@ -553,6 +553,8 @@ impl App {
     pub(crate) fn shutdown_player(&self) {
         if let Some(p) = self.player.borrow_mut().take() {
             p.shutdown();
+            // Gömülü oynatıcı kapanınca da kapak/geçici önbellekleri bırak.
+            crate::memory::trim_after_playback(&self.covers, &self.client);
         }
     }
 

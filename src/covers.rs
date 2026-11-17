@@ -67,9 +67,9 @@ pub struct CoverManager {
 }
 
 /// Çözümlü kapak üst sınırı (adet).
-const MAX_L1_COVERS: usize = 250;
+const MAX_L1_COVERS: usize = 128;
 /// Çözümlü kapak dokularının toplam bellek bütçesi.
-const MAX_L1_BYTES: usize = 32 * 1024 * 1024;
+const MAX_L1_BYTES: usize = 16 * 1024 * 1024;
 
 fn texture_bytes_for(w: i32, h: i32) -> usize {
     (w.max(0) as usize)
@@ -331,7 +331,11 @@ impl CoverManager {
                     );
                     let t = gtk::gdk::Texture::for_pixbuf(&pb);
                     for p in &pics {
-                        p.set_paintable(Some(&t));
+                        // Gizli/çıkarılmış kartlara doku referansı verme;
+                        // görünür olduklarında L1 önbelleğinden bağlanır.
+                        if p.is_mapped() {
+                            p.set_paintable(Some(&t));
+                        }
                     }
                     let b = texture_bytes(&t);
                     cache.insert(key.clone(), Some(t));

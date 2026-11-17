@@ -20,6 +20,17 @@ pub fn trim_after_playback(covers: &CoverManager, client: &Arc<crate::api::Clien
     });
 }
 
+/// Sayfa geçişinden sonra görünmeyen sayfaların kapak dokularını bırakır
+/// ve heap'i OS'a iade eder. Görünür kartlar kendi doku referanslarını
+/// tuttuğu için ekrandaki kapaklar etkilenmez.
+pub fn trim_after_navigation(covers: &CoverManager) {
+    let covers = covers.clone_ref();
+    glib::timeout_add_local_once(Duration::from_millis(900), move || {
+        covers.trim_budget(8 * 1024 * 1024);
+        let _ = trim_allocator();
+    });
+}
+
 /// glibc heap'ini OS'a iade eder. Desteklenmeyen platformda sessizce false.
 pub fn trim_allocator() -> bool {
     #[cfg(all(target_os = "linux", target_env = "gnu"))]
