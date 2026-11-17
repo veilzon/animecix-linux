@@ -53,7 +53,7 @@
   "url": "https://veilzon.github.io/animecix-linux/",
   "downloadUrl": "https://github.com/veilzon/animecix-linux/releases/latest",
   "screenshot": "https://veilzon.github.io/animecix-linux/assets/screenshots/home.webp",
-  "softwareRequirements": "Linux x86_64, GTK4, libadwaita, MPV",
+  "softwareRequirements": "Linux x86_64, GTK4, libadwaita",
   "sameAs": ["https://github.com/veilzon/animecix-linux"],
   "license": "https://github.com/veilzon/animecix-linux/blob/main/LICENSE",
   "offers": {
@@ -391,7 +391,7 @@
         <div class="tab-panel" role="tabpanel" id="panel-appimage" aria-labelledby="tab-appimage">
           <div class="install-meta">
             <span class="install-size">23 MB</span>
-            <span class="install-note">Tek dosya. Sistemdeki GTK4, libadwaita ve MPV'yi kullanır.</span>
+            <span class="install-note">Tek dosya. Sistemdeki GTK4 ve libadwaita'yı kullanır; libmpv paket içindedir.</span>
           </div>
           <div class="code-block">
             <div class="code-head">
@@ -485,7 +485,7 @@ sudo dnf install ./animecix-1.4.0-1.fc40.x86_64.rpm</code></pre>
             <span>AppImage tek başına yeterli mi?</span>
             <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
           </summary>
-          <p>Sistemde GTK4, libadwaita ve MPV olmalı. deb ve rpm paketleri bu bağımlılıkları kendisi kurar.</p>
+          <p>Sistemde GTK4 ve libadwaita olmalı; AppImage libmpv'yi kendi taşır. deb ve rpm paketleri mpv/libmpv bağımlılığını kurar.</p>
         </details>
         <details>
           <summary>

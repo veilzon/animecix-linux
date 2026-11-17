@@ -1,6 +1,6 @@
 pkgbase = animecix
 	pkgdesc = Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)
-	pkgver = 1.3.5
+	pkgver = 1.4.0
 	pkgrel = 1
 	url = https://github.com/veilzon/animecix-linux
 	arch = x86_64
@@ -20,7 +20,7 @@ pkgbase = animecix
 	depends = aria2
 	options = !lto
 	options = !debug
-	source = animecix-1.3.5.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v1.3.5.tar.gz
-	sha256sums = fad08b2f3b4902db10d3b9fca43566437498d1792513d519c324c13132eaeaab
+	source = animecix-1.4.0.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v1.4.0.tar.gz
+	sha256sums = 06eacfc4efaf891f36c1ca0fb06483b8681cbcafd774fd56edbe0121c628eb1e
 
 pkgname = animecix

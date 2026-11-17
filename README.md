@@ -23,25 +23,26 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 ## Özellikler
 
 - **Yan menü**: Ana Sayfa, Keşfet, Favoriler, Maraton, Geçmiş, İstatistikler, Takvim, Haberler, İndirilenler, Ayarlar ve Kısayollar tek tıkla; daraltınca sadece simgeler kalır
-- **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı), sayfalı raflar
+- **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı, sayfalanmaz) ve sayfalı raflar
 - **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
 - **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
 - **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
 - **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
+- **Oynatma geri bildirimi**: Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci ve seek sırasında görsel geri bildirim; otomatik sonraki bölümle birlikte outro'yu atlama
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
 - **Discord Rich Presence**: Discord'da izlediğin anime/film ve bölüm bilgisi görünür; varsayılan açık, Ayarlar → Discord'dan kapatılabilir veya socket yolu değiştirilebilir
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme; indirilen bölümler listede işaretlenir, sağ tıkla indirilebilir ve normal oynatmada yerel dosyadan öncelikli açılır
-- **Bellek toparlama**: Oynatıcı kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
-- **Hesap**: giriş/çıkış, profil; favori, konum ve geçmiş siteyle çift-yön eşitlenir
-- **Akıllı kaynak seçimi**: kaynaklar paralel çözülür, en kalitelisi seçilir; ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir. manuel kaynak seçimi mevcuttur.
+- **Bellek toparlama**: Harici mpv oturumu kapandıktan sonra kapak ve geçici önbellek belleği toparlanır
+- **Yerel mod**: Hesap/giriş özellikleri bu derlemede kapalı; favoriler, geçmiş ve izleme ilerlemesi cihazda saklanır
+- **Akıllı kaynak seçimi**: Tau aynalarında en iyi kalite seçilir; diğer kaynaklarda ilk çalışan kullanılır. Ölü kaynak elenir, açılmayan kaynakta sonrakine geçilir; manuel kaynak seçimi vardır.
 - **Flatpak**: kendi Flatpak depomuzdan tek komutla kurulum; güncellemeler uygulama içinden denetlenir
 - **Otomatik güncelleme**: AppImage, .deb, .rpm ve Flatpak kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
 - **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, masaüstü başlatıcı, veri sıfırlama
 - **Hızlı yükleme**: HTTP/2 multiplexing ve bağlantı havuzu (keep-alive);
-  kapak görselleri paralel (12 worker) indirilir
+  kapak görselleri paralel (3 worker) indirilir
 
 ---
 
@@ -124,8 +125,8 @@ sudo apt install ./animecix_1.4.0_amd64.deb
 ```
 
 Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
-bağımlılıkları apt tarafından kurulur. Güncellemeler uygulama içinden veya
-`sudo apt upgrade` ile yapılır.
+bağımlılıkları apt tarafından kurulur. Güncellemeler uygulama içinden yapılır;
+doğrudan `.deb` dosyasıyla kurulumda `sudo apt upgrade` bu dosyayı güncellemez.
 
 ### Fedora / RPM
 
@@ -159,7 +160,9 @@ sudo dnf install ./animecix-1.4.0-1.fc40.x86_64.rpm
 ```
 
 Fedora 40+ içindir. `mpv`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
-kurulur. Güncellemeler uygulama içinden veya `sudo dnf upgrade` ile yapılır.
+kurulur. Güncellemeler uygulama içinden yapılır; doğrudan `.rpm` dosyasıyla kurulumda
+`sudo dnf upgrade` bu dosyayı güncellemez. COPR kurulumunda `sudo dnf upgrade animecix`
+kullanılabilir.
 
 ### Arch Linux
 
@@ -232,6 +235,8 @@ Gerekli sistem bağımlılıkları:
 - **Fedora:** `sudo dnf install gtk4-devel libadwaita-devel mpv mpv-libs-devel pkgconf-pkg-config gcc-c++ make cmake clang-devel`
 - **Arch:** `sudo pacman -S gtk4 libadwaita mpv pkgconf base-devel cmake clang`
 
+Testleri çalıştırmak için ayrıca `ffmpeg`, `xvfb` ve `xauth` gerekir.
+
 Güncel stable Rust kurulu olmalı:
 
 ```bash
@@ -241,18 +246,23 @@ cargo build --release
 ./target/release/animecix
 ```
 
+Release derlemesi CI ile aynı şekilde `cargo build --release --locked` ile yapılır.
+
 ---
 
 ## Güncelleme
 
-Uygulama bir **AppImage** olarak çalışıyorsa başlangıçta yeni sürümü kontrol eder:
+Uygulama AppImage, .deb, .rpm ve Flatpak kurulumlarında başlangıçta yeni sürümü denetler:
 
 - **Otomatik:** *Ayarlar → Güncelleme → Otomatik Güncelleme* açıkken yeni sürüm bulunursa
   onay kutusu çıkar; “Güncelle ve Yeniden Başlat” deyince indirir, kurar ve uygulamayı yeniden başlatır.
 - **Elle:** *Ayarlar → Şimdi Güncelle* ile istediğin an kontrol edebilirsin.
 - **Paketler:** .deb/.rpm güncellemeleri GitHub'dan indirilip sistem paket
   yöneticisiyle (`apt-get`/`dnf`/`zypper`) kurulur; kurulum sonrası sürüm
-  doğrulanır. deb/rpm kurulumlarında masaüstü kısayolunu sistem paketi yönetir.
+  doğrulanır. Doğrudan dosyadan kurulumda `apt upgrade`/`dnf upgrade` bu dosyayı
+  güncellemez; COPR gibi depo kurulumlarında paket yöneticisi kullanılabilir.
+- **Flatpak:** Güncelleme `flatpak update` ile yürütülür; uygulama yeni sürümü
+  başlangıçta bildirir.
 - **Paralel indirme:** Güncelleme dosyaları birden çok bağlantıyla indirilir;
   sunucu desteklemezse tek bağlantıya düşülür.
 Kaynaktan derlenen sürümde otomatik güncelleme devre dışıdır.
@@ -263,12 +273,16 @@ Kaynaktan derlenen sürümde otomatik güncelleme devre dışıdır.
 
 Sürüm hazırlığı:
 
-1. `Cargo.toml`, `CHANGELOG.md` ve uygulama içi `changelog_items` metnini güncelle.
+1. `Cargo.toml`, `CHANGELOG.md` ve uygulama içi `changelog_items` metnini güncelle;
+   ardından `python3 packaging/update-metainfo.py --write` ile Flatpak/AppStream
+   metainfo sürümünü eşitle.
 2. Testleri çalıştır:
 
    ```bash
-   xvfb-run -a cargo test --release --bin animecix
+   xvfb-run -a cargo test --release --bin animecix -- --test-threads=1
+   cargo test --release --test refcell_guard --test next_episode
    python3 tests/skip_harness.py
+   python3 tests/flatpak_updater.py
    ```
 
 3. Tag’i oluştur ve gönder:
@@ -278,7 +292,8 @@ Sürüm hazırlığı:
    git push origin main vX.Y.Z
    ```
 
-4. AppImage artık yerelde derlenmez:
+4. AppImage release artefaktı CI'da üretilir; yerel deneme için
+   `build_appimage.sh` kullanılabilir:
    - `.github/workflows/appimage.yml` her `main` push’unda Debian 12 tabanlı
      (glibc 2.36) ve minimal aria2’li AppImage’i üretip artifact olarak yükler.
    - `.github/workflows/release.yml` tag push’unda AppImage’i üretir ve taslak
@@ -324,6 +339,16 @@ ANIMECIX_STATE_DIR=/tmp/animecix-test ./target/release/animecix
 `GITHUB_REPO` değişkenlerini kullanır. GTK/Mesa tarafında `GDK_BACKEND`,
 `GSK_RENDERER`, `LIBGL_ALWAYS_SOFTWARE` ve `GTK_A11Y` standart olarak kullanılabilir.
 
+### Tanı komutları
+
+| Bayrak | Etki |
+|---|---|
+| `--check-libmpv` | libmpv bulunabilirliğini ve API sürümünü doğrular. |
+| `--check-shaders` | Paketlenen Anime4K shader dosyalarını denetler. |
+| `--check-icons` | Gömülü/sistem ikonlarının varlığını denetler. |
+| `--player-smoke <video>` | Gömülü oynatıcıyı yerel bir videoyla açar; CI smoke testi. |
+| `--goto <sayfa>` | Açılışta belirtilen sayfaya gider (ör. `--goto home`). |
+
 ---
 
 ## Klavye Kısayolları
@@ -333,29 +358,35 @@ ANIMECIX_STATE_DIR=/tmp/animecix-test ./target/release/animecix
 | `F1` | Kısayollar penceresini aç |
 | `F11` | Tam ekran |
 | `/` | Bölüm ekranında hızlı bölüm arama |
-| `Ctrl+S` | Ana ekranda arama çubuğuna odaklan |
+| `Ctrl+S` | Arama penceresini açar |
 | `Space` | Oynatıcıda oynat / duraklat |
+| `←` / `→` | Oynatıcıda 10 sn geri / ileri |
+| `↑` / `↓` | Oynatıcıda sesi artır / azalt |
 | `F` | Oynatıcıda tam ekran |
 | `A` | Oynatıcıda ekranı doldur / orijinal oran |
-| `S` / `E` | Oynatıcıda introyu / outroyu atla |
-| `N` / `P` | Oynatıcıda sonraki / önceki bölüm |
-| `M` | Oynatıcıda sesi aç / kapat |
-| `Ctrl+RIGHT` | Oynatıcıda sonraki bölüm |
-| `Shift+M` (`M`) | Çalan şarkıyı tarayıcıda aç (şarkı bilgisi varsa) |
-| `Esc` | Geri / aramayı kapat |
+| `s` / `e` | Oynatıcıda introyu / outroyu atla |
+| `n` / `p` | Oynatıcıda sonraki / önceki bölüm |
+| `m` | Oynatıcıda sesi aç / kapat |
+| `Shift+M` | Gömülü oynatıcıda çalan şarkıyı tarayıcıda aç (harici mpv'de `M`) |
+| `Ctrl+RIGHT` | Yalnızca harici mpv'de sonraki bölüm |
+| `Esc` | Tam ekrandan / maximize'dan çık |
 
-Kısayollar *Ayarlar* ekranından değiştirilebilir.
+Bölüm hızlı araması ve ana arama kısayolu *Ayarlar* ekranından değiştirilebilir;
+oynatıcı tuşları sabittir.
 
 ---
 
 ## Yapılandırma & Veri
 
-Tüm veriler şurada tutulur:
+Başlıca veriler şurada tutulur:
 
 ```
-~/state.json                 # izleme geçmişi, favoriler, maraton, ilerleme
-~/.local/share/animecix/     # settings.json
-~/.cache/animecix/           # API ve kapak önbelleği
+~/state.json                              # izleme geçmişi, favoriler, maraton, ilerleme
+~/.local/share/animecix/settings.json     # ayarlar
+~/.local/share/animecix/downloads.json    # indirme kuyruğu
+~/.local/share/animecix/restart.log       # güncelleme sonrası yeniden başlatma günlüğü
+~/.cache/animecix/                        # API ve kapak önbelleği
+~/.cache/animecix/updates/                # indirilen güncelleme paketleri
 ```
 
 *Ayarlardan* “Tüm Verileri Sıfırla ve Temizle” ile sıfırlanabilir.
@@ -368,12 +399,11 @@ Uygulama, ağ gecikmesini azaltmak için aşağıdaki teknikleri kullanır:
 
 - **HTTP/2 multiplexing**: Tek TCP/TLS bağlantısı üzerinden çoklu eşzamanlı akış; özellikle
   ana sayfadaki onlarca kapak görselini sıraya sokmadan paralel getirir.
-- **Bağlantı havuzu & keep-alive**: Boşta bağlantılar 60sn boyunca sıcak tutulur
+- **Bağlantı havuzu & keep-alive**: Boşta bağlantılar 20 sn boyunca sıcak tutulur
   (`pool_idle_timeout`), böylece her istekte tekrar TLS el sıkışması yapılmaz.
-- **Brotli sıkıştırma**: JSON yanıtları `br` ile sıkıştırılarak aktarılır.
-- **Paralel kapak indirme**: 12 worker ile kapaklar eşzamanlı çekilir (diskte 7 gün önbellekli).
-- **Stale-while-revalidate API önbelleği**: Süresi dolmuş veri anında gösterilir, arka planda
-  tazelenir; çevrimdışıyken bile eski veri kullanılır.
+- **Paralel kapak indirme**: 3 worker ile kapaklar eşzamanlı çekilir (diskte 7 gün önbellekli).
+- **API önbelleği**: Süresi dolmuş kayıt yenilenirken ağ hatası olursa son önbellek
+  kullanılır; çevrimdışıyken eski veri gösterilebilir.
 
 > Geliştiriciler: `ANIMECIX_BENCH=1 ./target/release/animecix` ile her isteğin süresini
 > stderr'a loglayabilir (davranışı etkilemez).
@@ -383,13 +413,19 @@ Uygulama, ağ gecikmesini azaltmak için aşağıdaki teknikleri kullanır:
 ## Resmi İntro/Outro Verisi
 
 AnimeciX, intro ve outro süreleri ile açılış/kapanış şarkı bilgilerini
-AnimeciX'in resmi video altyapısından alır.
-Video açılmadan önce çözülür; sonuç 6 saat önbelleğe alınır.
+AnimeciX'in resmi video altyapısından alır; sonuç 6 saat önbelleğe alınır.
+Gömülü oynatıcıda plan video başladıktan sonra arka planda çözülür; harici mpv
+yolunda video açılmadan önce çözülür.
 
 **Davranış**:
-- `s` / `e` tuşları intro/outro sonuna atlar; indirilmiş bölümlerde de çalışır ve atlayınca MPV OSD'de bildirim çıkar
-- Şarkı varsa bölüm boyunca sağ üstte görünür; `Shift+M` tuşu şarkıyı tarayıcıda açar
-- İntro/outro bildirimleri ve `Shift+M` ipucu Ayarlar'dan kapatılabilir (tuşlar çalışmaya devam eder)
+- `s` / `e` tuşları intro/outro sonuna atlar; indirilmiş bölümlerde de çalışır.
+  Gömülü oynatıcıda uygulama bildirimi, harici mpv'de OSD gösterilir.
+- Gömülü oynatıcıda şarkı kartı intro/outro penceresinde sol altta görünür ve
+  10 sn sonra gizlenir; `Shift+M` şarkıyı tarayıcıda açar. Harici mpv'de şarkı
+  bilgisi yine intro/outro aralığında gösterilir.
+- Gömülü oynatıcıda atla düğmesi ve şarkı kartı, harici mpv'de intro/outro
+  bildirimleri ve `Shift+M` ipucu Ayarlar'dan kapatılabilir; tuşlar çalışmaya
+  devam eder.
 
 ---
 

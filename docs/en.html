@@ -53,7 +53,7 @@
   "url": "https://veilzon.github.io/animecix-linux/en.html",
   "downloadUrl": "https://github.com/veilzon/animecix-linux/releases/latest",
   "screenshot": "https://veilzon.github.io/animecix-linux/assets/screenshots/home.webp",
-  "softwareRequirements": "Linux x86_64, GTK4, libadwaita, MPV",
+  "softwareRequirements": "Linux x86_64, GTK4, libadwaita",
   "sameAs": ["https://github.com/veilzon/animecix-linux"],
   "license": "https://github.com/veilzon/animecix-linux/blob/main/LICENSE",
   "offers": {
@@ -391,7 +391,7 @@
         <div class="tab-panel" role="tabpanel" id="panel-appimage" aria-labelledby="tab-appimage">
           <div class="install-meta">
             <span class="install-size">23 MB</span>
-            <span class="install-note">One file. Uses your system GTK4, libadwaita and MPV.</span>
+            <span class="install-note">One file. Uses your system GTK4 and libadwaita; libmpv is bundled.</span>
           </div>
           <div class="code-block">
             <div class="code-head">
@@ -485,7 +485,7 @@ sudo dnf install ./animecix-1.4.0-1.fc40.x86_64.rpm</code></pre>
             <span>Is the AppImage enough on its own?</span>
             <span class="faq-plus"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#plus"></use></svg></span>
           </summary>
-          <p>You need GTK4, libadwaita and MPV on your system. The deb and rpm packages install those dependencies for you.</p>
+          <p>You need GTK4 and libadwaita on your system; the AppImage bundles libmpv. The deb and rpm packages install mpv/libmpv as a dependency.</p>
         </details>
         <details>
           <summary>

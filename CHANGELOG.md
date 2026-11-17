@@ -26,13 +26,13 @@
   sistem mpv'si gerekmiyor. CI'da ikon, shader, libmpv ve oynatıcı smoke
   testleri çalışıyor.
 
-# Changelog — v1.3.5 (güncel sürüm notları)
+# Changelog — v1.3.5
 
 - **Flatpak oynatma düzeltmesi:** mpv'nin ytdl desteği olmayan derlemelerinde
   `--ytdl-format` argümanı ölümcül hataya yol açıyordu; doğrudan video
   URL'leri için gereksiz olan argüman kaldırıldı.
 
-# Changelog — v1.3.4 (güncel sürüm notları)
+# Changelog — v1.3.4
 
 - **Güvenlik güncellemeleri:** TLS sertifika doğrulaması (rustls-webpki,
   webpki-roots), tokio ve zstd bağımlılıkları güncellendi; yeni RustSec
@@ -43,7 +43,7 @@
 - **Flatpak CI güvenilirliği:** Cache'ten gelen eski kurulum temizlenerek
   her zaman yeni build'in test edilmesi sağlandı.
 
-# Changelog — v1.3.3 (güncel sürüm notları)
+# Changelog — v1.3.3
 
 - **Flatpak'ta otomatik güncelleme:** Uygulama açılışta Flatpak deposunu
   denetler; yeni sürüm varsa tek tıkla güncelleme başlatılır, polkit izni
