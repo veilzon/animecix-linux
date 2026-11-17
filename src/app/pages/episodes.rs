@@ -496,9 +496,16 @@ impl App {
             // Tek disk okuma: satır başına load_state() donmayı önler.
             let watched_all = self.client.load_state().watched;
             let local_records = self.dl_manager.snapshot();
-            let rows: Vec<(Episode, gtk::Box, Rc<RefCell<bool>>)> = eps
-                .iter()
-                .map(|e| {
+            let rows_rc: Rc<RefCell<Vec<(Episode, gtk::Box, Rc<RefCell<bool>>)>>> =
+                Rc::new(RefCell::new(Vec::new()));
+            let build_row: Rc<dyn Fn(&Episode) -> (Episode, gtk::Box, Rc<RefCell<bool>>)> = {
+                let app = self.clone_ref();
+                let title = title.clone();
+                let watched_all = watched_all.clone();
+                let local_records = local_records.clone();
+                let refresh_dl_bar = refresh_dl_bar.clone();
+                let dl_checks = dl_checks.clone();
+                Rc::new(move |e: &Episode| {
                     let key = format!("{}:{}:{}", title.id, e.season, e.episode);
                     let downloaded = crate::local_playback::find_for_episode(
                         &local_records,
@@ -535,14 +542,14 @@ impl App {
                     }
                     header_box.append(&time_lbl);
 
-                    let pic = self.covers.cover_picture(title.poster.as_deref(), 48, 72);
+                    let pic = app.covers.cover_picture(title.poster.as_deref(), 48, 72);
                     pic.set_valign(gtk::Align::Center);
 
                     let right_col = gtk::Box::new(gtk::Orientation::Vertical, 4);
                     right_col.set_valign(gtk::Align::Center);
                     right_col.append(&header_box);
 
-                    let (saved_pos, saved_dur) = self
+                    let (saved_pos, saved_dur) = app
                         .progress
                         .borrow()
                         .get(&key)
@@ -575,7 +582,7 @@ impl App {
                     }
                     right_col.append(&progress_bar);
 
-                    self.progress_bars.borrow_mut().insert(
+                    app.progress_bars.borrow_mut().insert(
                         key.clone(),
                         EpisodeBar {
                             bar: progress_bar.clone(),
@@ -618,7 +625,7 @@ impl App {
                     dl_one.set_valign(gtk::Align::Center);
                     dl_one.set_tooltip_text(Some("Bölümü indir"));
                     {
-                        let this_dl = self.clone_ref();
+                        let this_dl = app.clone_ref();
                         let title_dl = title.clone();
                         let ep_dl = e.clone();
                         dl_one.connect_clicked(move |_| {
@@ -627,7 +634,7 @@ impl App {
                     }
                     row.append(&dl_one);
 
-                    let this_play = self.clone_ref();
+                    let this_play = app.clone_ref();
                     let title_play = title.clone();
                     let ep_play = e.clone();
                     let row_c = row.clone();
@@ -657,7 +664,7 @@ impl App {
                     });
                     row.add_controller(click);
 
-                    let this_ctx = self.clone_ref();
+                    let this_ctx = app.clone_ref();
                     let title_ctx = title.clone();
                     let ep_ctx = e.clone();
                     let is_watched_ctx = is_watched.clone();
@@ -666,8 +673,8 @@ impl App {
                     let bar_ctx = progress_bar.clone();
                     let lbl_ctx = time_lbl.clone();
                     let key_ctx = key.clone();
-                    let progress_ctx = self.progress.clone();
-                    let bars_ctx = self.progress_bars.clone();
+                    let progress_ctx = app.progress.clone();
+                    let bars_ctx = app.progress_bars.clone();
 
                     let right_click = gtk::GestureClick::new();
                     right_click.set_button(3);
@@ -789,11 +796,7 @@ impl App {
 
                     (e.clone(), row, is_watched.clone())
                 })
-                .collect();
-
-            for (_, row_widget, _) in &rows {
-                list_box.append(row_widget);
-            }
+            };
 
             /// Bölüm satırı görünürlüğü: iç kutuyla birlikte otomatik sarılan
             /// `ListBoxRow` sarmalayıcıyı da gizler (yoksa boş çizgili bant kalır).
@@ -806,7 +809,6 @@ impl App {
                 }
             }
 
-            let rows_rc = Rc::new(rows);
             // Birleşik filtre: arama + sezon + izlenme (Lowell apply_filter uyarlaması).
             let f_state = Rc::new(RefCell::new((
                 String::new(),
@@ -818,7 +820,7 @@ impl App {
                 let f_state = f_state.clone();
                 Rc::new(move || {
                     let (q, season, w) = f_state.borrow().clone();
-                    for (ep_data, row_widget, watched) in rows.iter() {
+                    for (ep_data, row_widget, watched) in rows.borrow().iter() {
                         let show = episode_filter_matches(
                             &q,
                             ep_data.season,
@@ -999,6 +1001,48 @@ impl App {
             }
 
             root.append(&list_box);
+
+            // Uzun serilerde yüzlerce satırı tek karede kurmak yerine
+            // 25'lik parçalar halinde idle'da ekle. Filtre her partiden
+            // sonra yeniden uygulanır.
+            let eps_schedule = eps.to_vec();
+            let rows_schedule = rows_rc.clone();
+            let list_schedule = list_box.clone();
+            let list_idle = list_box.downgrade();
+            let build_schedule = build_row.clone();
+            let apply_schedule = apply_ep_filter.clone();
+            // İlk 25 satırı hemen kur (sayfa boş görünmesin); kalanı idle'da.
+            let mut next_row = eps_schedule.len().min(25);
+            for e in &eps_schedule[..next_row] {
+                let (ep, row, watched) = build_schedule(e);
+                list_schedule.append(&row);
+                rows_schedule.borrow_mut().push((ep, row, watched));
+            }
+            apply_schedule();
+            glib::idle_add_local(move || {
+                if next_row >= eps_schedule.len() {
+                    return glib::ControlFlow::Break;
+                }
+                let Some(list_now) = list_idle.upgrade() else {
+                    return glib::ControlFlow::Break;
+                };
+                if list_now.root().is_none() {
+                    return glib::ControlFlow::Break;
+                }
+                let end = (next_row + 25).min(eps_schedule.len());
+                for e in &eps_schedule[next_row..end] {
+                    let (ep, row, watched) = build_schedule(e);
+                    list_now.append(&row);
+                    rows_schedule.borrow_mut().push((ep, row, watched));
+                }
+                next_row = end;
+                apply_schedule();
+                if next_row < eps_schedule.len() {
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            });
 
             // Detay sekmeleri: Bölümler (canlı) + Ekip/Benzerler/İncelemeler
             // (auth-gated; hesap desteği gelene kadar giriş-isteyen yer tutucu).
