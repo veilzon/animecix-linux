@@ -9,7 +9,7 @@ license=('MIT')
 depends=('gtk4' 'libadwaita' 'mpv' 'aria2')
 makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('fad08b2f3b4902db10d3b9fca43566437498d1792513d519c324c13132eaeaab')
+sha256sums=('06eacfc4efaf891f36c1ca0fb06483b8681cbcafd774fd56edbe0121c628eb1e')
 options=('!lto' '!debug')
 
 build() {
