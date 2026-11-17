@@ -403,6 +403,7 @@ Uygulama, ağ gecikmesini azaltmak için aşağıdaki teknikleri kullanır:
 - **Bağlantı havuzu & keep-alive**: Boşta bağlantılar 20 sn boyunca sıcak tutulur
   (`pool_idle_timeout`), böylece her istekte tekrar TLS el sıkışması yapılmaz.
 - **Paralel kapak indirme**: 3 worker ile kapaklar eşzamanlı çekilir (diskte 7 gün önbellekli).
+- **Kapak belleği**: LRU 16 MB / 128 doku; gizli sayfalarda doku referansları bırakılır.
 - **API önbelleği**: Süresi dolmuş kayıt yenilenirken ağ hatası olursa son önbellek
   kullanılır; çevrimdışıyken eski veri gösterilebilir.
 
