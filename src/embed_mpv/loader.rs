@@ -27,7 +27,9 @@ pub fn candidates(appdir: Option<&str>, override_path: Option<&str>) -> Vec<Stri
         out.push(base.join("libmpv.so.2").to_string_lossy().into_owned());
         out.push(base.join("libmpv.so.1").to_string_lossy().into_owned());
     }
+    out.push("/app/lib64/libmpv.so.2".to_string());
     out.push("/app/lib/libmpv.so.2".to_string());
+    out.push("/app/lib/x86_64-linux-gnu/libmpv.so.2".to_string());
     out.push("libmpv.so.2".to_string());
     out.push("libmpv.so.1".to_string());
     out.push("libmpv.so".to_string());
@@ -101,7 +103,9 @@ mod tests {
         let c = candidates(Some("/tmp/AppDir"), Some("/opt/mpv/libmpv.so.2"));
         assert_eq!(c[0], "/opt/mpv/libmpv.so.2");
         assert_eq!(c[1], "/tmp/AppDir/usr/lib/libmpv.so.2");
-        assert_eq!(c[3], "/app/lib/libmpv.so.2");
+        assert_eq!(c[3], "/app/lib64/libmpv.so.2");
+        assert_eq!(c[4], "/app/lib/libmpv.so.2");
+        assert_eq!(c[5], "/app/lib/x86_64-linux-gnu/libmpv.so.2");
         assert!(c.ends_with(&[
             "libmpv.so.2".into(),
             "libmpv.so.1".into(),
