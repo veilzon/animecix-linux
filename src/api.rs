@@ -570,17 +570,54 @@ pub(crate) fn decode_html_entities(input: &str) -> String {
 }
 
 /// `name` alanı bölüm numarasından başka bir şey taşımıyorsa `true`.
+/// API diğer sezonlarda "2. Sezon 1. Bölüm", "S02E01" gibi biçimler
+/// gönderebiliyor; bunlar da gerçek ad sayılmamalı.
 pub(crate) fn is_generic_episode_name(name: &str, episode: u64) -> bool {
     let n = name.trim().to_lowercase();
     let ep = episode.to_string();
-    [
+    let exact = [
         format!("{ep}. Bölüm"),
         format!("Bölüm {ep}"),
         format!("{ep}. Episode"),
         format!("Episode {ep}"),
-    ]
-    .iter()
-    .any(|p| n == p.to_lowercase())
+    ];
+    if exact.iter().any(|p| n == p.to_lowercase()) {
+        return true;
+    }
+
+    let mut marker = false;
+    for word in n.split(|c: char| !c.is_alphanumeric()) {
+        if word.is_empty() || word.chars().all(|c| c.is_ascii_digit()) {
+            continue;
+        }
+        if is_episode_code(word) {
+            marker = true;
+            continue;
+        }
+        match word {
+            "bölüm" | "bolum" | "episode" | "ep" | "sezon" | "season" => marker = true,
+            _ => return false,
+        }
+    }
+    marker
+}
+
+/// "S02E01", "s2e1", "2x01" gibi kompakt sezon/bölüm kodları.
+fn is_episode_code(word: &str) -> bool {
+    let w = word.strip_prefix('s').unwrap_or(word);
+    if let Some((season, ep)) = w.split_once('e') {
+        return !season.is_empty()
+            && !ep.is_empty()
+            && season.bytes().all(|c| c.is_ascii_digit())
+            && ep.bytes().all(|c| c.is_ascii_digit());
+    }
+    if let Some((season, ep)) = w.split_once('x') {
+        return !season.is_empty()
+            && !ep.is_empty()
+            && season.bytes().all(|c| c.is_ascii_digit())
+            && ep.bytes().all(|c| c.is_ascii_digit());
+    }
+    false
 }
 
 /// Bölüm için gösterilecek adı seçer: gerçek `name` > `description` > numara.
@@ -4105,6 +4142,36 @@ mod tests {
         assert_eq!(
             episode_display_name("Episode 2", "Gerçek Ad", 2),
             "Gerçek Ad"
+        );
+    }
+
+    #[test]
+    fn season_prefixed_generic_name_uses_description() {
+        assert_eq!(
+            episode_display_name(
+                "2. Sezon 1. Bölüm",
+                "Bekleyen, Bekleyen Demektir, Kesin Değildir",
+                1
+            ),
+            "Bekleyen, Bekleyen Demektir, Kesin Değildir"
+        );
+        assert_eq!(
+            episode_display_name("Sezon 2 Bölüm 3", "Gerçek Ad", 3),
+            "Gerçek Ad"
+        );
+        assert_eq!(episode_display_name("S02E04", "Gerçek Ad", 4), "Gerçek Ad");
+        assert_eq!(episode_display_name("2x04", "Gerçek Ad", 4), "Gerçek Ad");
+    }
+
+    #[test]
+    fn season_prefixed_generic_check_keeps_real_titles() {
+        assert_eq!(
+            episode_display_name("2. Sezon 1. Bölüm: Yeni Başlangıç", "özet", 1),
+            "2. Sezon 1. Bölüm: Yeni Başlangıç"
+        );
+        assert_eq!(
+            episode_display_name("Sezon Finali", "özet", 12),
+            "Sezon Finali"
         );
     }
 
