@@ -2,7 +2,9 @@
 //! tuş/OSD komutları ve plan durumu. Ham soket ilkelleri player.rs'te,
 //! API ayrıştırma api.rs'te kalır; burası ikisini mpv'ye bağlar.
 
-use crate::api::{CachedSkip, SkipMeta, SkipTimes};
+use std::time::{Duration, Instant};
+
+use crate::api::{CachedSkip, FansubInfo, SkipMeta, SkipTimes, TauVideoMeta};
 use crate::music;
 
 /// Tek bölümün atlama durumu: süreler + şarkılar + kaynak etiketi.
@@ -65,6 +67,31 @@ pub fn fetch_plan_for_embeds(
     fallback_embeds: &[String],
     manual_secret: &str,
 ) -> Option<SkipPlan> {
+    fetch_plan_for_embeds_with_sources(
+        client,
+        title_id,
+        season,
+        episode,
+        fast_embeds,
+        fallback_embeds,
+        &[],
+        manual_secret,
+    )
+}
+
+/// Seçili kaynağın planı yoksa diğer fansub kaynaklarının aynalarını da
+/// dener. Her kaynakta yalnız tau embed'leri taranır; plan DB'si zaten
+/// tau meta üzerinden çözülür.
+pub fn fetch_plan_for_embeds_with_sources(
+    client: &crate::api::Client,
+    title_id: u64,
+    season: u64,
+    episode: u64,
+    fast_embeds: &[String],
+    fallback_embeds: &[String],
+    other_sources: &[FansubInfo],
+    manual_secret: &str,
+) -> Option<SkipPlan> {
     // Sır sırası: el girdisi → kasa → gömülü varsayılan (hiçbiri yoksa
     // imzasız denenir; intro/outro herkese açık, müzik imzada gelebilir).
     let (secret, src) = match client.resolve_skip_secret(manual_secret) {
@@ -74,30 +101,91 @@ pub fn fetch_plan_for_embeds(
             (None, "imzasiz")
         }
     };
-    let mut meta = client
-        .tau_meta_from_embeds(fast_embeds)
-        .or_else(|| client.tau_meta_from_embeds(fallback_embeds));
-    if meta.is_none() {
-        match client.resolve_best_video_full(title_id, episode, season) {
-            Ok((_, m)) => meta = m,
-            Err(e) => eprintln!("[SKIP-RESMI] best-video: {e}"),
+    let mut seen: Vec<String> = Vec::new();
+
+    // 1) Seçili kalite/fansub aynaları (sırayla yedek aynalar dahil).
+    for embeds in [fast_embeds, fallback_embeds] {
+        if let Some(meta) = client.tau_meta_from_embeds(embeds) {
+            if let Some(plan) = plan_from_meta(client, &meta, secret.as_deref(), src, &mut seen) {
+                return Some(plan);
+            }
         }
     }
-    let m = meta?;
-    let slug = m.most_sought_slug();
+
+    // 2) Sunucunun "en iyi video" seçimi.
+    match client.resolve_best_video_full(title_id, episode, season) {
+        Ok((_, Some(meta))) => {
+            if let Some(plan) =
+                plan_from_meta(client, &meta, secret.as_deref(), "en iyi video", &mut seen)
+            {
+                return Some(plan);
+            }
+        }
+        Ok((_, None)) => eprintln!("[SKIP-RESMI] best-video meta döndürmedi"),
+        Err(e) => eprintln!("[SKIP-RESMI] best-video: {e}"),
+    }
+
+    // 3) Diğer fansub kaynakları. Ağ isteği birikmesin diye kaynak ve
+    // ayna sayısı sınırlı; toplam tarama 8 saniyede kesilir.
+    let deadline = Instant::now() + Duration::from_secs(8);
+    for fs in other_sources {
+        if Instant::now() >= deadline {
+            eprintln!("[SKIP-RESMI] diğer kaynak taraması zaman aşımı");
+            break;
+        }
+        let tau_urls: Vec<String> = fs
+            .mirrors
+            .iter()
+            .map(|m| m.url.clone())
+            .filter(|u| crate::api::parse_tau_embed(u).is_some())
+            .take(3)
+            .collect();
+        if tau_urls.is_empty() {
+            continue;
+        }
+        eprintln!("[SKIP-RESMI] diğer kaynak deneniyor: {}", fs.name);
+        if let Some(meta) = client.tau_meta_from_embeds(&tau_urls) {
+            if let Some(plan) =
+                plan_from_meta(client, &meta, secret.as_deref(), &fs.name, &mut seen)
+            {
+                eprintln!("[SKIP-RESMI] plan diğer kaynaktan alındı: {}", fs.name);
+                return Some(plan);
+            }
+        }
+    }
+    None
+}
+
+/// Tek bir tau meta için önbellek + resmi most-sought çözümü. Aynı slug
+/// birden çok kaynakta geçerse ikinci kez ağ isteği atılmaz.
+fn plan_from_meta(
+    client: &crate::api::Client,
+    meta: &TauVideoMeta,
+    secret: Option<&str>,
+    label: &str,
+    seen: &mut Vec<String>,
+) -> Option<SkipPlan> {
+    let slug = meta.most_sought_slug();
+    if seen.iter().any(|s| s == &slug) {
+        return None;
+    }
+    seen.push(slug.clone());
     if let Some(cs) = client.skip_cache_get(&slug) {
         eprintln!("[SKIP-RESMI] (önbellek) slug={slug}");
-        return Some(SkipPlan::from_cached(&cs, "kasa (önbellek)"));
+        let plan = SkipPlan::from_cached(&cs, "kasa (önbellek)");
+        if !plan.is_empty() {
+            return Some(plan);
+        }
     }
-    match client.fetch_official_skip(&m, secret.as_deref()) {
+    match client.fetch_official_skip(meta, secret) {
         Ok(sm) => {
-            let plan = SkipPlan::from_official(&sm, src);
+            let plan = SkipPlan::from_official(&sm, label);
             if plan.is_empty() {
-                eprintln!("[SKIP-RESMI] (kaynak={src}) slug={slug} resmi boş (DB'de yok)");
+                eprintln!("[SKIP-RESMI] (kaynak={label}) slug={slug} resmi boş (DB'de yok)");
                 return None;
             }
             eprintln!(
-                "[SKIP-RESMI] (kaynak={src}) slug={slug} op={:?}-{:?} ed={:?}-{:?}",
+                "[SKIP-RESMI] (kaynak={label}) slug={slug} op={:?}-{:?} ed={:?}-{:?}",
                 plan.times.op_start, plan.times.op_end, plan.times.ed_start, plan.times.ed_end
             );
             client.skip_cache_put(&slug, &plan.cached());

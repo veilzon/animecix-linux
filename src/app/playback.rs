@@ -300,13 +300,14 @@ impl App {
                         // arka planda çeker; açılışı bekletmez.
                         None
                     } else {
-                        crate::skip::fetch_plan_for_embeds(
+                        crate::skip::fetch_plan_for_embeds_with_sources(
                             &client,
                             title_c.id,
                             ep_c.season,
                             ep_c.episode,
                             &fast_emb,
                             &fb,
+                            queue.get(1..).unwrap_or(&[]),
                             &manual_c,
                         )
                     };

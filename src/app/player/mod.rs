@@ -119,6 +119,7 @@ struct PlayerState {
     center: gtk::Revealer,
     play_btn: gtk::Button,
     seek: gtk::Scale,
+    spinner: gtk::Spinner,
     cur_lbl: gtk::Label,
     dur_lbl: gtk::Label,
     vol_btn: gtk::Button,
@@ -410,6 +411,7 @@ pub fn build(
         center: controls.center_rev.clone(),
         play_btn: controls.play_btn.clone(),
         seek: controls.seek.clone(),
+        spinner: controls.spinner.clone(),
         cur_lbl: controls.cur_lbl.clone(),
         dur_lbl: controls.dur_lbl.clone(),
         vol_btn: controls.vol_btn.clone(),
@@ -1710,6 +1712,15 @@ fn load_resolved_source(state: &Rc<RefCell<PlayerState>>, url: &str) {
     }
 }
 
+/// Önbellek sonunun süreye oranı (0..1). `demuxer-cache-time` oynatma
+/// konumunun gerisinde kalırsa çubuk geriye sarmasın diye `pos` taban alınır.
+fn buffer_percent(pos: f64, cache_time: f64, dur: f64) -> f64 {
+    if !(dur > 0.0) || !cache_time.is_finite() {
+        return 0.0;
+    }
+    (cache_time.max(pos).max(0.0) / dur).clamp(0.0, 1.0)
+}
+
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
     // Skip planı video başladıktan sonra arka planda geldi mi?
     {
@@ -1842,7 +1853,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         return;
     }
 
-    let (pos, dur, paused, idle, eof, volume, muted, first_load);
+    let (pos, dur, paused, idle, eof, volume, muted, first_load, paused_for_cache, cache_time);
     {
         let s = match st.try_borrow() {
             Ok(s) => s,
@@ -1857,6 +1868,8 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         volume = p.volume();
         muted = p.muted();
         first_load = dur > 0.0 && !s.media_loaded;
+        paused_for_cache = p.paused_for_cache();
+        cache_time = p.cache_time();
     }
 
     let mut advance_now = false;
@@ -1888,10 +1901,11 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 let (tid, season, episode) = (s.title.id, s.ep.season, s.ep.episode);
                 let fast = s.fast_embeds.clone();
                 let fallback = s.fallback_embeds.clone();
+                let others: Vec<api::FansubInfo> = s.fansubs.iter().skip(1).cloned().collect();
                 std::thread::spawn(move || {
                     let manual = client.load_settings().official_skip_secret;
-                    let plan = crate::skip::fetch_plan_for_embeds(
-                        &client, tid, season, episode, &fast, &fallback, &manual,
+                    let plan = crate::skip::fetch_plan_for_embeds_with_sources(
+                        &client, tid, season, episode, &fast, &fallback, &others, &manual,
                     );
                     let _ = tx.send(plan);
                 });
@@ -1900,6 +1914,20 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             }
             eprintln!("[EMBED] video hazır");
         }
+
+        // Önbellek doluluk katmanı: oynatılan beyaz kısmın ötesinde,
+        // mpv'nin indirdiği bölüm yarı saydam görünür.
+        s.seek
+            .set_fill_level(buffer_percent(pos, cache_time, dur) * 1000.0);
+        // İlk açılış ve ağ kaynaklı takılmalarda dönengeç görünür.
+        let spinner_on =
+            (!s.media_loaded && !s.terminal_sent) || (s.media_loaded && paused_for_cache);
+        s.spinner.set_spinning(spinner_on);
+        s.spinner.set_visible(spinner_on);
+        if spinner_on && s.chrome_hidden {
+            show_chrome_locked(&mut s);
+        }
+
         let ready_now = s.media_loaded && !s.ready_sent;
         if ready_now {
             s.ready_sent = true;
@@ -2095,7 +2123,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         let pop_open =
             s.speed_pop.is_visible() || s.quality_pop.is_visible() || s.ctx_pop.is_visible();
         let idle_time = s.last_motion.elapsed();
-        let keep_chrome = paused || s.status.is_visible();
+        let keep_chrome = paused || s.status.is_visible() || s.spinner.is_visible();
         if !smoke_hold && !keep_chrome && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open
         {
             s.cursor_hidden = true;
@@ -2249,6 +2277,15 @@ mod tests {
         assert_eq!(fmt_time(65.0), "1:05");
         assert_eq!(fmt_time(3661.0), "1:01:01");
         assert_eq!(fmt_time(-1.0), "--:--");
+    }
+
+    #[test]
+    fn buffer_percent_is_clamped_and_never_behind_playhead() {
+        assert!((buffer_percent(50.0, 75.0, 100.0) - 0.75).abs() < 1e-9);
+        assert!((buffer_percent(50.0, 40.0, 100.0) - 0.5).abs() < 1e-9);
+        assert_eq!(buffer_percent(0.0, 0.0, 0.0), 0.0);
+        assert_eq!(buffer_percent(0.0, f64::NAN, 100.0), 0.0);
+        assert_eq!(buffer_percent(0.0, 500.0, 100.0), 1.0);
     }
 
     #[test]

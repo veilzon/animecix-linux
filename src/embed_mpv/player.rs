@@ -200,6 +200,17 @@ impl MpvEmbed {
         get_double(&self.api, self.ctx, "duration")
     }
 
+    /// Demuxer önbelleğinin sonundaki zaman damgası (saniye). Ağ akışında
+    /// videonun ne kadarının hazır olduğunu göstermek için kullanılır.
+    pub fn cache_time(&self) -> f64 {
+        get_double(&self.api, self.ctx, "demuxer-cache-time")
+    }
+
+    /// mpv önbellek beklediği için oynatmayı duraklattı mı?
+    pub fn paused_for_cache(&self) -> bool {
+        get_flag(&self.api, self.ctx, "paused-for-cache", false)
+    }
+
     pub fn volume(&self) -> f64 {
         get_double(&self.api, self.ctx, "volume")
     }

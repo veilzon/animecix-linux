@@ -38,7 +38,10 @@ pub fn player_css() -> String {
         margin: 0; padding: 0;
     }
     .embed-controls scale highlight { background: #FFFFFF; min-height: 4px; border-radius: 2px; }
-    .embed-controls scale fill { background: rgba(255,255,255,0.5); min-height: 4px; }
+    .embed-controls scale fill {
+        background: rgba(255,255,255,0.42); min-height: 4px; border-radius: 2px;
+    }
+    .player-spinner { color: rgba(255,255,255,0.92); }
     .embed-controls scale slider {
         background: #FFFFFF; border: none; min-width: 14px; min-height: 14px;
         border-radius: 7px; margin: -5px 0; opacity: 1;
@@ -247,6 +250,7 @@ pub struct ControlBar {
     pub back10_btn: gtk::Button,
     pub fwd10_btn: gtk::Button,
     pub seek: gtk::Scale,
+    pub spinner: gtk::Spinner,
     pub cur_lbl: gtk::Label,
     pub dur_lbl: gtk::Label,
     pub vol_btn: gtk::Button,
@@ -305,6 +309,11 @@ pub fn build_control_bar(
     seek.add_css_class("pc-seek");
     seek.set_hexpand(true);
     seek.set_draw_value(false);
+    // Oynatılan kısmın ötesinde mpv'nin önbelleğe aldığı bölüm `fill`
+    // katmanıyla görünür. Sürükleme yine tüm çubukta serbest kalmalı.
+    seek.set_show_fill_level(true);
+    seek.set_restrict_to_fill_level(false);
+    seek.set_fill_level(0.0);
     seek.set_tooltip_text(Some("İlerleme çubuğu — sürükle"));
     let cur_lbl = gtk::Label::new(Some("--:--"));
     let dur_lbl = gtk::Label::new(Some("--:--"));
@@ -374,7 +383,22 @@ pub fn build_control_bar(
     seek_row.set_child(Some(&seek));
     seek_row.add_overlay(&status);
 
+    // Yükleme dönengeci için sabit yuva: görünüp kaybolurken zaman
+    // etiketini sağa sola zıplatmasın.
+    let spinner_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+    spinner_slot.set_size_request(18, 18);
+    spinner_slot.set_valign(gtk::Align::Center);
+    let spinner = gtk::Spinner::new();
+    spinner.add_css_class("player-spinner");
+    spinner.set_size_request(16, 16);
+    spinner.set_valign(gtk::Align::Center);
+    spinner.set_halign(gtk::Align::Center);
+    spinner.set_tooltip_text(Some("Video yükleniyor…"));
+    spinner.set_visible(false);
+    spinner_slot.append(&spinner);
+
     let bottom_part = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+    bottom_part.append(&spinner_slot);
     bottom_part.append(&cur_lbl);
     let time_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     time_spacer.set_hexpand(true);
@@ -421,6 +445,7 @@ pub fn build_control_bar(
         back10_btn,
         fwd10_btn,
         seek,
+        spinner,
         cur_lbl,
         dur_lbl,
         vol_btn,
