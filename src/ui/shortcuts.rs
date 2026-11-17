@@ -76,7 +76,7 @@ fn ui_xml(search: &str, quick_search: &str, quick_enabled: bool) -> String {
             item("s", "İntroyu atla"),
             item("e", "Outroyu atla"),
             item("m", "Sesi aç / kapat"),
-            item("M", "Çalan şarkıyı tarayıcıda aç"),
+            item("<shift>m", "Çalan şarkıyı tarayıcıda aç"),
         ],
     ));
     format!(
@@ -139,6 +139,7 @@ mod tests {
         assert!(with.contains("10 sn ileri"));
         assert!(with.contains("Sesi artır"));
         assert!(with.contains("Sesi azalt"));
+        assert!(with.contains("&lt;shift&gt;m"));
 
         let without = ui_xml("Ctrl+S", "/", false);
         assert!(

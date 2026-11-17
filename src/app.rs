@@ -2024,12 +2024,17 @@ impl App {
         }
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         let cw = self.card_w.get();
-        let (head, wire) =
-            build_shelf_pager("▶ Devam Et", items.len(), self.grid_cols.get() as usize);
+        let head = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let shelf_title = gtk::Label::new(Some("▶ Devam Et"));
+        shelf_title.add_css_class("shelf-title");
+        shelf_title.set_xalign(0.0);
+        shelf_title.set_margin_start(4);
+        head.append(&shelf_title);
         root.append(&head);
 
         let flow = gtk::FlowBox::new();
-        flow.set_halign(gtk::Align::Center);
+        flow.set_halign(gtk::Align::Fill);
+        flow.set_hexpand(true);
         flow.set_valign(gtk::Align::Start);
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_activate_on_single_click(false);
@@ -2037,13 +2042,11 @@ impl App {
         flow.set_row_spacing(20);
         flow.set_max_children_per_line(self.grid_cols.get());
         flow.set_min_children_per_line(1);
-        // Normal kart şablonu + SxxExx alt yazısı: hover-play overlay
-        // kalktı (tıklama zaten detaya gider), geometri raflarla eşit.
+        // Devam rafı sayfalanmaz: en fazla 6 kart, genişliğe göre sarar.
         for (t, ep) in items {
             let sub = components::episode_label_compact(ep.season, ep.episode, &ep.name);
             flow.append(&self.create_title_card_sub(&t, cw, Some(sub)));
         }
-        wire(&flow);
         root.append(&flow);
         Some(root)
     }
@@ -2130,7 +2133,8 @@ impl App {
             let (head, wire) = build_shelf_pager(&cat.name, cat.items.len(), per_home);
             main_box.append(&head);
             let flow = gtk::FlowBox::new();
-            flow.set_halign(gtk::Align::Center);
+            flow.set_halign(gtk::Align::Fill);
+            flow.set_hexpand(true);
             flow.set_valign(gtk::Align::Start);
             flow.set_selection_mode(gtk::SelectionMode::None);
             flow.set_activate_on_single_click(false);
