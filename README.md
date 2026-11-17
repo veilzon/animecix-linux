@@ -159,8 +159,8 @@ sudo dnf upgrade animecix
 sudo dnf install ./animecix-1.4.0-1.fc40.x86_64.rpm
 ```
 
-Fedora 40+ içindir. `mpv`, `mpv-libs`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
-kurulur. Güncellemeler uygulama içinden yapılır; doğrudan `.rpm` dosyasıyla kurulumda
+Fedora 40+ içindir. `mpv`, `mpv-libs`, `libglvnd-gles`, `gtk4`, `libadwaita` ve `aria2`
+bağımlılıkları dnf tarafından kurulur. Güncellemeler uygulama içinden yapılır; doğrudan `.rpm` dosyasıyla kurulumda
 `sudo dnf upgrade` bu dosyayı güncellemez. COPR kurulumunda `sudo dnf upgrade animecix`
 kullanılabilir.
 

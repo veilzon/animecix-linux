@@ -219,7 +219,7 @@ jobs:
           Release: 1%{?dist}
           Summary: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
           License: MIT
-          Requires: mpv, mpv-libs, gtk4, libadwaita, aria2
+          Requires: mpv, mpv-libs, libglvnd-gles, gtk4, libadwaita, aria2
           %define debug_package %{nil}
           %description
           Uygulama içi libmpv oynatıcı ve sistem GTK ile çalışan ince paket.
