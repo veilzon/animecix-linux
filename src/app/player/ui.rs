@@ -1,4 +1,8 @@
+use gtk::cairo;
 use gtk::prelude::*;
+use std::cell::Cell;
+use std::f64::consts::TAU;
+use std::rc::Rc;
 
 /// Lowell oynatıcı düzeninin tema uyumlu CSS'i.
 pub fn player_css() -> String {
@@ -22,6 +26,7 @@ pub fn player_css() -> String {
     .player-play-btn:hover { background: rgba(0,0,0,0.64); background-color: rgba(0,0,0,0.64); transform: scale(1.06); opacity: 1; }
     .player-play-btn:active { background: rgba(0,0,0,0.72); transform: scale(0.95); }
     .player-play-btn image { color: #FFFFFF; -gtk-icon-size: 32px; }
+    .player-play-btn.player-loading image { opacity: 0; }
     .player-center-btn {
         color: #FFFFFF; min-width: 46px; min-height: 46px; padding: 0;
         border: 1px solid rgba(255,255,255,0.10);
@@ -250,7 +255,7 @@ pub struct ControlBar {
     pub back10_btn: gtk::Button,
     pub fwd10_btn: gtk::Button,
     pub seek: gtk::Scale,
-    pub spinner: gtk::Spinner,
+    pub spinner: BusySpinner,
     pub cur_lbl: gtk::Label,
     pub dur_lbl: gtk::Label,
     pub vol_btn: gtk::Button,
@@ -276,6 +281,85 @@ fn vol_icon(volume: f64, muted: bool) -> &'static str {
     }
 }
 
+/// Oynatma butonunun üstünde anında çizilen dönengeç. GtkSpinner'ın
+/// tema/animasyon gecikmesine takılmadan ilk karede görünür.
+#[derive(Clone)]
+pub struct BusySpinner {
+    area: gtk::DrawingArea,
+    active: Rc<Cell<bool>>,
+}
+
+impl BusySpinner {
+    pub fn new() -> Self {
+        let area = gtk::DrawingArea::new();
+        area.set_size_request(30, 30);
+        area.set_content_width(30);
+        area.set_content_height(30);
+        area.set_halign(gtk::Align::Center);
+        area.set_valign(gtk::Align::Center);
+        area.set_can_target(false);
+        area.set_visible(false);
+        let active = Rc::new(Cell::new(false));
+        let angle = Rc::new(Cell::new(0.0));
+        area.set_draw_func({
+            let active = active.clone();
+            let angle = angle.clone();
+            move |_, cr, w, h| {
+                if active.get() {
+                    draw_busy(cr, w, h, angle.get());
+                }
+            }
+        });
+        area.add_tick_callback({
+            let active = active.clone();
+            move |area, clock| {
+                if active.get() {
+                    angle.set((clock.frame_time() as f64 * 1e-6 * 6.0) % TAU);
+                    area.queue_draw();
+                }
+                gtk::glib::ControlFlow::Continue
+            }
+        });
+        Self { area, active }
+    }
+
+    pub fn widget(&self) -> &gtk::DrawingArea {
+        &self.area
+    }
+
+    pub fn set_active(&self, on: bool) {
+        self.active.set(on);
+        self.area.set_visible(on);
+        if on {
+            self.area.queue_draw();
+        }
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.active.get()
+    }
+}
+
+fn draw_busy(cr: &cairo::Context, w: i32, h: i32, angle: f64) {
+    let size = w.min(h) as f64;
+    if size <= 2.0 {
+        return;
+    }
+    let lw = (size * 0.11).max(2.0);
+    let r = (size - lw) / 2.0 - 1.0;
+    let cx = w as f64 / 2.0;
+    let cy = h as f64 / 2.0;
+    cr.set_line_width(lw);
+    cr.set_line_cap(cairo::LineCap::Round);
+    // Soluk halka + dönen beyaz yay.
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.22);
+    cr.arc(cx, cy, r, 0.0, TAU);
+    let _ = cr.stroke();
+    cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
+    cr.arc(cx, cy, r, angle, angle + TAU * 0.32);
+    let _ = cr.stroke();
+}
+
 pub fn build_control_bar(
     stage: &gtk::Overlay,
     start_volume: f64,
@@ -294,6 +378,14 @@ pub fn build_control_bar(
     play_btn.set_tooltip_text(Some("Oynat / Duraklat (Boşluk)"));
     play_btn.add_css_class("flat");
     play_btn.add_css_class("player-play-btn");
+
+    // Yükleme dönengeci oynatma butonunun tam üstünde durur; butonun
+    // ikonu dönerken CSS ile gizlenir, tıklama alanı aynı kalır.
+    let play_overlay = gtk::Overlay::new();
+    play_overlay.set_child(Some(&play_btn));
+    let spinner = BusySpinner::new();
+    spinner.widget().set_tooltip_text(Some("Video yükleniyor…"));
+    play_overlay.add_overlay(spinner.widget());
 
     let back10_btn = gtk::Button::with_label("−10");
     back10_btn.set_tooltip_text(Some("10 sn geri (←)"));
@@ -383,22 +475,7 @@ pub fn build_control_bar(
     seek_row.set_child(Some(&seek));
     seek_row.add_overlay(&status);
 
-    // Yükleme dönengeci için sabit yuva: görünüp kaybolurken zaman
-    // etiketini sağa sola zıplatmasın.
-    let spinner_slot = gtk::Box::new(gtk::Orientation::Horizontal, 0);
-    spinner_slot.set_size_request(18, 18);
-    spinner_slot.set_valign(gtk::Align::Center);
-    let spinner = gtk::Spinner::new();
-    spinner.add_css_class("player-spinner");
-    spinner.set_size_request(16, 16);
-    spinner.set_valign(gtk::Align::Center);
-    spinner.set_halign(gtk::Align::Center);
-    spinner.set_tooltip_text(Some("Video yükleniyor…"));
-    spinner.set_visible(false);
-    spinner_slot.append(&spinner);
-
     let bottom_part = gtk::Box::new(gtk::Orientation::Horizontal, 8);
-    bottom_part.append(&spinner_slot);
     bottom_part.append(&cur_lbl);
     let time_spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     time_spacer.set_hexpand(true);
@@ -415,7 +492,7 @@ pub fn build_control_bar(
     center_box.set_halign(gtk::Align::Center);
     center_box.set_valign(gtk::Align::Center);
     center_box.append(&back10_btn);
-    center_box.append(&play_btn);
+    center_box.append(&play_overlay);
     center_box.append(&fwd10_btn);
     let center_rev = gtk::Revealer::builder()
         .transition_type(gtk::RevealerTransitionType::Crossfade)

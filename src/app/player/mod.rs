@@ -119,7 +119,7 @@ struct PlayerState {
     center: gtk::Revealer,
     play_btn: gtk::Button,
     seek: gtk::Scale,
-    spinner: gtk::Spinner,
+    spinner: ui::BusySpinner,
     cur_lbl: gtk::Label,
     dur_lbl: gtk::Label,
     vol_btn: gtk::Button,
@@ -139,6 +139,7 @@ struct PlayerState {
     we_fullscreened: bool,
     click_pending: Rc<Cell<bool>>,
     seeking: Rc<Cell<bool>>,
+    seek_spinner: Option<(Instant, f64)>,
     vol_changing: Rc<Cell<bool>>,
     progress_key: String,
     progress: Rc<RefCell<HashMap<String, (f64, f64)>>>,
@@ -431,6 +432,7 @@ pub fn build(
         we_fullscreened: false,
         click_pending: click_pending.clone(),
         seeking: seeking.clone(),
+        seek_spinner: None,
         vol_changing: vol_changing.clone(),
         progress_key,
         progress: host_progress,
@@ -587,9 +589,14 @@ pub fn build(
         let weak = Rc::downgrade(&state);
         controls.back10_btn.connect_clicked(move |_| {
             if let Some(st) = weak.upgrade() {
-                let s = st.borrow();
-                if let Some(p) = s.player.as_ref() {
-                    p.seek_rel(-10.0);
+                if let Ok(mut s) = st.try_borrow_mut() {
+                    let target = {
+                        let Some(p) = s.player.as_ref() else { return };
+                        let target = (p.pos() - 10.0).max(0.0);
+                        p.seek_rel(-10.0);
+                        target
+                    };
+                    mark_seek_feedback(&mut s, target);
                 }
             }
         });
@@ -598,9 +605,14 @@ pub fn build(
         let weak = Rc::downgrade(&state);
         controls.fwd10_btn.connect_clicked(move |_| {
             if let Some(st) = weak.upgrade() {
-                let s = st.borrow();
-                if let Some(p) = s.player.as_ref() {
-                    p.seek_rel(10.0);
+                if let Ok(mut s) = st.try_borrow_mut() {
+                    let target = {
+                        let Some(p) = s.player.as_ref() else { return };
+                        let target = p.pos() + 10.0;
+                        p.seek_rel(10.0);
+                        target
+                    };
+                    mark_seek_feedback(&mut s, target);
                 }
             }
         });
@@ -611,11 +623,18 @@ pub fn build(
         controls.seek.connect_change_value(move |_, _, v| {
             seeking.set(true);
             if let Some(st) = weak.upgrade() {
-                let s = st.borrow();
-                if let Some(p) = s.player.as_ref() {
-                    let d = p.dur();
-                    if d > 0.0 {
-                        p.seek_abs(d * v / 1000.0);
+                if let Ok(mut s) = st.try_borrow_mut() {
+                    let target = s
+                        .player
+                        .as_ref()
+                        .map(|p| p.dur())
+                        .filter(|d| *d > 0.0)
+                        .map(|d| d * v / 1000.0);
+                    if let Some(target) = target {
+                        if let Some(p) = s.player.as_ref() {
+                            p.seek_abs(target);
+                        }
+                        mark_seek_feedback(&mut s, target);
                     }
                 }
             }
@@ -817,16 +836,30 @@ pub fn build(
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::Right => {
-                    let s = st.borrow();
-                    if let Some(p) = s.player.as_ref() {
-                        p.seek_rel(10.0);
+                    if let Ok(mut s) = st.try_borrow_mut() {
+                        let target = {
+                            let Some(p) = s.player.as_ref() else {
+                                return glib::Propagation::Stop;
+                            };
+                            let target = p.pos() + 10.0;
+                            p.seek_rel(10.0);
+                            target
+                        };
+                        mark_seek_feedback(&mut s, target);
                     }
                     glib::Propagation::Stop
                 }
                 gtk::gdk::Key::Left => {
-                    let s = st.borrow();
-                    if let Some(p) = s.player.as_ref() {
-                        p.seek_rel(-10.0);
+                    if let Ok(mut s) = st.try_borrow_mut() {
+                        let target = {
+                            let Some(p) = s.player.as_ref() else {
+                                return glib::Propagation::Stop;
+                            };
+                            let target = (p.pos() - 10.0).max(0.0);
+                            p.seek_rel(-10.0);
+                            target
+                        };
+                        mark_seek_feedback(&mut s, target);
                     }
                     glib::Propagation::Stop
                 }
@@ -964,8 +997,10 @@ fn start_source(state: &Rc<RefCell<PlayerState>>, resume: Option<f64>) {
         };
         s.source_loaded = true;
         s.media_loaded = false;
+        s.seek_spinner = None;
         s.load_started = Instant::now();
         s.resume = resume;
+        set_spinner(&mut s, true);
         src
     };
 
@@ -1723,6 +1758,40 @@ fn buffer_percent(pos: f64, cache_time: f64, dur: f64) -> f64 {
     (cache_time.max(pos).max(0.0) / dur).clamp(0.0, 1.0)
 }
 
+/// Oynatma butonundaki dönengeci aç/kapat. İkon dönerken gizlenir.
+fn set_spinner(s: &mut PlayerState, on: bool) {
+    s.spinner.set_active(on);
+    if on {
+        s.play_btn.add_css_class("player-loading");
+        if s.chrome_hidden {
+            show_chrome_locked(s);
+        }
+    } else {
+        s.play_btn.remove_css_class("player-loading");
+    }
+}
+
+/// Kullanıcı seek'i sonrası oynatma butonunda kısa süre dönengeç göster.
+fn mark_seek_feedback(s: &mut PlayerState, target: f64) {
+    s.seek_spinner = Some((Instant::now(), target.max(0.0)));
+    set_spinner(s, true);
+}
+
+/// Seek hedefine ulaşıldı mı? En az 900 ms görünür kalır ki gözden kaçmasın.
+fn seek_feedback_pending(s: &mut PlayerState, pos: f64) -> bool {
+    let Some((at, target)) = s.seek_spinner else {
+        return false;
+    };
+    let elapsed = at.elapsed();
+    let reached = (pos - target).abs() <= 1.5;
+    if (reached || elapsed >= Duration::from_secs(4)) && elapsed >= Duration::from_millis(900) {
+        s.seek_spinner = None;
+        false
+    } else {
+        true
+    }
+}
+
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
     // Skip planı video başladıktan sonra arka planda geldi mi?
     {
@@ -1921,14 +1990,13 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         // mpv'nin indirdiği bölüm yarı saydam görünür.
         s.seek
             .set_fill_level(buffer_percent(pos, cache_time, dur) * 1000.0);
-        // İlk açılış ve ağ kaynaklı takılmalarda dönengeç görünür.
-        let spinner_on =
-            (!s.media_loaded && !s.terminal_sent) || (s.media_loaded && paused_for_cache);
-        s.spinner.set_spinning(spinner_on);
-        s.spinner.set_visible(spinner_on);
-        if spinner_on && s.chrome_hidden {
-            show_chrome_locked(&mut s);
-        }
+        // İlk açılış, ağ kaynaklı takılmalar ve kullanıcı seek'i sırasında
+        // dönengeç oynatma butonunun üstünde görünür.
+        let seek_pending = seek_feedback_pending(&mut s, pos);
+        let spinner_on = (!s.media_loaded && !s.terminal_sent)
+            || (s.media_loaded && paused_for_cache)
+            || seek_pending;
+        set_spinner(&mut s, spinner_on);
 
         let ready_now = s.media_loaded && !s.ready_sent;
         if ready_now {
@@ -2125,7 +2193,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         let pop_open =
             s.speed_pop.is_visible() || s.quality_pop.is_visible() || s.ctx_pop.is_visible();
         let idle_time = s.last_motion.elapsed();
-        let keep_chrome = paused || s.status.is_visible() || s.spinner.is_visible();
+        let keep_chrome = paused || s.status.is_visible() || s.spinner.is_active();
         if !smoke_hold && !keep_chrome && !s.cursor_hidden && idle_time.as_secs() >= 1 && !pop_open
         {
             s.cursor_hidden = true;
