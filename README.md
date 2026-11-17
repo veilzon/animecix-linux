@@ -292,6 +292,38 @@ Sürüm hazırlığı:
 
    `.github/workflows/package.yml` yayınlanan release’e deb/rpm paketlerini ekler.
 
+### Ortam değişkenleri
+
+Geliştirme, test ve hata ayıklama için kullanılabilecek değişkenler:
+
+| Değişken | Etki |
+|---|---|
+| `ANIMECIX_CHANGELOG_PREVIEW=1` | Sürüm notlarını, daha önce görülmüş olsa bile açılışta zorla gösterir. |
+| `ANIMECIX_PLAYER_NO_SHADE=1` | Gömülü oynatıcıdaki üst/alt karartma katmanını kapatır. |
+| `ANIMECIX_BENCH=1` | API ve kapak isteklerinin sürelerini `[bench]` satırlarıyla stderr’e yazar. |
+| `ANIMECIX_LIBMPV_PATH=/yol/libmpv.so.2` | Belirli bir libmpv dosyasını kullanmaya zorlar. |
+| `ANIMECIX_STATE_DIR=/tmp/animecix-test` | `state.json` için farklı bir dizin kullanır (temiz profil testi). |
+| `ANIMECIX_SMOKE_HOLD=5` | `--player-smoke` testinde videoyu 5 sn tutar; normal oynatıcıda kontrollerin otomatik gizlenmesini engeller. |
+| `ANIMECIX_SMOKE_THEME=bordo` | `--player-smoke` teması: `koyu`, `bordo`, `orman`, `lacivert`, `mor`. |
+| `ANIMECIX_FAKE_INSTALL_KIND=deb` | Yalnız debug derlemede güncelleme akışındaki kurulum türünü taklit eder (`deb`, `rpm` veya `appimage`). |
+| `ANIMECIX_FAKE_PKG_VERSION=1.2.3` | Yalnız debug derlemede kurulu paket sürümünü taklit eder. |
+| `ANIMECIX_VAULT_URL=...` | İntro/outro kasa adresini geçici olarak değiştirir. |
+| `ANIMECIX_VAULT_KEY` | Derleme anında gömülen 64 hex’lik kasa anahtarı; çalışma anında okunmaz. |
+| `ANIMECIX_MINIMAL_ARIA2=1` | AppImage’ı yalnız HTTP/HTTPS destekli minimal aria2 ile üretir. |
+| `MINIMAL_LIBMPV_DIR=/yol` | Paketlenecek minimal libmpv dizinini seçer. |
+
+Örnekler:
+
+```bash
+ANIMECIX_CHANGELOG_PREVIEW=1 ./AnimeciX-x86_64.AppImage
+ANIMECIX_LIBMPV_PATH=/tmp/libmpv.so.2 ./target/release/animecix
+ANIMECIX_STATE_DIR=/tmp/animecix-test ./target/release/animecix
+```
+
+`build_appimage.sh` ayrıca `VERSION_BUMP=none|patch|minor|major`, `GITHUB_TOKEN` ve
+`GITHUB_REPO` değişkenlerini kullanır. GTK/Mesa tarafında `GDK_BACKEND`,
+`GSK_RENDERER`, `LIBGL_ALWAYS_SOFTWARE` ve `GTK_A11Y` standart olarak kullanılabilir.
+
 ---
 
 ## Klavye Kısayolları
