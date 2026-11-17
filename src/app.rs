@@ -221,10 +221,6 @@ pub struct App {
     pub sidebar_box: gtk::Box,
     /// Spotlight yüksekliği (pencereye göre; Lowell hero_h_for_window).
     pub hero_h: Rc<Cell<i32>>,
-    /// Kapak tıklamasının main_stack koordinatı; detay geçişinde daire merkezi.
-    pub reveal_origin: Rc<Cell<Option<(f64, f64)>>>,
-    /// Aynı anda tek circular-reveal animasyonu.
-    pub reveal_active: Rc<Cell<bool>>,
     /// Ev görünümü kirlendi mi? (view-cache geçersizleme bayrağı)
     pub home_dirty: Rc<Cell<bool>>,
     /// Raf kart boyu + sütun sayısı (kuantum responsive).
@@ -675,8 +671,6 @@ impl App {
             sidebar_collapsed: Rc::new(Cell::new(false)),
             sidebar_box,
             hero_h: Rc::new(Cell::new(initial_metrics.hero_h)),
-            reveal_origin: Rc::new(Cell::new(None)),
-            reveal_active: Rc::new(Cell::new(false)),
             home_dirty: Rc::new(Cell::new(true)),
             card_w: Rc::new(Cell::new(initial_metrics.card_w)),
             grid_cols: Rc::new(Cell::new(initial_metrics.grid_cols)),
@@ -982,8 +976,6 @@ impl App {
             home_dirty: self.home_dirty.clone(),
             card_w: self.card_w.clone(),
             grid_cols: self.grid_cols.clone(),
-            reveal_origin: self.reveal_origin.clone(),
-            reveal_active: self.reveal_active.clone(),
             news: self.news.clone(),
             news_page: self.news_page.clone(),
             calendar: self.calendar.clone(),
@@ -1335,56 +1327,7 @@ impl App {
         });
     }
 
-    fn try_circular_reveal(
-        &self,
-        page_name: &str,
-        new_widget: &impl IsA<gtk::Widget>,
-        origin: (f64, f64),
-    ) -> bool {
-        if self.reveal_active.get() {
-            return false;
-        }
-        if !gtk::Settings::default()
-            .map(|s| s.is_gtk_enable_animations())
-            .unwrap_or(true)
-        {
-            return false;
-        }
-        let Some(old) = self.stack.visible_child() else {
-            return false;
-        };
-        let old_name = self.stack.visible_child_name();
-        if old_name.as_deref() == Some(page_name) || old_name.as_deref() == Some("player") {
-            return false;
-        }
-
-        self.stack.remove(&old);
-        let new = new_widget.clone().upcast::<gtk::Widget>();
-        let reveal = crate::ui::circular_reveal::CircularReveal::new(old, new);
-        self.stack.add_named(&reveal, Some("circular-reveal"));
-        self.stack.set_visible_child_name("circular-reveal");
-        self.reveal_active.set(true);
-
-        let stack = self.stack.clone();
-        let reveal_c = reveal.clone();
-        let active = self.reveal_active.clone();
-        let page = page_name.to_string();
-        reveal.start(origin.0, origin.1, move || {
-            stack.remove(&reveal_c);
-            if let Some(new) = reveal_c.take_new() {
-                new.set_sensitive(true);
-                stack.add_named(&new, Some(&page));
-                stack.set_visible_child_name(&page);
-            }
-            active.set(false);
-        });
-        true
-    }
-
     pub fn show_page(&self, page: &Page) {
-        if self.reveal_active.get() {
-            return;
-        }
         use gtk::prelude::IsA;
         let is_player = matches!(page, Page::Player { .. });
         let is_welcome = matches!(page, Page::Welcome);
@@ -1579,17 +1522,11 @@ impl App {
             Page::Episodes { title, eps } | Page::Movie { title, eps } => {
                 self.title_label.set_text(&title.name);
                 let page_name = format!("eps_{}", title.id);
-                let new_widget = self.build_episodes_view(title, eps);
-                if let Some((x, y)) = self.reveal_origin.take() {
-                    if self.try_circular_reveal(&page_name, &new_widget, (x, y)) {
-                        return;
-                    }
-                }
                 switch(
                     &self.stack,
                     &page_name,
                     gtk::StackTransitionType::SlideLeft,
-                    new_widget,
+                    self.build_episodes_view(title, eps),
                 );
             }
             Page::Player { title, .. } => {
@@ -1863,15 +1800,7 @@ impl App {
         let gesture = gtk::GestureClick::new();
         let this = self.clone_ref();
         let title_clone = t.clone();
-        let card_c = box_.clone();
-        gesture.connect_pressed(move |_, _, x, y| {
-            if let Some(p) =
-                card_c.compute_point(&this.stack, &gtk::graphene::Point::new(x as f32, y as f32))
-            {
-                this.reveal_origin.set(Some((p.x() as f64, p.y() as f64)));
-            } else {
-                this.reveal_origin.set(None);
-            }
+        gesture.connect_pressed(move |_, _, _, _| {
             this.open_episodes(title_clone.clone());
         });
         box_.add_controller(gesture);
@@ -2104,16 +2033,15 @@ impl App {
         root.append(&head);
 
         let flow = gtk::FlowBox::new();
-        flow.set_halign(gtk::Align::Fill);
-        flow.set_hexpand(true);
+        flow.set_halign(gtk::Align::Center);
         flow.set_valign(gtk::Align::Start);
         flow.set_selection_mode(gtk::SelectionMode::None);
         flow.set_activate_on_single_click(false);
-        flow.set_column_spacing(16);
+        flow.set_column_spacing(12);
         flow.set_row_spacing(20);
         flow.set_max_children_per_line(self.grid_cols.get());
         flow.set_min_children_per_line(1);
-        // Devam rafı sayfalanmaz: en fazla 6 kart, genişliğe göre sarar.
+        // Devam rafı sayfalanmaz: kartlar ortalanır, arada küçük boşluk kalır.
         for (t, ep) in items {
             let sub = components::episode_label_compact(ep.season, ep.episode, &ep.name);
             flow.append(&self.create_title_card_sub(&t, cw, Some(sub)));
@@ -2204,12 +2132,11 @@ impl App {
             let (head, wire) = build_shelf_pager(&cat.name, cat.items.len(), per_home);
             main_box.append(&head);
             let flow = gtk::FlowBox::new();
-            flow.set_halign(gtk::Align::Fill);
-            flow.set_hexpand(true);
+            flow.set_halign(gtk::Align::Center);
             flow.set_valign(gtk::Align::Start);
             flow.set_selection_mode(gtk::SelectionMode::None);
             flow.set_activate_on_single_click(false);
-            flow.set_column_spacing(16);
+            flow.set_column_spacing(12);
             flow.set_row_spacing(20);
             flow.set_max_children_per_line(self.grid_cols.get());
             flow.set_min_children_per_line(1);
