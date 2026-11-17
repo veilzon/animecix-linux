@@ -473,7 +473,9 @@ pub fn build(
                     drop(s);
                     if should_load {
                         let st_load = st.clone();
+                        eprintln!("[EMBED-DBG] yükleme idle planlandı");
                         glib::idle_add_local_once(move || {
+                            eprintln!("[EMBED-DBG] yükleme idle çalıştı");
                             start_source(&st_load, resume);
                         });
                     }
@@ -947,6 +949,7 @@ pub fn build(
 }
 
 fn start_source(state: &Rc<RefCell<PlayerState>>, resume: Option<f64>) {
+    eprintln!("[EMBED-DBG] start_source girdi");
     let src = {
         let mut s = match state.try_borrow_mut() {
             Ok(s) => s,
@@ -964,6 +967,7 @@ fn start_source(state: &Rc<RefCell<PlayerState>>, resume: Option<f64>) {
         s.media_loaded = false;
         s.load_started = Instant::now();
         s.resume = resume;
+        eprintln!("[EMBED-DBG] kaynak seçildi");
         src
     };
 
@@ -979,6 +983,7 @@ fn start_source(state: &Rc<RefCell<PlayerState>>, resume: Option<f64>) {
             };
             match result {
                 Ok(()) => {
+                    eprintln!("[EMBED-DBG] load_url tamam");
                     let s = state.borrow();
                     s.status.set_text("yükleniyor…");
                     s.status.set_visible(true);
@@ -1840,6 +1845,12 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             } else {
                 s.patience_secs.min(8)
             };
+            if !s.media_loaded && s.load_started.elapsed().as_secs() >= 2 {
+                eprintln!(
+                    "[EMBED-DBG] bekliyor: source_loaded={} resolving={} limit={}",
+                    s.source_loaded, s.resolving, limit
+                );
+            }
             s.source_loaded
                 && !s.media_loaded
                 && !s.resolving
