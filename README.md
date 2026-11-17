@@ -189,7 +189,8 @@ sudo pacman -Syu
 sudo pacman -S animecix
 ```
 
-Güncelleme: `sudo pacman -Syu`.
+Güncelleme: Uygulama içi denetim pacman deposunu kullanır; terminalden
+`sudo pacman -Syu` de kullanılabilir.
 
 Arch paketi `mpv` bağımlılığını kullanır; bu paket gömülü oynatıcı için libmpv'yi de
 sağlar. Arch paket derlemeleri ayrı CI deposunda test edilir.
