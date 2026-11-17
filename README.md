@@ -124,7 +124,7 @@ libmpv ve bağımlılıkları paketin içinde gelir. Minimal aria2 de paket içi
 sudo apt install ./animecix_1.4.0_amd64.deb
 ```
 
-Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
+Debian 12+ ve Ubuntu 24.04+ içindir. `mpv`, `libmpv2`, `libgtk-4-1`, `libadwaita-1-0` ve `aria2`
 bağımlılıkları apt tarafından kurulur. Güncellemeler uygulama içinden yapılır;
 doğrudan `.deb` dosyasıyla kurulumda `sudo apt upgrade` bu dosyayı güncellemez.
 
@@ -159,7 +159,7 @@ sudo dnf upgrade animecix
 sudo dnf install ./animecix-1.4.0-1.fc40.x86_64.rpm
 ```
 
-Fedora 40+ içindir. `mpv`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
+Fedora 40+ içindir. `mpv`, `mpv-libs`, `gtk4`, `libadwaita` ve `aria2` bağımlılıkları dnf tarafından
 kurulur. Güncellemeler uygulama içinden yapılır; doğrudan `.rpm` dosyasıyla kurulumda
 `sudo dnf upgrade` bu dosyayı güncellemez. COPR kurulumunda `sudo dnf upgrade animecix`
 kullanılabilir.

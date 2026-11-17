@@ -21,6 +21,7 @@ BuildRequires:  zlib-devel
 BuildRequires:  git
 
 Requires:       mpv
+Requires:       mpv-libs
 Requires:       gtk4
 Requires:       libadwaita
 Requires:       aria2

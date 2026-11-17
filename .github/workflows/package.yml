@@ -146,7 +146,7 @@ jobs:
           Version: $VER
           Architecture: amd64
           Maintainer: veilzon
-          Depends: mpv, libgtk-4-1, libadwaita-1-0, aria2
+          Depends: mpv, libmpv2, libgtk-4-1, libadwaita-1-0, aria2
           Section: video
           Priority: optional
           Description: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
@@ -217,7 +217,7 @@ jobs:
           Release: 1%{?dist}
           Summary: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
           License: MIT
-          Requires: mpv, gtk4, libadwaita, aria2
+          Requires: mpv, mpv-libs, gtk4, libadwaita, aria2
           %define debug_package %{nil}
           %description
           Uygulama içi libmpv oynatıcı ve sistem GTK ile çalışan ince paket.
