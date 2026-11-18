@@ -111,6 +111,7 @@ jobs:
           # Paket %post/postinst temizliği: eski sürümlerin bayat kullanıcı
           # kopyasını siler (tek kaynak: packaging/post-install-cleanup.sh).
           cp packaging/post-install-cleanup.sh girdi/temizlik.sh
+          cp packaging/post-remove-cleanup.sh girdi/kaldir-temizlik.sh
           find girdi -type f | sort
 
       - name: Girdiyi paylaş
@@ -160,6 +161,8 @@ jobs:
           # kullanıcı kısayolunu temizleyen postinst (güncelleme döngüsü fix'i).
           cp girdi/temizlik.sh "$P/DEBIAN/postinst"
           chmod 755 "$P/DEBIAN/postinst"
+          cp girdi/kaldir-temizlik.sh "$P/DEBIAN/postrm"
+          chmod 755 "$P/DEBIAN/postrm"
           dpkg-deb --build "$P" "animecix_${VER}_amd64.deb"
           ls -la animecix_${VER}_amd64.deb
 
@@ -241,6 +244,9 @@ jobs:
           # %post: eski sürümlerin bayat ~/.local/bin kopyasını temizle.
           printf '%%post\n' >> "$PWD/rpmbuild/SPECS/animecix.spec"
           cat girdi/temizlik.sh >> "$PWD/rpmbuild/SPECS/animecix.spec"
+          # %postun: kaldırmada yönetilen autostart girdisini temizle (yükseltmede koru).
+          printf '%%postun\n' >> "$PWD/rpmbuild/SPECS/animecix.spec"
+          cat girdi/kaldir-temizlik.sh >> "$PWD/rpmbuild/SPECS/animecix.spec"
           rpmbuild -bb --define "_topdir $PWD/rpmbuild" --buildroot "$PWD/iskele" "$PWD/rpmbuild/SPECS/animecix.spec"
           find "$PWD/rpmbuild/RPMS" -name '*.rpm' -exec cp {} ./ \;
           ls -la ./animecix-*.x86_64.rpm

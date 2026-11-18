@@ -105,10 +105,19 @@ remove_file() {
     fi
 }
 
+remove_managed_autostart() {
+    local f="$1"
+    [ -f "$f" ] || return 0
+    if grep -q '^X-AnimeciX-Managed=1' "$f" 2>/dev/null; then
+        remove_file "$f"
+    fi
+}
+
 uninstall_user() {
     [ -n "${HOME:-}" ] || die "HOME yok"
     remove_file "$HOME/.local/bin/animecix"
     remove_file "$HOME/.local/bin/AnimeciX-x86_64.AppImage"
+    remove_managed_autostart "$HOME/.config/autostart/tr.com.animecix.calendar.desktop"
     for n in tr.com.animecix.desktop animecix.desktop; do
         remove_file "$HOME/.local/share/applications/$n"
     done
@@ -133,6 +142,7 @@ cleanup_home() {
     local home="$1"
     [ -n "$home" ] || return 0
     local apps="$home/.local/share/applications"
+    remove_managed_autostart "$home/.config/autostart/tr.com.animecix.calendar.desktop"
     for n in tr.com.animecix.desktop animecix.desktop; do
         local f="$apps/$n"
         [ -f "$f" ] || continue

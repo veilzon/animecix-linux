@@ -11,6 +11,7 @@ makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf'
 source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz")
 sha256sums=('06eacfc4efaf891f36c1ca0fb06483b8681cbcafd774fd56edbe0121c628eb1e')
 options=('!lto' '!debug')
+install=animecix.install
 
 build() {
   cd "animecix-linux-$pkgver"

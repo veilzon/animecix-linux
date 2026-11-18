@@ -1,0 +1,15 @@
+post_remove() {
+  # Yalnız AnimeciX'in yazdığı yönetilen autostart girdisini sil.
+  for d in /home/*; do
+    [ -d "$d" ] || continue
+    f="$d/.config/autostart/tr.com.animecix.calendar.desktop"
+    if [ -f "$f" ] && grep -q '^X-AnimeciX-Managed=1' "$f" 2>/dev/null; then
+      rm -f "$f" 2>/dev/null || true
+    fi
+  done
+}
+
+post_upgrade() {
+  # Yükseltmede girdi korunur; yalnız eski ikiliye işaret eden kopyayı temizle.
+  :
+}

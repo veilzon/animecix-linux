@@ -4092,6 +4092,12 @@ impl Client {
                 }
             }
         }
+
+        // Yayın takibi: arka plan sürecini durdur, yönetilen autostart'ı ve
+        // takip verisini temizle.
+        crate::follow_store::stop_daemon();
+        crate::follow_store::remove_autostart();
+        let _ = std::fs::remove_dir_all(crate::follow_store::data_dir());
     }
 
     pub fn set_welcome_seen(&self, seen: bool) {
