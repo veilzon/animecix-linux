@@ -133,6 +133,77 @@ fn desktop_exec_target_for(
         .unwrap_or_else(|| format!("{home}/.local/bin/animecix"))
 }
 
+/// AppImage'i menü/autostart için kararlı konuma kopyalar.
+pub fn ensure_stable_appimage(home: &str) -> Result<(), String> {
+    let Some(ai) = std::env::var("APPIMAGE")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+    else {
+        return Ok(());
+    };
+    let stable = stable_appimage_path(home);
+    if ai == stable {
+        return Ok(());
+    }
+    std::fs::create_dir_all(format!("{home}/.local/bin")).map_err(|e| e.to_string())?;
+    std::fs::copy(&ai, &stable).map_err(|e| format!("AppImage sabit konuma kopyalanamadı: {e}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&stable, std::fs::Permissions::from_mode(0o755));
+    }
+    Ok(())
+}
+
+/// Arka plan takipçisinin autostart `Exec` satırı.
+pub fn follow_autostart_exec(home: &str) -> String {
+    follow_autostart_exec_for(&desktop_exec_target(home))
+}
+
+fn follow_autostart_exec_for(target: &str) -> String {
+    if target.ends_with(".AppImage") {
+        // AppRun bu bayrağı iç binary'ye yönlendirir.
+        format!("\"{target}\" --calendar-daemon")
+    } else if target == SYSTEM_BIN_PATH {
+        "/usr/bin/animecix-calendar --daemon".to_string()
+    } else {
+        let sibling = std::path::Path::new(target).with_file_name("animecix-calendar");
+        format!("\"{}\" --daemon", sibling.display())
+    }
+}
+
+/// Bu kurulumda hafif takipçi ikilisi var mı?
+pub fn follow_worker_available() -> bool {
+    if crate::flatpak::is_flatpak() {
+        return false;
+    }
+    let home = std::env::var("HOME").unwrap_or_default();
+    let target = desktop_exec_target(&home);
+    if target.ends_with(".AppImage") {
+        return true;
+    }
+    let worker = if target == SYSTEM_BIN_PATH {
+        std::path::PathBuf::from("/usr/bin/animecix-calendar")
+    } else {
+        std::path::Path::new(&target).with_file_name("animecix-calendar")
+    };
+    worker.is_file()
+}
+
+/// Kullanıcı ayarından autostart girdisini kurar.
+pub fn install_follow_autostart() -> Result<(), String> {
+    if crate::flatpak::is_flatpak() {
+        return Err("Flatpak'ta otomatik başlatma portal ile yönetilir.".to_string());
+    }
+    if !follow_worker_available() {
+        return Err("Bu kurulumda arka plan takipçisi yok. AnimeciX'i güncelleyin.".to_string());
+    }
+    let home = std::env::var("HOME").map_err(|_| "HOME klasörü bulunamadı")?;
+    ensure_stable_appimage(&home)?;
+    crate::follow_store::write_autostart(&follow_autostart_exec(&home))
+        .map_err(|e| format!("Autostart yazılamadı: {e}"))
+}
+
 pub fn parse_desktop_exec(path: &str) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     for line in content.lines() {
@@ -199,28 +270,13 @@ pub fn install_desktop_entry() -> Result<(), String> {
     let home = std::env::var("HOME").map_err(|_| "HOME klasörü bulunamadı".to_string())?;
 
     let exec_target = desktop_exec_target(&home);
-    if let Some(ai) = std::env::var("APPIMAGE")
+    let _ = std::fs::remove_file(format!("{home}/.local/bin/animecix"));
+    if std::env::var("APPIMAGE")
         .ok()
         .filter(|s| !s.trim().is_empty())
+        .is_some()
     {
-        let _ = std::fs::remove_file(format!("{home}/.local/bin/animecix"));
-        let stable = stable_appimage_path(&home);
-        if ai != stable {
-            std::fs::create_dir_all(format!("{home}/.local/bin")).map_err(|e| e.to_string())?;
-            std::fs::copy(&ai, &stable)
-                .map_err(|e| format!("AppImage sabit konuma kopyalanamadı: {e}"))?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&stable, std::fs::Permissions::from_mode(0o755));
-            }
-        }
-    } else {
-        // Eski sürümler ikiliyi ~/.local/bin/animecix'e kopyalıyordu; kopya
-        // güncelleme sonrası bayat kalıp "güncelleme var" uyarı döngüsü
-        // yaratıyordu. Kısayol artık sistem ikilisini gösterir; eski kopya
-        // silinir (çalışan dosyayı silmek güvenli, süreç inode'undan devam eder).
-        let _ = std::fs::remove_file(format!("{home}/.local/bin/animecix"));
+        ensure_stable_appimage(&home)?;
     }
 
     let apps_dir = format!("{home}/.local/share/applications");
@@ -381,6 +437,22 @@ mod tests {
         ));
         assert!(!appimage_integration_blocked(None, true));
         assert!(!appimage_integration_blocked(Some("  "), true));
+    }
+
+    #[test]
+    fn follow_autostart_exec_targets_worker() {
+        assert_eq!(
+            follow_autostart_exec_for("/usr/bin/animecix"),
+            "/usr/bin/animecix-calendar --daemon"
+        );
+        assert_eq!(
+            follow_autostart_exec_for("/home/u/.local/bin/AnimeciX-x86_64.AppImage"),
+            "\"/home/u/.local/bin/AnimeciX-x86_64.AppImage\" --calendar-daemon"
+        );
+        assert_eq!(
+            follow_autostart_exec_for("/x/target/debug/animecix"),
+            "\"/x/target/debug/animecix-calendar\" --daemon"
+        );
     }
 
     #[test]

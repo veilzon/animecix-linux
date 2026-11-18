@@ -85,10 +85,13 @@ jobs:
         run: |
           ls -la AnimeciX-x86_64.AppImage
           test ! "$(ldd target/release/animecix | grep 'not found' || true)"
-          MAXGLIBC=$(objdump -T target/release/animecix | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
-          echo "max glibc: $MAXGLIBC"
-          TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
-          [ "$TOP" = "GLIBC_2.36" ] || { echo "glibc baseline kaydı: $MAXGLIBC"; exit 1; }
+          test ! "$(ldd target/release/animecix-calendar | grep 'not found' || true)"
+          for bin in animecix animecix-calendar; do
+            MAXGLIBC=$(objdump -T "target/release/$bin" | grep -oE 'GLIBC_2\.[0-9]+' | sort -Vu | tail -1)
+            echo "$bin max glibc: $MAXGLIBC"
+            TOP=$(printf '%s\nGLIBC_2.36\n' "$MAXGLIBC" | sort -Vu | tail -1)
+            [ "$TOP" = "GLIBC_2.36" ] || { echo "$bin glibc baseline kaydı: $MAXGLIBC"; exit 1; }
+          done
 
       - name: AppImage libmpv smoke
         run: |
@@ -97,6 +100,9 @@ jobs:
           export APPDIR="$PWD/squashfs-root"
           test -e "$APPDIR/usr/lib/libmpv.so.2"
           ! ldd "$APPDIR/usr/lib/libmpv.so.2" | grep 'not found'
+          test -x "$APPDIR/usr/bin/animecix-calendar"
+          ! ldd "$APPDIR/usr/bin/animecix-calendar" | grep -Eq 'libgtk|libadwaita'
+          "$APPDIR/usr/bin/animecix-calendar" --check
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-libmpv
           ffmpeg -y -f lavfi -i testsrc=size=320x180:rate=24 -t 2 -pix_fmt yuv420p /tmp/animecix-smoke.mp4 >/dev/null 2>&1
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 "$APPDIR/usr/bin/animecix" --player-smoke /tmp/animecix-smoke.mp4

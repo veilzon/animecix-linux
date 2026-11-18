@@ -21,6 +21,7 @@ build() {
 package() {
   cd "animecix-linux-$pkgver"
   install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix" "$pkgdir/usr/bin/animecix"
+  install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix-calendar" "$pkgdir/usr/bin/animecix-calendar"
   install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml \
     "$pkgdir/usr/share/metainfo/io.github.veilzon.AnimeciX.metainfo.xml"
 

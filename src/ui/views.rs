@@ -993,11 +993,32 @@ impl SettingsView {
         interval_row.set_sensitive(settings.calendar_watch);
         watch_group.add(&interval_row);
 
+        let worker_ok = !flatpak && crate::desktop::follow_worker_available();
+        let auto_subtitle = if flatpak {
+            "Flatpak'ta otomatik başlatma portal desteği gerektirir"
+        } else if !worker_ok {
+            "Bu kurulumda arka plan takipçisi yok (paketi güncelleyin)"
+        } else {
+            "Hafif arka plan takipçisini oturum açılışında başlat"
+        };
+        let (auto_row, auto_sw) = crate::ui::components::switch_row(
+            "Uygulama Kapalıyken Bildir",
+            auto_subtitle,
+            settings.calendar_watch_autostart,
+        );
+        auto_row.set_sensitive(worker_ok && settings.calendar_watch);
+        watch_group.add(&auto_row);
+
         let follow_count = crate::follow_store::load_follows().items.len();
         let watch_status = adw::ActionRow::new();
-        watch_status.set_title("Takip Listesi");
-        watch_status.set_subtitle(&format!("{follow_count} yapım takipte"));
+        watch_status.set_title("Arka Plan Durumu");
+        watch_status.set_subtitle(&watch_status_text());
         watch_group.add(&watch_status);
+
+        let list_row = adw::ActionRow::new();
+        list_row.set_title("Takip Listesi");
+        list_row.set_subtitle(&format!("{follow_count} yapım takipte"));
+        watch_group.add(&list_row);
 
         let check_now = gtk::Button::with_label("Şimdi Kontrol Et");
         check_now.add_css_class("flat");
@@ -1042,6 +1063,7 @@ impl SettingsView {
             let ask_r = ask_sw.clone();
             let watch_r = watch_sw.clone();
             let wint_r = interval_row.clone();
+            let auto_r = auto_sw.clone();
             let s = s_base.clone();
             let on_save = on_save.clone();
             Rc::new(move || {
@@ -1110,6 +1132,7 @@ impl SettingsView {
                 );
                 updated.fansub_ask_each_time = ask_r.is_active();
                 updated.calendar_watch = watch_r.is_active();
+                updated.calendar_watch_autostart = auto_r.is_active();
                 updated.calendar_watch_interval = match wint_r.selected() {
                     1 => 30,
                     2 => 60,
@@ -1146,12 +1169,16 @@ impl SettingsView {
         embed_music_sw.connect_active_notify(move |_| sa_emh());
         let sa_watch = save_all.clone();
         let wint_sensitive = interval_row.clone();
+        let auto_row_c = auto_row.clone();
         watch_sw.connect_active_notify(move |sw| {
             wint_sensitive.set_sensitive(sw.is_active());
+            auto_row_c.set_sensitive(sw.is_active() && worker_ok);
             sa_watch();
         });
         let sa_wint = save_all.clone();
         interval_row.connect_selected_notify(move |_| sa_wint());
+        let sa_auto = save_all.clone();
+        auto_sw.connect_active_notify(move |_| sa_auto());
         let sa5a = save_all.clone();
         intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();
@@ -1425,6 +1452,41 @@ impl SettingsView {
         });
 
         root
+    }
+}
+
+fn fmt_epoch(epoch: u64) -> String {
+    if epoch == 0 {
+        return "—".to_string();
+    }
+    glib::DateTime::from_unix_local(epoch as i64)
+        .ok()
+        .and_then(|d| d.format("%d.%m %H:%M").ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "—".to_string())
+}
+
+/// Ayarlar > Yayın Takibi durum satırı: daemon canlı mı, son kontrol ne zaman?
+fn watch_status_text() -> String {
+    let st = crate::follow_store::load_daemon_status();
+    let running = st.running && crate::follow_store::pid_alive(st.pid);
+    if running {
+        format!(
+            "Çalışıyor (pid {}) · son kontrol {}",
+            st.pid,
+            fmt_epoch(st.last_check)
+        )
+    } else if st.last_check > 0 {
+        let err = if st.last_error.trim().is_empty() {
+            String::new()
+        } else {
+            format!(" · {}", st.last_error)
+        };
+        format!("Son kontrol: {}{err}", fmt_epoch(st.last_check))
+    } else if !crate::desktop::follow_worker_available() {
+        "Arka plan bileşeni bu kurulumda yok".to_string()
+    } else {
+        "Kapalı".to_string()
     }
 }
 

@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -56,7 +56,9 @@ jobs:
         run: cargo clippy --release --all-targets --message-format=short 2>&1 | tee /tmp/clippy.log; test ${PIPESTATUS[0]} -eq 0
 
       - name: Dead-code gate (unused code fails)
-        run: RUSTFLAGS="-D dead-code" cargo test --release --bin animecix --no-run
+        run: |
+          RUSTFLAGS="-D dead-code" cargo test --release --bin animecix --no-run
+          RUSTFLAGS="-D dead-code" cargo test --release --bin animecix-calendar --no-run
 
       - name: Unused dependencies (machete)
         run: |
@@ -71,7 +73,16 @@ jobs:
       - name: Unit + integration tests
         run: |
           xvfb-run -a cargo test --release --bin animecix -- --test-threads=1
-          cargo test --release --test refcell_guard --test next_episode
+          cargo test --release --bin animecix-calendar
+          cargo test --release --test refcell_guard --test next_episode --test follow_daemon
+
+      - name: Yayın takipçisi smoke (GTK'sız)
+        run: |
+          cargo build --release --bin animecix-calendar
+          ! ldd target/release/animecix-calendar | grep -Eq 'libgtk|libadwaita'
+          target/release/animecix-calendar --check
+          target/release/animecix-calendar --print-autostart > /tmp/animecix-calendar.desktop
+          desktop-file-validate /tmp/animecix-calendar.desktop
 
       - name: Embedded player smoke (libmpv + GLArea)
         run: |
@@ -104,7 +115,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 

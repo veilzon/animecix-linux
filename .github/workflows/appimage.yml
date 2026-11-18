@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 python3-pip file ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libfuse2 libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev meson ninja-build nasm yasm libass-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libunibreak-dev libdav1d-dev libpulse-dev libegl-dev libgl-dev libxkbcommon-dev
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 python3-pip file ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libfuse2 libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev meson ninja-build nasm yasm libass-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libunibreak-dev libdav1d-dev libpulse-dev libegl-dev libgl-dev libxkbcommon-dev desktop-file-utils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -77,6 +77,12 @@ jobs:
             test -f "$APPDIR/usr/share/icons/Adwaita/symbolic/actions/$icon.svg"
           done
           ! ldd "$APPDIR/usr/lib/libmpv.so.2" | grep 'not found'
+          test -x "$APPDIR/usr/bin/animecix-calendar"
+          ! ldd "$APPDIR/usr/bin/animecix-calendar" | grep -Eq 'libgtk|libadwaita'
+          "$APPDIR/usr/bin/animecix-calendar" --check
+          "$APPDIR/usr/bin/animecix-calendar" --print-autostart > /tmp/animecix-calendar.desktop
+          desktop-file-validate /tmp/animecix-calendar.desktop
+          HOME=$(mktemp -d) "$APPDIR/AppRun" --calendar-once --dry-run
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-shaders
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-libmpv
           ffmpeg -y -f lavfi -i testsrc=size=320x180:rate=24 -t 2 -pix_fmt yuv420p /tmp/animecix-smoke.mp4 >/dev/null 2>&1

@@ -24,12 +24,13 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 
 - **Yan menü**: Ana Sayfa, Keşfet, Favoriler, Maraton, Geçmiş, İstatistikler, Takvim, Haberler, İndirilenler, Ayarlar ve Kısayollar tek tıkla; daraltınca sadece simgeler kalır
 - **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı, sayfalanmaz) ve sayfalı raflar
-- **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
+- **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, ad/alternatif ad/bölüm aramalı ve takip edilebilir yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
 - **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
 - **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
 - **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Oynatma geri bildirimi**: Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci ve seek sırasında görsel geri bildirim; otomatik sonraki bölümle birlikte outro'yu atlama
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
+- **Yayın Takibi**: Takvimde ad/alternatif ad/bölüm araması; takip edilen yapımlar için yeni bölüm bildirimi. Uygulama açıkken uygulama içi toast, kapalıyken hafif `animecix-calendar` arka plan takipçisi (sistem bildirimi)
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
 - **Discord Rich Presence**: Discord'da izlediğin anime/film ve bölüm bilgisi görünür; varsayılan açık, Ayarlar → Discord'dan kapatılabilir veya socket yolu değiştirilebilir
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme; indirilen bölümler listede işaretlenir, sağ tıkla indirilebilir ve normal oynatmada yerel dosyadan öncelikli açılır
@@ -40,9 +41,33 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Otomatik güncelleme**: AppImage, .deb, .rpm ve Flatpak kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
-- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, masaüstü başlatıcı, veri sıfırlama
+- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, yayın takibi, masaüstü başlatıcı, veri sıfırlama
 - **Hızlı yükleme**: HTTP/2 multiplexing ve bağlantı havuzu (keep-alive);
   kapak görselleri paralel (3 worker) indirilir
+
+---
+
+## Yayın Takibi
+
+Takvim sayfasındaki arama kutusu başlığı, alternatif adları, bölüm adını ve
+`S01E07` biçimini birlikte arar. Satırdaki zil düğmesi yapımı takibe alır;
+takip edilen yapımlarda düğme onay ikonuna döner.
+
+- Uygulama açık ve pencere aktifken yeni bölüm **uygulama içi toast** ile bildirilir.
+- **Ayarlar → Yayın Takibi → Uygulama Kapalıyken Bildir** açıksa hafif
+  `animecix-calendar` takipçisi oturum açılışında başlar ve yeni bölümleri
+  masaüstü bildirimiyle (`notify-send` veya DBus) haber verir.
+- Bildirim gönderilemezse (ekran kilitli, oturum yok, bildirim servisi kapalı)
+  kayıt `pending` kalır ve sonraki kontrollerde tekrar denenir. Aynı bölüm bir
+  kez bildirilir; ilk takipte geçmiş bölümler toplu bildirilmez.
+- Takipten çıkarmak veya ana anahtarı kapatmak autostart girdisini temizler.
+  Durum ve **Şimdi Kontrol Et** aynı ayar grubundadır.
+- Flatpak'ta otomatik başlatma portal desteği gerektirdiği için kapalıdır;
+  uygulama açıkken bildirim çalışır.
+
+Takip verisi `~/.local/share/animecix/follow/` altında (`follows.json`,
+`ledger.json`) tutulur. Masaüstü otomatik başlatma girdisi yalnız sen
+açtığında yazılır: `~/.config/autostart/tr.com.animecix.calendar.desktop`.
 
 ---
 

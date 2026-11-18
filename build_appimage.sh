@@ -128,6 +128,7 @@ mkdir -p "$APPDIR/usr/share/animecix/assets"
 
 # 4. Binary ve ikon/asset'leri kopyala
 cp target/release/animecix "$APPDIR/usr/bin/animecix"
+cp target/release/animecix-calendar "$APPDIR/usr/bin/animecix-calendar"
 if [ -d "assets" ]; then
     cp -r assets/* "$APPDIR/usr/share/animecix/assets/"
 fi
@@ -325,6 +326,11 @@ export APPDIR="${HERE}"
 export XDG_DATA_DIRS="${HERE}/usr/share:${XDG_DATA_DIRS:-/usr/local/share:/usr/share}"
 # glibc malloc arena tavanı: çok thread'li ayırmalarda RAM şişmesini sınırlar
 export MALLOC_ARENA_MAX=2
+# Yayın takibi: autostart Exec'i AppImage'i gösterir; iç binary'ye yönlendir.
+case "$1" in
+  --calendar-daemon) shift; exec "${HERE}/usr/bin/animecix-calendar" --daemon "$@" ;;
+  --calendar-once)   shift; exec "${HERE}/usr/bin/animecix-calendar" --once "$@" ;;
+esac
 exec "${HERE}/usr/bin/animecix" "$@"
 EOF
 

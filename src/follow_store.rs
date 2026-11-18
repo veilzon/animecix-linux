@@ -66,6 +66,103 @@ pub fn gui_active_path() -> PathBuf {
     data_dir().join("gui-active.lock")
 }
 
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
+pub fn daemon_lock_path() -> PathBuf {
+    data_dir().join("daemon.lock")
+}
+
+/// XDG autostart girdisi (yalnız GUI yazar/siler).
+pub fn autostart_path() -> PathBuf {
+    let home = std::env::var("HOME").unwrap_or_default();
+    PathBuf::from(home).join(".config/autostart/tr.com.animecix.calendar.desktop")
+}
+
+pub fn autostart_content(exec: &str) -> String {
+    format!(
+        "[Desktop Entry]\n\
+         Type=Application\n\
+         Name=AnimeciX Yayın Takibi\n\
+         Comment=Yeni bölümleri arka planda denetler\n\
+         Exec={exec}\n\
+         Icon=tr.com.animecix\n\
+         Terminal=false\n\
+         NoDisplay=true\n\
+         X-GNOME-Autostart-enabled=true\n\
+         X-GNOME-Autostart-Delay=20\n\
+         X-AnimeciX-Managed=1\n"
+    )
+}
+
+pub fn write_autostart(exec: &str) -> std::io::Result<()> {
+    write_atomic(&autostart_path(), autostart_content(exec).as_bytes())
+}
+
+pub fn remove_autostart() {
+    let _ = std::fs::remove_file(autostart_path());
+}
+
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
+pub fn autostart_installed() -> bool {
+    autostart_path().is_file()
+}
+
+pub fn pid_alive(pid: u32) -> bool {
+    if pid == 0 {
+        return false;
+    }
+    unsafe { libc::kill(pid as libc::pid_t, 0) == 0 }
+}
+
+/// PID'in gerçekten takipçi olduğunu doğrular (PID yeniden kullanımına karşı).
+pub fn pid_is_watch_daemon(pid: u32) -> bool {
+    if !pid_alive(pid) {
+        return false;
+    }
+    let Ok(raw) = std::fs::read(format!("/proc/{pid}/cmdline")) else {
+        return false;
+    };
+    let cmd = String::from_utf8_lossy(&raw).replace('\0', " ");
+    cmd.contains("animecix-calendar") || cmd.contains("animecix_calendar")
+}
+
+/// Çalışan takipçiye nazikçe SIGTERM gönderir (yalnız doğrulanmış PID).
+pub fn stop_daemon() {
+    let st = load_daemon_status();
+    if !st.running || !pid_is_watch_daemon(st.pid) {
+        return;
+    }
+    unsafe {
+        libc::kill(st.pid as libc::pid_t, libc::SIGTERM);
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct DaemonStatus {
+    #[serde(default)]
+    pub version: String,
+    #[serde(default)]
+    pub pid: u32,
+    #[serde(default)]
+    pub started_at: u64,
+    #[serde(default)]
+    pub last_check: u64,
+    #[serde(default)]
+    pub last_success: u64,
+    #[serde(default)]
+    pub last_error: String,
+    #[serde(default)]
+    pub running: bool,
+}
+
+pub fn load_daemon_status_from(path: &Path) -> DaemonStatus {
+    read_json::<DaemonStatus>(path).0.unwrap_or_default()
+}
+
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
+pub fn save_daemon_status_to(path: &Path, st: &DaemonStatus) -> std::io::Result<()> {
+    write_json_atomic(path, st)
+}
+
 // ---------------------------------------------------------------------------
 // Takip listesi
 // ---------------------------------------------------------------------------
@@ -289,6 +386,25 @@ fn write_atomic(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
     }
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> std::io::Result<()> {
+    let body = serde_json::to_vec_pretty(value).unwrap_or_default();
+    write_atomic(path, &body)
+}
+
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
+pub fn write_text_atomic(path: &Path, text: &str) -> std::io::Result<()> {
+    write_atomic(path, text.as_bytes())
+}
+
+pub fn load_daemon_status() -> DaemonStatus {
+    load_daemon_status_from(&daemon_path())
+}
+
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
+pub fn save_daemon_status(st: &DaemonStatus) {
+    let _ = save_daemon_status_to(&daemon_path(), st);
 }
 
 fn read_json<T: DeserializeOwned>(path: &Path) -> (Option<T>, bool) {
@@ -592,6 +708,7 @@ pub fn mark_sent(ledger: &mut Ledger, claims: &[Claim], now: u64) {
     ledger.daily.sent = ledger.daily.sent.saturating_add(claims.len() as u32);
 }
 
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
 pub fn release_claim(ledger: &mut Ledger, claims: &[Claim], now: u64, err: &str) {
     for c in claims {
         if let Some(st) = ledger.titles.get_mut(&c.title_id.to_string()) {
@@ -609,6 +726,7 @@ pub fn release_claim(ledger: &mut Ledger, claims: &[Claim], now: u64, err: &str)
     }
 }
 
+#[allow(dead_code)] // animecix-calendar / testler kullanır.
 pub fn backoff_secs(attempts: u32) -> u64 {
     match attempts {
         0 | 1 => 15 * 60,
@@ -1045,5 +1163,49 @@ mod tests {
         let queued = detect_new(&f, &mut ledger, &[row(1, 1, 1, now as i64 - 60)], now);
         assert_eq!(queued, 0);
         assert!(ledger.titles.is_empty());
+    }
+
+    #[test]
+    fn autostart_entry_is_managed() {
+        let c = autostart_content("\"/home/u/AnimeciX-x86_64.AppImage\" --calendar-daemon");
+        assert!(c.contains("X-AnimeciX-Managed=1"));
+        assert!(c.contains("Exec=\"/home/u/AnimeciX-x86_64.AppImage\" --calendar-daemon"));
+        assert!(c.contains("NoDisplay=true"));
+    }
+
+    #[test]
+    fn daemon_status_roundtrip() {
+        let dir = tmp("daemon-status");
+        let path = dir.join("daemon.json");
+        let st = DaemonStatus {
+            version: "1.4.0".into(),
+            pid: 42,
+            last_check: 123,
+            running: true,
+            ..Default::default()
+        };
+        save_daemon_status_to(&path, &st).unwrap();
+        let back = load_daemon_status_from(&path);
+        assert_eq!(back.pid, 42);
+        assert_eq!(back.last_check, 123);
+        assert!(back.running);
+    }
+
+    #[test]
+    fn pid_liveness_checks_current_process() {
+        assert!(pid_alive(std::process::id()));
+        assert!(!pid_alive(0));
+    }
+
+    #[test]
+    fn pid_guard_rejects_non_daemon_command_line() {
+        assert!(!pid_is_watch_daemon(0));
+        let mut child = std::process::Command::new("sleep")
+            .arg("5")
+            .spawn()
+            .unwrap();
+        assert!(!pid_is_watch_daemon(child.id()));
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

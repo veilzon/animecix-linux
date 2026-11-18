@@ -71,6 +71,7 @@ sh %{_datadir}/animecix/post-install-cleanup.sh || :
 
 %files
 %{_bindir}/animecix
+%{_bindir}/animecix-calendar
 %{_datadir}/applications/tr.com.animecix.desktop
 %{_datadir}/icons/hicolor/*/apps/tr.com.animecix.png
 %{_datadir}/animecix

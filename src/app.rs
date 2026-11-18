@@ -2664,6 +2664,16 @@ impl App {
                 if new_s.calendar_watch && !old_s.calendar_watch {
                     this_save.follow_tick();
                 }
+                if !new_s.calendar_watch {
+                    crate::follow_store::stop_daemon();
+                }
+                if new_s.calendar_watch && new_s.calendar_watch_autostart {
+                    if let Err(e) = crate::desktop::install_follow_autostart() {
+                        eprintln!("[WATCH] autostart kurulamadı: {e}");
+                    }
+                } else {
+                    crate::follow_store::remove_autostart();
+                }
                 this_save
                     .discord_rpc
                     .configure(crate::discord_rpc::DiscordConfig {
