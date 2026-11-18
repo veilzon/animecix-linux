@@ -43,6 +43,39 @@ pub fn marathon_button(client: &Client, t: &Title) -> gtk::Button {
     b
 }
 
+pub fn follow_button(following: bool) -> gtk::Button {
+    let b = gtk::Button::from_icon_name(if following {
+        "object-select-symbolic"
+    } else {
+        "alarm-symbolic"
+    });
+    b.add_css_class("flat");
+    b.add_css_class("circular");
+    b.add_css_class("lg-icon");
+    b.set_valign(gtk::Align::Center);
+    set_follow_state(&b, following);
+    b
+}
+
+/// Takip düğmesinin görsel durumunu günceller.
+pub fn set_follow_state(b: &gtk::Button, following: bool) {
+    b.set_icon_name(if following {
+        "object-select-symbolic"
+    } else {
+        "alarm-symbolic"
+    });
+    if following {
+        b.add_css_class("suggested-action");
+    } else {
+        b.remove_css_class("suggested-action");
+    }
+    b.set_tooltip_text(Some(if following {
+        "Yayın takibinden çıkar"
+    } else {
+        "Yayın takibine ekle (yeni bölüm bildirimi)"
+    }));
+}
+
 pub fn create_status_page(title: &str, description: &str, icon_name: &str) -> adw::StatusPage {
     let sp = adw::StatusPage::new();
     sp.set_title(title);

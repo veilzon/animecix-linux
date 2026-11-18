@@ -511,6 +511,7 @@ impl SettingsView {
         settings: &Settings,
         on_save: impl Fn(Settings) + 'static,
         on_wipe: impl Fn(bool) + 'static,
+        on_check: impl Fn() + 'static,
     ) -> gtk::Box {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
         root.set_margin_top(12);
@@ -967,6 +968,47 @@ impl SettingsView {
             shortcut_row_c.set_sensitive(r.is_active());
         });
 
+        // Yayın takibi: hafif arka plan takipçisinin GUI tarafı.
+        let watch_group = adw::PreferencesGroup::new();
+        watch_group.set_title("Yayın Takibi");
+
+        let (watch_row, watch_sw) = crate::ui::components::switch_row(
+            "Yeni Bölüm Bildirimi",
+            "Takip ettiğin yapımlar için yeni bölüm çıkınca bildirim göster",
+            settings.calendar_watch,
+        );
+        watch_group.add(&watch_row);
+
+        let interval_row = adw::ComboRow::new();
+        interval_row.set_title("Kontrol Aralığı");
+        interval_row.set_subtitle("Takvim ne sıklıkla denetlensin");
+        let watch_intervals = &["15 dakika", "30 dakika", "1 saat"];
+        let watch_model = gtk::StringList::new(watch_intervals);
+        interval_row.set_model(Some(&watch_model));
+        interval_row.set_selected(match settings.calendar_watch_interval {
+            30 => 1,
+            60 => 2,
+            _ => 0,
+        });
+        interval_row.set_sensitive(settings.calendar_watch);
+        watch_group.add(&interval_row);
+
+        let follow_count = crate::follow_store::load_follows().items.len();
+        let watch_status = adw::ActionRow::new();
+        watch_status.set_title("Takip Listesi");
+        watch_status.set_subtitle(&format!("{follow_count} yapım takipte"));
+        watch_group.add(&watch_status);
+
+        let check_now = gtk::Button::with_label("Şimdi Kontrol Et");
+        check_now.add_css_class("flat");
+        check_now.add_css_class("pill");
+        check_now.set_margin_top(4);
+        check_now.set_sensitive(settings.calendar_watch);
+        let on_check = Rc::new(on_check);
+        let on_check_c = on_check.clone();
+        check_now.connect_clicked(move |_| on_check_c());
+        watch_group.add(&check_now);
+
         let s_base = settings.clone();
 
         let save_all = {
@@ -998,6 +1040,8 @@ impl SettingsView {
             let cache_fwd_spin_c = cache_fwd_spin.clone();
             let cache_back_spin_c = cache_back_spin.clone();
             let ask_r = ask_sw.clone();
+            let watch_r = watch_sw.clone();
+            let wint_r = interval_row.clone();
             let s = s_base.clone();
             let on_save = on_save.clone();
             Rc::new(move || {
@@ -1065,6 +1109,12 @@ impl SettingsView {
                     crate::api::MPV_CACHE_BACK_MAX_MB,
                 );
                 updated.fansub_ask_each_time = ask_r.is_active();
+                updated.calendar_watch = watch_r.is_active();
+                updated.calendar_watch_interval = match wint_r.selected() {
+                    1 => 30,
+                    2 => 60,
+                    _ => 15,
+                };
                 on_save(updated);
             })
         };
@@ -1094,6 +1144,14 @@ impl SettingsView {
         embed_song_sw.connect_active_notify(move |_| sa_esc());
         let sa_emh = save_all.clone();
         embed_music_sw.connect_active_notify(move |_| sa_emh());
+        let sa_watch = save_all.clone();
+        let wint_sensitive = interval_row.clone();
+        watch_sw.connect_active_notify(move |sw| {
+            wint_sensitive.set_sensitive(sw.is_active());
+            sa_watch();
+        });
+        let sa_wint = save_all.clone();
+        interval_row.connect_selected_notify(move |_| sa_wint());
         let sa5a = save_all.clone();
         intro_hint_sw.connect_active_notify(move |_| sa5a());
         let sa5b = save_all.clone();
@@ -1184,9 +1242,10 @@ impl SettingsView {
             });
         }
 
+        root.append(&watch_group);
+
         let data_group = adw::PreferencesGroup::new();
         data_group.set_title("Veri Yönetimi");
-
         let system_managed = crate::native_package::system_package_managed();
         let (uninstall_row, uninstall_sw) = crate::ui::components::switch_row(
             if flatpak {

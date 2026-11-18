@@ -204,6 +204,7 @@ impl App {
 
         let header_poster = self.covers.cover_picture(title.poster.as_deref(), 120, 180);
         let bookmark_btn = components::bookmark_button(&self.client, title);
+        let follow_btn = self.make_follow_button(title);
         let this_bm = self.clone_ref();
         let t_clone = title.clone();
         bookmark_btn.connect_clicked(move |b| {
@@ -396,6 +397,7 @@ impl App {
             &header_poster,
             &bookmark_btn,
             &marathon_btn,
+            &follow_btn,
             &dl_mode_btn,
         );
         root.append(&detail_header);

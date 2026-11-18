@@ -235,6 +235,10 @@ pub struct App {
     pub calendar: Rc<RefCell<Option<Vec<api::CalendarDay>>>>,
     /// Takvim arama sorgusu (sayfa yeniden kurulunca korunur).
     pub calendar_query: Rc<RefCell<String>>,
+    /// GUI penceresi aktifken tutulan flock (daemon çift bildirim yapmasın).
+    pub gui_active_lock: Rc<RefCell<Option<crate::follow_store::FileLock>>>,
+    /// Takip için takvimin son zorla denetim zamanı.
+    pub follow_last_fetch: Rc<Cell<u64>>,
     /// Keşfet filtresi + sonuç önbelleği: (öğeler, toplam, son_sayfa).
     pub discover_filter: Rc<RefCell<api::DiscoverFilter>>,
     pub discover: Rc<RefCell<Option<(Vec<Title>, usize, u32)>>>,
@@ -690,6 +694,8 @@ impl App {
             news_page: Rc::new(Cell::new(1)),
             calendar: Rc::new(RefCell::new(None)),
             calendar_query: Rc::new(RefCell::new(String::new())),
+            gui_active_lock: Rc::new(RefCell::new(None)),
+            follow_last_fetch: Rc::new(Cell::new(0)),
             discover_filter: Rc::new(RefCell::new(api::DiscoverFilter {
                 page: 1,
                 ..Default::default()
@@ -949,6 +955,7 @@ impl App {
             });
         }
         app_inst.apply_goto_arg();
+        app_inst.start_follow_watch();
         app_inst
     }
 
@@ -994,6 +1001,8 @@ impl App {
             news_page: self.news_page.clone(),
             calendar: self.calendar.clone(),
             calendar_query: self.calendar_query.clone(),
+            gui_active_lock: self.gui_active_lock.clone(),
+            follow_last_fetch: self.follow_last_fetch.clone(),
             discover_filter: self.discover_filter.clone(),
             discover: self.discover.clone(),
             server_history: self.server_history.clone(),
@@ -1672,6 +1681,9 @@ impl App {
             "downloads" => {
                 self.page_history.borrow_mut().push(Page::Downloads);
                 self.show_page(&Page::Downloads);
+            }
+            "calendar" => {
+                self.open_data_page(&Page::Calendar);
             }
             "settings" => {
                 self.page_history.borrow_mut().push(Page::Settings);
@@ -2637,6 +2649,7 @@ impl App {
         let settings = self.settings.borrow();
         let this_save = self.clone_ref();
         let this_wipe = self.clone_ref();
+        let this_check = self.clone_ref();
 
         let last_save: Rc<RefCell<std::time::Instant>> =
             Rc::new(RefCell::new(std::time::Instant::now()));
@@ -2648,6 +2661,9 @@ impl App {
                 *this_save.settings.borrow_mut() = new_s.clone();
                 this_save.client.save_settings(&new_s);
                 this_save.client.set_cf_clearance(&new_s.cf_clearance);
+                if new_s.calendar_watch && !old_s.calendar_watch {
+                    this_save.follow_tick();
+                }
                 this_save
                     .discord_rpc
                     .configure(crate::discord_rpc::DiscordConfig {
@@ -2734,6 +2750,14 @@ impl App {
                     this_wipe.page_history.borrow_mut().push(Page::Welcome);
                     this_wipe.show_page(&Page::Welcome);
                 }
+            },
+            move || {
+                this_check.follow_tick();
+                this_check.ops.info(
+                    "Takip kontrol edildi",
+                    "Yeni bölüm yoksa sessiz kalır.",
+                    std::time::Duration::from_secs(3),
+                );
             },
         );
 
@@ -2960,6 +2984,10 @@ impl App {
         root.set_margin_start(12);
         root.set_margin_end(12);
 
+        let followed = crate::follow_store::followed_ids();
+        let follow_btns: Rc<RefCell<HashMap<u64, Vec<gtk::Button>>>> =
+            Rc::new(RefCell::new(HashMap::new()));
+
         // Arama çubuğu + sonuç sayacı.
         let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
         let entry = gtk::SearchEntry::new();
@@ -3024,6 +3052,56 @@ impl App {
                     vb.append(&tm);
                 }
                 row.append(&vb);
+                if ce.title.title_type.as_deref() != Some("movie") {
+                    let follow_btn = components::follow_button(followed.contains(&ce.title.id));
+                    let fid = ce.title.id;
+                    let fname = ce.title.name.clone();
+                    let fposter = ce.poster.clone().or_else(|| ce.title.poster.clone());
+                    let ftype = ce.title.title_type.clone();
+                    let this_f = self.clone_ref();
+                    let all_btns = follow_btns.clone();
+                    follow_btn.connect_clicked(move |b| {
+                        let now = crate::follow_store::now_secs();
+                        let following = crate::follow_store::toggle_follow(
+                            crate::follow_store::FollowedTitle {
+                                title_id: fid,
+                                name: fname.clone(),
+                                poster: fposter.clone(),
+                                title_type: ftype.clone(),
+                                notify: true,
+                                added_at: now,
+                            },
+                        );
+                        components::set_follow_state(b, following);
+                        if let Some(list) = all_btns.borrow().get(&fid) {
+                            for other in list {
+                                components::set_follow_state(other, following);
+                            }
+                        }
+                        this_f.ops.info(
+                            if following {
+                                "Yayın takibine eklendi"
+                            } else {
+                                "Yayın takibinden çıkarıldı"
+                            },
+                            if following {
+                                "Yeni bölüm çıkınca haber vereceğim."
+                            } else {
+                                ""
+                            },
+                            std::time::Duration::from_secs(3),
+                        );
+                        if following {
+                            this_f.follow_tick();
+                        }
+                    });
+                    follow_btns
+                        .borrow_mut()
+                        .entry(fid)
+                        .or_default()
+                        .push(follow_btn.clone());
+                    row.append(&follow_btn);
+                }
                 let t = ce.title.clone();
                 let alt = ce.alt_title_ids.clone();
                 let this = self.clone_ref();
@@ -3611,6 +3689,170 @@ impl App {
     }
 
     /// Tek bölüm indirme akışı: kalite sor + çevirmenleri önden çek.
+    /// Takip düğmesi: durumu dosyadan okur, tıklamada günceller.
+    pub(crate) fn make_follow_button(&self, title: &Title) -> gtk::Button {
+        let following = crate::follow_store::is_followed(title.id);
+        let b = components::follow_button(following);
+        let tid = title.id;
+        let name = title.name.clone();
+        let poster = title.poster.clone();
+        let title_type = title.title_type.clone();
+        let this = self.clone_ref();
+        b.connect_clicked(move |btn| {
+            let now = crate::follow_store::now_secs();
+            let following =
+                crate::follow_store::toggle_follow(crate::follow_store::FollowedTitle {
+                    title_id: tid,
+                    name: name.clone(),
+                    poster: poster.clone(),
+                    title_type: title_type.clone(),
+                    notify: true,
+                    added_at: now,
+                });
+            components::set_follow_state(btn, following);
+            this.ops.info(
+                if following {
+                    "Yayın takibine eklendi"
+                } else {
+                    "Yayın takibinden çıkarıldı"
+                },
+                if following {
+                    "Yeni bölüm çıkınca haber vereceğim."
+                } else {
+                    ""
+                },
+                std::time::Duration::from_secs(3),
+            );
+            if following {
+                this.follow_tick();
+            }
+        });
+        b
+    }
+
+    /// Pencere aktifliğini izler: aktifken `gui-active.lock` tutulur, daemon
+    /// masaüstü bildirimi göndermez. Ayrıca 5 dakikalık takip turu kurulur.
+    fn start_follow_watch(self: &Rc<Self>) {
+        let weak = Rc::downgrade(self);
+        self.window
+            .connect_notify_local(Some("is-active"), move |w, _| {
+                if let Some(app) = weak.upgrade() {
+                    if w.is_active() {
+                        if app.gui_active_lock.borrow().is_none() {
+                            *app.gui_active_lock.borrow_mut() =
+                                crate::follow_store::try_gui_active_lock();
+                        }
+                        app.follow_tick();
+                    } else {
+                        *app.gui_active_lock.borrow_mut() = None;
+                    }
+                }
+            });
+        if self.window.is_active() {
+            *self.gui_active_lock.borrow_mut() = crate::follow_store::try_gui_active_lock();
+        }
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local_once(15, move || {
+            if let Some(app) = weak.upgrade() {
+                app.follow_tick();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local_once(45, move || {
+            if let Some(app) = weak.upgrade() {
+                app.follow_tick();
+            }
+        });
+        let weak = Rc::downgrade(self);
+        glib::timeout_add_seconds_local(300, move || {
+            if let Some(app) = weak.upgrade() {
+                app.follow_tick();
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    /// Takip turu: takvimi tazele, yeni bölümleri deftere işle, pencere
+    /// aktifse uygulama içi bildirim göster. Ağ hatasında sessiz geçer.
+    fn follow_tick(&self) {
+        if !self.settings.borrow().calendar_watch {
+            return;
+        }
+        let follows = crate::follow_store::load_follows();
+        if !follows.schema_ok || follows.items.is_empty() {
+            return;
+        }
+        let now = crate::follow_store::now_secs();
+        let interval = self.settings.borrow().calendar_watch_interval.max(15) * 60;
+        if self.calendar.borrow().is_none()
+            || now.saturating_sub(self.follow_last_fetch.get()) >= interval
+        {
+            self.follow_last_fetch.set(now);
+            self.fetch_calendar();
+        }
+        let Some(days) = self.calendar.borrow().clone() else {
+            return;
+        };
+        let rows: Vec<crate::follow_store::CalendarRow> = days
+            .iter()
+            .flat_map(|d| {
+                d.episodes.iter().map(|e| crate::follow_store::CalendarRow {
+                    title_id: e.title.id,
+                    alt_ids: e.alt_title_ids.clone(),
+                    title_name: e.title.name.clone(),
+                    season: e.season,
+                    episode: e.episode,
+                    episode_name: e.name.clone(),
+                    release_epoch: crate::calendar_feed::iso_to_epoch(&e.release_date).unwrap_or(0),
+                })
+            })
+            .collect();
+        if rows.is_empty() {
+            return;
+        }
+        let active = self.window.is_active();
+        let claims = crate::follow_store::with_ledger_locked(|l| {
+            crate::follow_store::detect_new(&follows, l, &rows, now);
+            if !active {
+                return Vec::new();
+            }
+            let claims = crate::follow_store::claim_due(l, now, 3);
+            crate::follow_store::mark_sent(l, &claims, now);
+            claims
+        })
+        .unwrap_or_default();
+        if !claims.is_empty() {
+            self.show_follow_toast(&claims);
+        }
+    }
+
+    fn show_follow_toast(&self, claims: &[crate::follow_store::Claim]) {
+        if claims.len() == 1 {
+            let c = &claims[0];
+            let detail = if c.episode_name.is_empty() {
+                format!("S{:02}E{:02}", c.season, c.episode)
+            } else {
+                format!("S{:02}E{:02} · {}", c.season, c.episode, c.episode_name)
+            };
+            self.ops.info(
+                &format!("Yeni bölüm: {}", c.title_name),
+                &detail,
+                std::time::Duration::from_secs(7),
+            );
+        } else {
+            let names: Vec<&str> = claims
+                .iter()
+                .take(3)
+                .map(|c| c.title_name.as_str())
+                .collect();
+            self.ops.info(
+                &format!("{} yapımda yeni bölüm", claims.len()),
+                &names.join(", "),
+                std::time::Duration::from_secs(7),
+            );
+        }
+    }
+
     pub(crate) fn download_episode(&self, title: Title, ep: Episode) {
         let this_q = self.clone_ref();
         let this = self.clone_ref();

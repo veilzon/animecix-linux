@@ -11,6 +11,7 @@ mod download;
 mod download_folders;
 mod embed_mpv;
 mod flatpak;
+mod follow_store;
 mod font;
 mod http;
 mod icons;

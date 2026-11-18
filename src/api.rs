@@ -892,6 +892,15 @@ pub struct Settings {
     /// Discord IPC soketi; boşsa otomatik bulunur.
     #[serde(default)]
     pub discord_rpc_socket: Option<String>,
+    /// Yayın takibi (yeni bölüm bildirimi) açık mı?
+    #[serde(default)]
+    pub calendar_watch: bool,
+    /// Uygulama kapalıyken hafif arka plan takipçisi çalışsın mı?
+    #[serde(default)]
+    pub calendar_watch_autostart: bool,
+    /// Arka plan kontrol aralığı (dakika): 15/30/60.
+    #[serde(default = "default_calendar_watch_interval")]
+    pub calendar_watch_interval: u64,
 }
 fn default_loading() -> String {
     "overlay".into()
@@ -913,6 +922,9 @@ fn default_upscale() -> String {
 }
 fn default_patience() -> u64 {
     20
+}
+fn default_calendar_watch_interval() -> u64 {
+    15
 }
 fn default_max_parallel() -> u64 {
     1
@@ -1373,6 +1385,9 @@ impl Default for Settings {
             seen_changelog: String::new(),
             discord_rpc_enabled: true,
             discord_rpc_socket: None,
+            calendar_watch: false,
+            calendar_watch_autostart: false,
+            calendar_watch_interval: default_calendar_watch_interval(),
         }
     }
 }
@@ -4015,6 +4030,9 @@ impl Client {
         s.ui_scale = s.ui_scale.clamp(1.0, 1.25);
         if !matches!(s.news_font_size.as_str(), "small" | "normal" | "large") {
             s.news_font_size = default_news_font();
+        }
+        if !matches!(s.calendar_watch_interval, 15 | 30 | 60) {
+            s.calendar_watch_interval = default_calendar_watch_interval();
         }
     }
 
