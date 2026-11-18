@@ -1,6 +1,6 @@
 # Maintainer: veilzon <veilzon@users.noreply.github.com>
 pkgname=animecix
-pkgver=1.4.0
+pkgver=1.4.1
 pkgrel=1
 pkgdesc="Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 arch=('x86_64')
@@ -9,7 +9,7 @@ license=('MIT')
 depends=('gtk4' 'libadwaita' 'mpv' 'aria2')
 makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf')
 source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('06eacfc4efaf891f36c1ca0fb06483b8681cbcafd774fd56edbe0121c628eb1e')
+sha256sums=('ed405eeb318370637b1e1a3937613bb299a92479764b1d1588ed28b109b61f15')
 options=('!lto' '!debug')
 install=animecix.install
 
