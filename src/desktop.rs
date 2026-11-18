@@ -204,6 +204,48 @@ pub fn install_follow_autostart() -> Result<(), String> {
         .map_err(|e| format!("Autostart yazılamadı: {e}"))
 }
 
+/// Takipçiyi hemen başlatmak için program + argümanlar.
+pub fn follow_worker_command() -> Result<(String, Vec<String>), String> {
+    if crate::flatpak::is_flatpak() {
+        return Err("Flatpak'ta otomatik başlatma portal ile yönetilir.".to_string());
+    }
+    let home = std::env::var("HOME").map_err(|_| "HOME klasörü bulunamadı")?;
+    let target = desktop_exec_target(&home);
+    if target.ends_with(".AppImage") {
+        ensure_stable_appimage(&home)?;
+    }
+    let (prog, args) = follow_worker_command_for(&target);
+    if !target.ends_with(".AppImage") && !std::path::Path::new(&prog).is_file() {
+        return Err("Bu kurulumda arka plan takipçisi yok. AnimeciX'i güncelleyin.".to_string());
+    }
+    Ok((prog, args))
+}
+
+fn follow_worker_command_for(target: &str) -> (String, Vec<String>) {
+    if target.ends_with(".AppImage") {
+        return (target.to_string(), vec!["--calendar-daemon".to_string()]);
+    }
+    let worker = if target == SYSTEM_BIN_PATH {
+        std::path::PathBuf::from("/usr/bin/animecix-calendar")
+    } else {
+        std::path::Path::new(target).with_file_name("animecix-calendar")
+    };
+    (worker.display().to_string(), vec!["--daemon".to_string()])
+}
+
+/// Autostart anahtarı açılınca takipçiyi beklemeden başlatır.
+pub fn spawn_follow_daemon() -> Result<(), String> {
+    let (prog, args) = follow_worker_command()?;
+    std::process::Command::new(prog)
+        .args(args)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("Arka plan takipçisi başlatılamadı: {e}"))
+}
+
 pub fn parse_desktop_exec(path: &str) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
     for line in content.lines() {
@@ -452,6 +494,31 @@ mod tests {
         assert_eq!(
             follow_autostart_exec_for("/x/target/debug/animecix"),
             "\"/x/target/debug/animecix-calendar\" --daemon"
+        );
+    }
+
+    #[test]
+    fn follow_worker_command_matches_autostart_target() {
+        assert_eq!(
+            follow_worker_command_for("/usr/bin/animecix"),
+            (
+                "/usr/bin/animecix-calendar".to_string(),
+                vec!["--daemon".to_string()]
+            )
+        );
+        assert_eq!(
+            follow_worker_command_for("/home/u/.local/bin/AnimeciX-x86_64.AppImage"),
+            (
+                "/home/u/.local/bin/AnimeciX-x86_64.AppImage".to_string(),
+                vec!["--calendar-daemon".to_string()]
+            )
+        );
+        assert_eq!(
+            follow_worker_command_for("/x/target/debug/animecix"),
+            (
+                "/x/target/debug/animecix-calendar".to_string(),
+                vec!["--daemon".to_string()]
+            )
         );
     }
 

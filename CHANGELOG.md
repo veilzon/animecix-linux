@@ -1,4 +1,22 @@
-# Changelog — v1.4.0 (güncel sürüm notları)
+# Changelog — v1.4.1 (güncel sürüm notları)
+
+- **Yayın takvimi araması ve kopya temizliği:** Ad, alternatif ad, bölüm adı
+  ve `S01E07` biçimiyle arama. Aynı yapımın TMDB/AniList kopyaları bölüm
+  verisi olan kayıtta birleşiyor; farklı gün veya sezon/bölüm satırları
+  korunuyor.
+- **Yapım takibi:** Takvim satırından veya başlık detayından takip. Uygulama
+  açıkken yeni bölüm uygulama içi toast ile, kapalıyken hafif
+  `animecix-calendar` arka plan takipçisiyle sistem bildirimi olarak gelir.
+- **Bildirim dayanıklılığı:** Ekran kilitli, oturum yok veya bildirim servisi
+  kapalıysa kayıt bekler ve sonraki kontrollerde tekrar denenir. Aynı bölüm
+  bir kez bildirilir; ilk takipte geçmiş bölümler toplu gönderilmez.
+- **Ayarlar → Yayın Takibi:** Ana anahtar, 15/30/60 dakika kontrol aralığı,
+  uygulama kapalıyken bildirim (autostart), canlı durum ve "Şimdi Kontrol Et".
+- **Paketleme:** deb/rpm/Arch/Flatpak/AppImage yeni takipçi ikilisini taşır.
+  Kaldırmada autostart girdisi ve çalışan takipçi temizlenir. Flatpak'ta
+  otomatik başlatma, portal desteği gelene kadar kapalıdır.
+
+# Changelog — v1.4.0
 
 - **Uygulama içi oynatıcı varsayılan oldu:** libmpv + GtkGLArea tabanlı gömülü
   oynatıcı; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn

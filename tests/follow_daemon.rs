@@ -319,7 +319,10 @@ fn corrupt_follows_is_not_overwritten() {
             &NOW.to_string(),
         ],
     );
-    assert!(out.status.success());
+    assert!(
+        !out.status.success(),
+        "bozuk takip dosyası hata döndürmeli (kullanıcı uyarılsın)"
+    );
     let kept = std::fs::read_to_string(data.join("follows.json")).ok();
     let backup = std::fs::read_dir(&data)
         .unwrap()

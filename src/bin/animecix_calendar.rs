@@ -304,6 +304,9 @@ fn run_daemon(args: &Args) {
 
 fn run_once(args: &Args, settings: &WatchSettings, now: u64) -> Result<usize, String> {
     let follows = follow_store::load_follows();
+    if follows.corrupt {
+        return Err("follows.json bozuk; yedeklendi, yapımları yeniden takibe alın".to_string());
+    }
     if !follows.schema_ok {
         return Err("follows.json şeması bu sürümden yeni".to_string());
     }
@@ -552,6 +555,18 @@ fn screen_locked() -> bool {
             ],
         ) {
             return out.contains("true");
+        }
+    }
+    // Sway/Hyprland gibi ScreenSaver servisi olmayan oturumlarda logind.
+    if let Ok(sid) = std::env::var("XDG_SESSION_ID") {
+        let sid = sid.trim();
+        if !sid.is_empty() {
+            if let Some(out) = command_out(
+                "loginctl",
+                &["show-session", sid, "-p", "LockedHint", "--value"],
+            ) {
+                return out.trim().eq_ignore_ascii_case("yes");
+            }
         }
     }
     false

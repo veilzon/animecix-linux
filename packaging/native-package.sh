@@ -113,8 +113,23 @@ remove_managed_autostart() {
     fi
 }
 
+stop_follow_daemon() {
+    for p in /proc/[0-9]*; do
+        [ -r "$p/cmdline" ] || continue
+        if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -q 'animecix-calendar'; then
+            local pid=${p#/proc/}
+            if [ "$DRY_RUN" = 1 ]; then
+                echo "kill -TERM $pid"
+            else
+                kill -TERM "$pid" 2>/dev/null || true
+            fi
+        fi
+    done
+}
+
 uninstall_user() {
     [ -n "${HOME:-}" ] || die "HOME yok"
+    stop_follow_daemon
     remove_file "$HOME/.local/bin/animecix"
     remove_file "$HOME/.local/bin/AnimeciX-x86_64.AppImage"
     remove_managed_autostart "$HOME/.config/autostart/tr.com.animecix.calendar.desktop"
@@ -164,11 +179,13 @@ cleanup_home() {
 
 cleanup_user() {
     [ -n "${HOME:-}" ] || die "HOME yok"
+    stop_follow_daemon
     cleanup_home "$HOME"
 }
 
 cleanup_all_users() {
     [ "$(id -u)" -eq 0 ] || die "cleanup --all-users root gerektirir"
+    stop_follow_daemon
     for home in /home/*; do
         [ -d "$home" ] && cleanup_home "$home"
     done

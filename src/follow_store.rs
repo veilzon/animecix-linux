@@ -199,6 +199,9 @@ pub struct FollowsFile {
     /// Yüklenen dosyanın şeması bu sürümce destekleniyor mu? (serde dışı)
     #[serde(skip)]
     pub schema_ok: bool,
+    /// Dosya okunamadı/ayrıştırılamadı ve yedeklendi mi? (serde dışı)
+    #[serde(skip)]
+    pub corrupt: bool,
 }
 
 fn default_schema() -> u32 {
@@ -213,6 +216,7 @@ impl Default for FollowsFile {
             updated_at: 0,
             items: Vec::new(),
             schema_ok: true,
+            corrupt: false,
         }
     }
 }
@@ -426,7 +430,7 @@ fn read_json<T: DeserializeOwned>(path: &Path) -> (Option<T>, bool) {
 // ---------------------------------------------------------------------------
 
 pub fn load_follows_from(path: &Path) -> FollowsFile {
-    let (parsed, _) = read_json::<FollowsFile>(path);
+    let (parsed, corrupt) = read_json::<FollowsFile>(path);
     match parsed {
         Some(mut f) => {
             if f.schema > SCHEMA {
@@ -435,9 +439,13 @@ pub fn load_follows_from(path: &Path) -> FollowsFile {
             } else {
                 f.schema_ok = true;
             }
+            f.corrupt = corrupt;
             f
         }
-        None => FollowsFile::default(),
+        None => FollowsFile {
+            corrupt,
+            ..Default::default()
+        },
     }
 }
 
@@ -1259,6 +1267,7 @@ mod tests {
         std::fs::write(&fpath, "{bozuk").unwrap();
         let f = load_follows_from(&fpath);
         assert!(f.items.is_empty());
+        assert!(f.corrupt, "bozuk dosya işareti taşınmalı");
         let backup = std::fs::read_dir(&dir)
             .unwrap()
             .filter_map(|e| e.ok())

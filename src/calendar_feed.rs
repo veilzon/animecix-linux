@@ -491,22 +491,33 @@ fn merge_group(cands: Vec<Value>, aliases: &BTreeSet<String>, group_ids: &BTreeS
         }
     }
 
-    // Saat kaynağı: önce gerçek (tahmini olmayan) kayıt, sonra en erken.
+    // Saat kaynağı: bölüm verisini taşıyan (tutulan) kayıt gerçek saatliyse
+    // onu kullan (daha kesin); değilse en erken gerçek kaydı, o da yoksa
+    // en erken kaydı kullan.
     let mut time_src: Option<usize> = None;
-    for (i, e) in cands.iter().enumerate() {
-        if !episode_is_real(e) || iso_to_epoch(e["release_date"].as_str().unwrap_or("")).is_none() {
-            continue;
-        }
-        let e_epoch = iso_to_epoch(e["release_date"].as_str().unwrap_or("")).unwrap();
-        let take = time_src
-            .map(|s| {
-                let cur = iso_to_epoch(cands[s]["release_date"].as_str().unwrap_or(""))
-                    .unwrap_or(i64::MAX);
-                e_epoch < cur
-            })
-            .unwrap_or(true);
-        if take {
-            time_src = Some(i);
+    if episode_is_real(&cands[best])
+        && iso_to_epoch(cands[best]["release_date"].as_str().unwrap_or("")).is_some()
+    {
+        time_src = Some(best);
+    }
+    if time_src.is_none() {
+        for (i, e) in cands.iter().enumerate() {
+            if !episode_is_real(e)
+                || iso_to_epoch(e["release_date"].as_str().unwrap_or("")).is_none()
+            {
+                continue;
+            }
+            let e_epoch = iso_to_epoch(e["release_date"].as_str().unwrap_or("")).unwrap();
+            let take = time_src
+                .map(|s| {
+                    let cur = iso_to_epoch(cands[s]["release_date"].as_str().unwrap_or(""))
+                        .unwrap_or(i64::MAX);
+                    e_epoch < cur
+                })
+                .unwrap_or(true);
+            if take {
+                time_src = Some(i);
+            }
         }
     }
     if time_src.is_none() {
@@ -767,8 +778,8 @@ mod tests {
         assert_eq!(eps[0]["title"]["id"], json!(13561));
         assert_eq!(
             eps[0]["release_date"],
-            json!("2026-11-16T00:00:00.000Z"),
-            "en erken gerçek saat korunmalı"
+            json!("2026-11-16T17:50:50.965Z"),
+            "bölüm verisini taşıyan kaydın gerçek saati tercih edilmeli"
         );
         assert_eq!(eps[0]["alt_title_ids"], json!([13452]));
     }

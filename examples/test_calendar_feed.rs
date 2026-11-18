@@ -1,7 +1,7 @@
 // Gerçek takvim önbelleği üzerinde dedup davranışını doğrular.
-// Kullanım: cargo run --bin test_calendar_feed [calendar.json]
+// Kullanım: cargo run --example test_calendar_feed [calendar.json]
 #[allow(dead_code)]
-#[path = "../calendar_feed.rs"]
+#[path = "../src/calendar_feed.rs"]
 mod calendar_feed;
 
 fn main() {

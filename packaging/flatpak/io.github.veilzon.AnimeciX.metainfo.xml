@@ -49,6 +49,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.1" date="2026-11-18">
+      <description>
+        <p>Yayın takvimi araması ve kopya temizliği: Ad, alternatif ad, bölüm adı ve `S01E07` biçimiyle arama. Aynı yapımın TMDB/AniList kopyaları bölüm verisi olan kayıtta birleşiyor; farklı gün veya sezon/bölüm satırları korunuyor.</p>
+      </description>
+    </release>
     <release version="1.4.0" date="2026-11-17">
       <description>
         <p>Uygulama içi oynatıcı varsayılan oldu: libmpv + GtkGLArea tabanlı gömülü oynatıcı; harici mpv Ayarlar'dan seçilebiliyor. Lowell benzeri krom, 10 sn sonra gizlenen şarkı/atla kartları ve tek ok geri düğmesi eklendi.</p>

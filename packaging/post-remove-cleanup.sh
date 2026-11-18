@@ -15,4 +15,13 @@ for d in /home/*; do
     rm -f "$f" 2>/dev/null || true
   fi
 done
+
+# Çalışan arka plan takipçisini durdur (yalnız cmdline'ında animecix-calendar).
+for p in /proc/[0-9]*; do
+  [ -r "$p/cmdline" ] || continue
+  if tr '\0' ' ' < "$p/cmdline" 2>/dev/null | grep -q 'animecix-calendar'; then
+    pid=${p#/proc/}
+    kill -TERM "$pid" 2>/dev/null || true
+  fi
+done
 exit 0

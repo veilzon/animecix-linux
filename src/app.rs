@@ -242,6 +242,8 @@ pub struct App {
     pub follow_last_fetch: Rc<Cell<u64>>,
     /// "Şimdi Kontrol Et" sonucu bekleniyor mu?
     pub follow_refresh_pending: Rc<Cell<bool>>,
+    /// Bozuk takip dosyası uyarısı bu oturumda gösterildi mi?
+    pub follow_warned: Rc<Cell<bool>>,
     /// Keşfet filtresi + sonuç önbelleği: (öğeler, toplam, son_sayfa).
     pub discover_filter: Rc<RefCell<api::DiscoverFilter>>,
     pub discover: Rc<RefCell<Option<(Vec<Title>, usize, u32)>>>,
@@ -700,6 +702,7 @@ impl App {
             gui_active_lock: Rc::new(RefCell::new(None)),
             follow_last_fetch: Rc::new(Cell::new(0)),
             follow_refresh_pending: Rc::new(Cell::new(false)),
+            follow_warned: Rc::new(Cell::new(false)),
             discover_filter: Rc::new(RefCell::new(api::DiscoverFilter {
                 page: 1,
                 ..Default::default()
@@ -1008,6 +1011,7 @@ impl App {
             gui_active_lock: self.gui_active_lock.clone(),
             follow_last_fetch: self.follow_last_fetch.clone(),
             follow_refresh_pending: self.follow_refresh_pending.clone(),
+            follow_warned: self.follow_warned.clone(),
             discover_filter: self.discover_filter.clone(),
             discover: self.discover.clone(),
             server_history: self.server_history.clone(),
@@ -2679,6 +2683,25 @@ impl App {
                 } else {
                     crate::follow_store::remove_autostart();
                 }
+                let want_auto = new_s.calendar_watch && new_s.calendar_watch_autostart;
+                let had_auto = old_s.calendar_watch && old_s.calendar_watch_autostart;
+                if want_auto && !had_auto {
+                    if let Err(e) = crate::desktop::spawn_follow_daemon() {
+                        eprintln!("[WATCH] {e}");
+                        this_save.ops.info(
+                            "Arka plan takipçisi",
+                            &e,
+                            std::time::Duration::from_secs(5),
+                        );
+                    }
+                } else if !want_auto && had_auto {
+                    crate::follow_store::stop_daemon();
+                    // Yeni başlatılan süreç daemon.json'u henüz yazmamış olabilir.
+                    glib::timeout_add_local_once(
+                        std::time::Duration::from_millis(1500),
+                        crate::follow_store::stop_daemon,
+                    );
+                }
                 this_save
                     .discord_rpc
                     .configure(crate::discord_rpc::DiscordConfig {
@@ -3831,6 +3854,13 @@ impl App {
             *self.gui_active_lock.borrow_mut() = crate::follow_store::try_gui_active_lock();
         }
         let follows = crate::follow_store::load_follows();
+        if follows.corrupt && !self.follow_warned.replace(true) {
+            self.ops.info(
+                "Takip listesi okunamadı",
+                "Bozuk follows.json yedeklendi; yapımları yeniden takibe alabilirsin.",
+                std::time::Duration::from_secs(8),
+            );
+        }
         if !follows.schema_ok || follows.items.is_empty() {
             return;
         }
@@ -4419,6 +4449,16 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.1" => Some((
+            "Yenilikler (v1.4.1)",
+            vec![
+                "Yayın takviminde ad, alternatif ad, bölüm adı ve S01E07 ile arama; kopya kayıtlar bölüm verisi olan kayıtta birleşiyor.",
+                "Yapım takibi: uygulama açıkken yeni bölüm toast'ı, kapalıyken hafif animecix-calendar arka plan takipçisiyle sistem bildirimi.",
+                "Bildirim dayanıklılığı: ekran kilitliyken veya servis yokken bekleyen bildirim sonraki kontrollerde denenir; aynı bölüm bir kez gelir.",
+                "Ayarlar → Yayın Takibi: ana anahtar, 15/30/60 dk aralık, autostart, durum ve 'Şimdi Kontrol Et'.",
+                "Paketleme: deb/rpm/Arch/Flatpak/AppImage takipçi ikilisini taşır; kaldırmada autostart ve çalışan takipçi temizlenir.",
+            ],
+        )),
         "1.4.0" => Some((
             "Yenilikler (v1.4.0)",
             vec![
