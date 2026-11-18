@@ -2,6 +2,7 @@ mod api;
 mod app;
 mod aria;
 mod auth;
+mod calendar_feed;
 mod covers;
 mod desktop;
 mod diagnostics;

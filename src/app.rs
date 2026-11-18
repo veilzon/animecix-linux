@@ -233,6 +233,8 @@ pub struct App {
     pub news_page: Rc<Cell<u32>>,
     /// Takvim önbelleği.
     pub calendar: Rc<RefCell<Option<Vec<api::CalendarDay>>>>,
+    /// Takvim arama sorgusu (sayfa yeniden kurulunca korunur).
+    pub calendar_query: Rc<RefCell<String>>,
     /// Keşfet filtresi + sonuç önbelleği: (öğeler, toplam, son_sayfa).
     pub discover_filter: Rc<RefCell<api::DiscoverFilter>>,
     pub discover: Rc<RefCell<Option<(Vec<Title>, usize, u32)>>>,
@@ -687,6 +689,7 @@ impl App {
             news: Rc::new(RefCell::new(None)),
             news_page: Rc::new(Cell::new(1)),
             calendar: Rc::new(RefCell::new(None)),
+            calendar_query: Rc::new(RefCell::new(String::new())),
             discover_filter: Rc::new(RefCell::new(api::DiscoverFilter {
                 page: 1,
                 ..Default::default()
@@ -990,6 +993,7 @@ impl App {
             news: self.news.clone(),
             news_page: self.news_page.clone(),
             calendar: self.calendar.clone(),
+            calendar_query: self.calendar_query.clone(),
             discover_filter: self.discover_filter.clone(),
             discover: self.discover.clone(),
             server_history: self.server_history.clone(),
@@ -2940,17 +2944,42 @@ impl App {
             scroll.set_child(Some(&sp));
             return scroll;
         };
+        if !days.iter().any(|d| !d.episodes.is_empty()) {
+            let sp = components::create_status_page(
+                "Takvim Boş",
+                "Bu hafta yayınlanan bölüm bulunamadı.",
+                "x-office-calendar-symbolic",
+            );
+            scroll.set_child(Some(&sp));
+            return scroll;
+        }
+
         let root = gtk::Box::new(gtk::Orientation::Vertical, 14);
         root.set_margin_top(12);
         root.set_margin_bottom(18);
         root.set_margin_start(12);
         root.set_margin_end(12);
-        let mut any = false;
+
+        // Arama çubuğu + sonuç sayacı.
+        let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
+        let entry = gtk::SearchEntry::new();
+        entry.set_placeholder_text(Some("Takvimde ara…"));
+        entry.set_hexpand(true);
+        bar.append(&entry);
+        let count = gtk::Label::new(None);
+        count.add_css_class("dim-label");
+        bar.append(&count);
+        root.append(&bar);
+
+        let mut total = 0usize;
+        let groups: Rc<RefCell<Vec<(gtk::Box, Vec<(gtk::Widget, String)>)>>> =
+            Rc::new(RefCell::new(Vec::new()));
+
         for day in &days {
             if day.episodes.is_empty() {
                 continue;
             }
-            any = true;
+            let day_box = gtk::Box::new(gtk::Orientation::Vertical, 0);
             let head_txt = match crate::api::split_iso(&day.date) {
                 Some((y, m, d, _, _)) => format!("{d:02}.{m:02}.{y}"),
                 None => day.date.clone(),
@@ -2959,7 +2988,8 @@ impl App {
             head.add_css_class("shelf-title");
             head.set_xalign(0.0);
             head.set_margin_start(4);
-            root.append(&head);
+            day_box.append(&head);
+            let mut rows: Vec<(gtk::Widget, String)> = Vec::new();
             for ce in &day.episodes {
                 let row = gtk::Box::new(gtk::Orientation::Horizontal, 12);
                 row.add_css_class("history-item-card");
@@ -2995,24 +3025,80 @@ impl App {
                 }
                 row.append(&vb);
                 let t = ce.title.clone();
+                let alt = ce.alt_title_ids.clone();
                 let this = self.clone_ref();
                 let gesture = gtk::GestureClick::new();
                 gesture.connect_pressed(move |_, _, _, _| {
-                    this.open_episodes(t.clone());
+                    this.open_episodes_alt(t.clone(), alt.clone());
                 });
                 row.add_controller(gesture);
-                root.append(&row);
+
+                let hay = crate::calendar_feed::search_haystack(
+                    &ce.title.name,
+                    &ce.aliases,
+                    &ce.name,
+                    ce.season,
+                    ce.episode,
+                );
+                let row_w: gtk::Widget = row.clone().upcast();
+                rows.push((row_w, hay));
+                day_box.append(&row);
+                total += 1;
             }
+            groups.borrow_mut().push((day_box.clone(), rows));
+            root.append(&day_box);
         }
-        if !any {
-            let sp = components::create_status_page(
-                "Takvim Boş",
-                "Bu hafta yayınlanan bölüm bulunamadı.",
-                "x-office-calendar-symbolic",
-            );
-            scroll.set_child(Some(&sp));
-            return scroll;
+
+        let no_match = gtk::Label::new(Some("Aramanızla eşleşen bölüm yok."));
+        no_match.add_css_class("dim-label");
+        no_match.set_margin_top(12);
+        no_match.set_visible(false);
+        root.append(&no_match);
+
+        let apply: Rc<dyn Fn(&str)> = {
+            let groups = groups.clone();
+            let count = count.clone();
+            let no_match = no_match.clone();
+            Rc::new(move |text: &str| {
+                let q = views::tr_fold(text);
+                let mut visible_total = 0usize;
+                for (day_box, rows) in groups.borrow().iter() {
+                    let mut day_visible = false;
+                    for (widget, hay) in rows {
+                        let vis = q.is_empty() || views::tr_fold(hay).contains(&q);
+                        widget.set_visible(vis);
+                        if vis {
+                            day_visible = true;
+                            visible_total += 1;
+                        }
+                    }
+                    day_box.set_visible(day_visible);
+                }
+                if q.is_empty() {
+                    count.set_text(&format!("{total} bölüm"));
+                } else {
+                    count.set_text(&format!("{visible_total} / {total} bölüm"));
+                }
+                no_match.set_visible(!q.is_empty() && visible_total == 0);
+            })
+        };
+
+        {
+            let apply = apply.clone();
+            let query_state = self.calendar_query.clone();
+            entry.connect_search_changed(move |e| {
+                let text = e.text().to_string();
+                *query_state.borrow_mut() = text.clone();
+                apply(&text);
+            });
         }
+
+        let initial = self.calendar_query.borrow().clone();
+        if !initial.is_empty() {
+            entry.set_text(&initial);
+        }
+        apply(&initial);
+
         scroll.set_child(Some(&root));
         scroll
     }
@@ -3495,10 +3581,31 @@ impl App {
     }
 
     pub fn open_episodes(&self, title: Title) {
+        self.open_episodes_alt(title, Vec::new());
+    }
+
+    /// Takvimden açılan birleşik kayıt: tutulan başlıkta bölüm listesi boşsa
+    /// grubun diğer kimliklerini sırayla dener (kopya kayıt fallback'i).
+    pub fn open_episodes_alt(&self, title: Title, alt_ids: Vec<u64>) {
         self.busy(true);
         self.spawn(move |c| {
-            let enriched = c.enrich_title(&title);
-            let res = c.episodes(&enriched);
+            let mut enriched = c.enrich_title(&title);
+            let mut res = c.episodes(&enriched);
+            let primary_empty = matches!(res.as_ref(), Ok(eps) if eps.is_empty());
+            if primary_empty {
+                for alt in &alt_ids {
+                    let mut candidate = title.clone();
+                    candidate.id = *alt;
+                    let cand_enriched = c.enrich_title(&candidate);
+                    if let Ok(cand_eps) = c.episodes(&cand_enriched) {
+                        if !cand_eps.is_empty() {
+                            enriched = cand_enriched;
+                            res = Ok(cand_eps);
+                            break;
+                        }
+                    }
+                }
+            }
             move || Msg::Eps(enriched.clone(), res)
         });
     }

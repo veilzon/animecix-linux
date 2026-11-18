@@ -457,6 +457,12 @@ pub struct CalendarEpisode {
     pub poster: Option<String>,
     #[serde(default)]
     pub release_date: String,
+    /// Aynı yapımın diğer dillerdeki adları (arama için).
+    #[serde(default)]
+    pub aliases: Vec<String>,
+    /// Kopya kayıt birleştirildiyse grubun diğer başlık kimlikleri.
+    #[serde(default)]
+    pub alt_title_ids: Vec<u64>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -465,6 +471,57 @@ pub struct CalendarDay {
     pub date: String,
     #[serde(default)]
     pub episodes: Vec<CalendarEpisode>,
+}
+
+/// Takvim yanıtını günlere/bölümlere çevirir; kopya satırları birleştirir.
+/// Ham JSON üzerinde çalışır çünkü `mal_id`/`tmdb_id`/alternatif adlar
+/// `Title` modeline girmeden önce gereklidir.
+fn parse_calendar_days(d: &serde_json::Value) -> Vec<CalendarDay> {
+    let mut d = d.clone();
+    crate::calendar_feed::dedup_calendar_json(&mut d);
+    let mut days = Vec::new();
+    if let Some(arr) = d["data"].as_array() {
+        for day in arr {
+            let mut eps = Vec::new();
+            if let Some(eparr) = day["episodes"].as_array() {
+                for e in eparr {
+                    let title = Title::from_value(&e["title"]).unwrap_or(Title {
+                        id: Client::u64_field(e, "title_id"),
+                        ..Default::default()
+                    });
+                    eps.push(CalendarEpisode {
+                        title,
+                        season: Client::u64_field(e, "season_number"),
+                        episode: Client::u64_field(e, "episode_number"),
+                        name: Client::str_field(e, "name"),
+                        description: Client::str_field(e, "description"),
+                        poster: e["poster"]
+                            .as_str()
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty()),
+                        release_date: Client::str_field(e, "release_date"),
+                        aliases: e["aliases"]
+                            .as_array()
+                            .map(|a| {
+                                a.iter()
+                                    .filter_map(|v| v.as_str().map(str::to_string))
+                                    .collect()
+                            })
+                            .unwrap_or_default(),
+                        alt_title_ids: e["alt_title_ids"]
+                            .as_array()
+                            .map(|a| a.iter().filter_map(serde_json::Value::as_u64).collect())
+                            .unwrap_or_default(),
+                    });
+                }
+            }
+            days.push(CalendarDay {
+                date: Client::str_field(day, "date"),
+                episodes: eps,
+            });
+        }
+    }
+    days
 }
 
 /// ISO-8601 ("2026-09-07T17:00:00.000Z") içinden tarih/saat parçaları.
@@ -1785,39 +1842,7 @@ impl Client {
                 .json()
                 .map_err(|e| e.to_string())
         })?;
-        let mut days = Vec::new();
-        if let Some(arr) = d["data"].as_array() {
-            for day in arr {
-                let mut eps = Vec::new();
-                if let Some(eparr) = day["episodes"].as_array() {
-                    for e in eparr {
-                        let title = Title::from_value(&e["title"]).unwrap_or(Title {
-                            id: Self::u64_field(e, "title_id"),
-                            ..Default::default()
-                        });
-                        eps.push(CalendarEpisode {
-                            title,
-                            season: Self::u64_field(e, "season_number"),
-                            episode: Self::u64_field(e, "episode_number"),
-                            name: Self::str_field(e, "name"),
-                            description: Self::str_field(e, "description"),
-                            poster: e["poster"]
-                                .as_str()
-                                .map(|s| s.trim().to_string())
-                                .filter(|s| !s.is_empty()),
-                            release_date: Self::str_field(e, "release_date"),
-                        });
-                    }
-                }
-                // Günü yayın saatine göre sırala (sabah → gece).
-                eps.sort_by(|a, b| a.release_date.cmp(&b.release_date));
-                days.push(CalendarDay {
-                    date: Self::str_field(day, "date"),
-                    episodes: eps,
-                });
-            }
-        }
-        Ok(days)
+        Ok(parse_calendar_days(&d))
     }
 
     /// Site istek imzası (X-E-H): AES-256-GCM ile sorgu imzalama.
@@ -4455,6 +4480,50 @@ mod tests {
         );
         assert!(super::split_iso("bozuk").is_none());
         assert!(super::split_iso("2026-09-07").is_none());
+    }
+
+    #[test]
+    fn parse_calendar_days_dedups_and_keeps_aliases() {
+        let raw = serde_json::json!({
+            "data": [{
+                "date": "2026-11-20T00:00:00.000Z",
+                "episodes": [
+                    {
+                        "title": {
+                            "id": 13445,
+                            "name": "Firefly Wedding",
+                            "name_romanji": "Hotaru no Yomeiri",
+                            "mal_id": 63293,
+                            "is_ready": false
+                        },
+                        "season_number": 1,
+                        "episode_number": 7,
+                        "release_date": "2026-11-20T00:00:00.000Z"
+                    },
+                    {
+                        "title": {
+                            "id": 13562,
+                            "name": "Hotaru no Yomeiri",
+                            "upload_slot": { "source": "history" }
+                        },
+                        "season_number": 1,
+                        "episode_number": 7,
+                        "estimated": true,
+                        "release_date": "2026-11-20T19:00:00.000Z"
+                    }
+                ]
+            }]
+        });
+
+        let days = super::parse_calendar_days(&raw);
+        assert_eq!(days.len(), 1);
+        assert_eq!(days[0].episodes.len(), 1);
+        let ep = &days[0].episodes[0];
+        assert_eq!(ep.title.id, 13562);
+        assert_eq!(ep.release_date, "2026-11-20T00:00:00.000Z");
+        assert_eq!(ep.alt_title_ids, vec![13445]);
+        assert!(ep.aliases.iter().any(|a| a == "Firefly Wedding"));
+        assert!(ep.aliases.iter().any(|a| a == "Hotaru no Yomeiri"));
     }
 
     #[test]
