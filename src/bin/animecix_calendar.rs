@@ -95,7 +95,7 @@ fn main() {
             print_autostart();
             return;
         }
-        Mode::Once => run_once_mode(&args),
+        Mode::Once => std::process::exit(run_once_mode(&args)),
         Mode::Daemon => run_daemon(&args),
     }
 }
@@ -189,15 +189,25 @@ fn print_autostart() {
     print!("{}", follow_store::autostart_content(&exec));
 }
 
-fn run_once_mode(args: &Args) {
-    let settings = load_settings();
+fn run_once_mode(args: &Args) -> i32 {
+    let settings = match load_settings_checked() {
+        Ok(Some(s)) => s,
+        Ok(None) => {
+            eprintln!("[WATCH] ayar dosyası yok, takip kapalı");
+            return 0;
+        }
+        Err(e) => {
+            eprintln!("[WATCH] ayarlar okunamadı: {e}");
+            return 1;
+        }
+    };
     if !settings.calendar_watch {
         eprintln!("[WATCH] takip kapalı");
-        return;
+        return 0;
     }
     let Some(_lock) = acquire_instance_lock() else {
         eprintln!("[WATCH] başka bir takipçi çalışıyor");
-        return;
+        return 0;
     };
     let now = args.now.unwrap_or_else(follow_store::now_secs);
     let mut status = follow_store::load_daemon_status();
@@ -205,19 +215,22 @@ fn run_once_mode(args: &Args) {
     status.pid = std::process::id();
     status.last_check = now;
     status.running = false;
-    match run_once(args, &settings, now) {
+    let code = match run_once(args, &settings, now) {
         Ok(n) => {
             if n > 0 {
                 status.last_success = now;
             }
             status.last_error.clear();
+            0
         }
         Err(e) => {
             status.last_error = truncate(&e, 200);
             eprintln!("[WATCH] {e}");
+            1
         }
-    }
+    };
     follow_store::save_daemon_status(&status);
+    code
 }
 
 fn run_daemon(args: &Args) {
@@ -241,7 +254,18 @@ fn run_daemon(args: &Args) {
         if STOP.load(Ordering::SeqCst) {
             break;
         }
-        let settings = load_settings();
+        let settings = match load_settings_checked() {
+            Ok(Some(s)) => s,
+            Ok(None) => WatchSettings::default(),
+            Err(e) => {
+                status.running = true;
+                status.last_error = truncate(&format!("ayarlar okunamadı: {e}"), 200);
+                follow_store::save_daemon_status(&status);
+                eprintln!("[WATCH] ayarlar okunamadı, 60 sn sonra tekrar: {e}");
+                sleep_chunks(60);
+                continue;
+            }
+        };
         if !settings.calendar_watch {
             status.running = false;
             status.last_error = "takip kapalı".to_string();
@@ -300,8 +324,11 @@ fn run_once(args: &Args, settings: &WatchSettings, now: u64) -> Result<usize, St
     let service = args.notify_cmd.is_some() || notifications_available();
     let locked = screen_locked();
     // GUI aktifse masaüstü bildirimi gönderme; uygulama içi toast önceliklidir.
+    // Kilidi yalnızca yoklamak için alıp hemen bırakırız; aksi hâlde GUI
+    // penceresi aktifleştiğinde kilidi bir daha alamazdı.
     let gui_lock = follow_store::FileLock::try_acquire(&follow_store::gui_active_path());
     let gui_active = gui_lock.is_none();
+    drop(gui_lock);
 
     if args.dry_run {
         let mut probe = follow_store::load_ledger();
@@ -358,12 +385,19 @@ fn run_once(args: &Args, settings: &WatchSettings, now: u64) -> Result<usize, St
     }
 }
 
-fn load_settings() -> WatchSettings {
+fn load_settings_checked() -> Result<Option<WatchSettings>, String> {
     let path = settings_path();
-    std::fs::read_to_string(path)
-        .ok()
-        .and_then(|s| serde_json::from_str::<WatchSettings>(&s).ok())
-        .unwrap_or_default()
+    match std::fs::read_to_string(&path) {
+        Ok(s) => serde_json::from_str::<WatchSettings>(&s)
+            .map(Some)
+            .map_err(|e| format!("settings.json ayrıştırılamadı: {e}")),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("settings.json okunamadı: {e}")),
+    }
+}
+
+fn load_settings() -> WatchSettings {
+    load_settings_checked().ok().flatten().unwrap_or_default()
 }
 
 fn settings_path() -> PathBuf {
@@ -451,7 +485,8 @@ fn rows_from_calendar(v: &mut Value) -> Vec<follow_store::CalendarRow> {
         for e in eps {
             let title_id = e["title"]["id"]
                 .as_u64()
-                .or_else(|| e["title_id"].as_u64())
+                .filter(|id| *id > 0)
+                .or_else(|| e["title_id"].as_u64().filter(|id| *id > 0))
                 .unwrap_or(0);
             if title_id == 0 {
                 continue;
@@ -576,6 +611,7 @@ fn send_notification(cmd: Option<&str>, summary: &str, body: &str) -> Result<(),
             "--icon=tr.com.animecix",
             "--urgency=normal",
             "--expire-time=10000",
+            "--",
             &summary,
             &body,
         ],
@@ -585,6 +621,10 @@ fn send_notification(cmd: Option<&str>, summary: &str, body: &str) -> Result<(),
         return Ok(());
     }
 
+    let gv_summary = gv_quote(&summary);
+    let gv_body = gv_quote(&body);
+    let gv_app = gv_quote("AnimeciX");
+    let gv_icon = gv_quote("tr.com.animecix");
     command_out(
         "gdbus",
         &[
@@ -596,11 +636,11 @@ fn send_notification(cmd: Option<&str>, summary: &str, body: &str) -> Result<(),
             "/org/freedesktop/Notifications",
             "--method",
             "org.freedesktop.Notifications.Notify",
-            "AnimeciX",
+            &gv_app,
             "0",
-            "tr.com.animecix",
-            &summary,
-            &body,
+            &gv_icon,
+            &gv_summary,
+            &gv_body,
             "[]",
             "{}",
             "10000",
@@ -608,6 +648,11 @@ fn send_notification(cmd: Option<&str>, summary: &str, body: &str) -> Result<(),
     )
     .map(|_| ())
     .ok_or_else(|| "bildirim aracı bulunamadı".to_string())
+}
+
+/// GVariant metin argümanı için çift tırnaklı gösterim.
+fn gv_quote(s: &str) -> String {
+    format!("\"{}\"", s.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
 fn clean(s: &str) -> String {
@@ -659,5 +704,24 @@ fn install_signal_handlers() {
     unsafe {
         libc::signal(libc::SIGTERM, on_signal as *const () as libc::sighandler_t);
         libc::signal(libc::SIGINT, on_signal as *const () as libc::sighandler_t);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clean_strips_controls_and_caps_length() {
+        assert_eq!(clean("a\nb\tc"), "a b c");
+        let long: String = "ş".repeat(250);
+        assert_eq!(clean(&long).chars().count(), 200);
+        assert_eq!(clean("  bosluk  "), "bosluk");
+    }
+
+    #[test]
+    fn gv_quote_escapes_quotes_and_backslashes() {
+        assert_eq!(gv_quote("a\"b\\c"), "\"a\\\"b\\\\c\"");
+        assert_eq!(gv_quote("normal"), "\"normal\"");
     }
 }

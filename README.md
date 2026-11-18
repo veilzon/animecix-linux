@@ -60,8 +60,9 @@ takip edilen yapımlarda düğme onay ikonuna döner.
 - Bildirim gönderilemezse (ekran kilitli, oturum yok, bildirim servisi kapalı)
   kayıt `pending` kalır ve sonraki kontrollerde tekrar denenir. Aynı bölüm bir
   kez bildirilir; ilk takipte geçmiş bölümler toplu bildirilmez.
-- Takipten çıkarmak veya ana anahtarı kapatmak autostart girdisini temizler.
-  Durum ve **Şimdi Kontrol Et** aynı ayar grubundadır.
+- Bir yapımı takipten çıkarmak o yapımın bekleyen bildirimlerini iptal eder.
+  Ana anahtarı kapatmak veya uygulamayı kaldırmak autostart girdisini de
+  temizler. Durum ve **Şimdi Kontrol Et** aynı ayar grubundadır.
 - Flatpak'ta otomatik başlatma portal desteği gerektirdiği için kapalıdır;
   uygulama açıkken bildirim çalışır.
 

@@ -116,6 +116,7 @@ pub enum Msg {
     Search(Result<Vec<Title>, String>),
     News(u32, Result<(Vec<api::NewsItem>, usize, u32), String>),
     Calendar(Result<Vec<api::CalendarDay>, String>),
+    CalendarBackground(Result<Vec<api::CalendarDay>, String>),
     Discover(Result<(Vec<Title>, usize, u32), String>),
     Eps(Title, Result<Vec<Episode>, String>),
     Play(Title, Episode, Result<PlaySources, String>),
@@ -239,6 +240,8 @@ pub struct App {
     pub gui_active_lock: Rc<RefCell<Option<crate::follow_store::FileLock>>>,
     /// Takip için takvimin son zorla denetim zamanı.
     pub follow_last_fetch: Rc<Cell<u64>>,
+    /// "Şimdi Kontrol Et" sonucu bekleniyor mu?
+    pub follow_refresh_pending: Rc<Cell<bool>>,
     /// Keşfet filtresi + sonuç önbelleği: (öğeler, toplam, son_sayfa).
     pub discover_filter: Rc<RefCell<api::DiscoverFilter>>,
     pub discover: Rc<RefCell<Option<(Vec<Title>, usize, u32)>>>,
@@ -696,6 +699,7 @@ impl App {
             calendar_query: Rc::new(RefCell::new(String::new())),
             gui_active_lock: Rc::new(RefCell::new(None)),
             follow_last_fetch: Rc::new(Cell::new(0)),
+            follow_refresh_pending: Rc::new(Cell::new(false)),
             discover_filter: Rc::new(RefCell::new(api::DiscoverFilter {
                 page: 1,
                 ..Default::default()
@@ -1003,6 +1007,7 @@ impl App {
             calendar_query: self.calendar_query.clone(),
             gui_active_lock: self.gui_active_lock.clone(),
             follow_last_fetch: self.follow_last_fetch.clone(),
+            follow_refresh_pending: self.follow_refresh_pending.clone(),
             discover_filter: self.discover_filter.clone(),
             discover: self.discover.clone(),
             server_history: self.server_history.clone(),
@@ -2762,12 +2767,7 @@ impl App {
                 }
             },
             move || {
-                this_check.follow_tick();
-                this_check.ops.info(
-                    "Takip kontrol edildi",
-                    "Yeni bölüm yoksa sessiz kalır.",
-                    std::time::Duration::from_secs(3),
-                );
+                this_check.follow_tick_force();
             },
         );
 
@@ -2995,8 +2995,6 @@ impl App {
         root.set_margin_end(12);
 
         let followed = crate::follow_store::followed_ids();
-        let follow_btns: Rc<RefCell<HashMap<u64, Vec<gtk::Button>>>> =
-            Rc::new(RefCell::new(HashMap::new()));
 
         // Arama çubuğu + sonuç sayacı.
         let bar = gtk::Box::new(gtk::Orientation::Horizontal, 8);
@@ -3011,6 +3009,8 @@ impl App {
 
         let mut total = 0usize;
         let groups: Rc<RefCell<Vec<(gtk::Box, Vec<(gtk::Widget, String)>)>>> =
+            Rc::new(RefCell::new(Vec::new()));
+        let follow_btns: Rc<RefCell<Vec<(Vec<u64>, glib::WeakRef<gtk::Button>)>>> =
             Rc::new(RefCell::new(Vec::new()));
 
         for day in &days {
@@ -3038,7 +3038,9 @@ impl App {
                 let poster = ce.poster.clone().or_else(|| ce.title.poster.clone());
                 let pic = self.covers.cover_picture(poster.as_deref(), 96, 54);
                 pic.set_valign(gtk::Align::Center);
-                row.append(&pic);
+                let content = gtk::Box::new(gtk::Orientation::Horizontal, 12);
+                content.set_hexpand(true);
+                content.append(&pic);
                 let vb = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 vb.set_valign(gtk::Align::Center);
                 vb.set_hexpand(true);
@@ -3062,9 +3064,18 @@ impl App {
                     vb.append(&tm);
                 }
                 row.append(&vb);
+                let mut group_ids: Vec<u64> = vec![ce.title.id];
+                group_ids.extend(ce.alt_title_ids.iter().copied());
+                group_ids.sort_unstable();
+                group_ids.dedup();
+                let following = group_ids.iter().any(|id| followed.contains(id));
+                content.append(&vb);
+                row.append(&content);
                 if ce.title.title_type.as_deref() != Some("movie") {
-                    let follow_btn = components::follow_button(followed.contains(&ce.title.id));
+                    let follow_btn = components::follow_button(following);
                     let fid = ce.title.id;
+                    let alt_ids = ce.alt_title_ids.clone();
+                    let group = group_ids.clone();
                     let fname = ce.title.name.clone();
                     let fposter = ce.poster.clone().or_else(|| ce.title.poster.clone());
                     let ftype = ce.title.title_type.clone();
@@ -3072,7 +3083,9 @@ impl App {
                     let all_btns = follow_btns.clone();
                     follow_btn.connect_clicked(move |b| {
                         let now = crate::follow_store::now_secs();
-                        let following = crate::follow_store::toggle_follow(
+                        let following = crate::follow_store::toggle_group(
+                            fid,
+                            &alt_ids,
                             crate::follow_store::FollowedTitle {
                                 title_id: fid,
                                 name: fname.clone(),
@@ -3083,9 +3096,11 @@ impl App {
                             },
                         );
                         components::set_follow_state(b, following);
-                        if let Some(list) = all_btns.borrow().get(&fid) {
-                            for other in list {
-                                components::set_follow_state(other, following);
+                        for (ids, weak) in all_btns.borrow().iter() {
+                            if ids.iter().any(|id| group.contains(id)) {
+                                if let Some(other) = weak.upgrade() {
+                                    components::set_follow_state(&other, following);
+                                }
                             }
                         }
                         this_f.ops.info(
@@ -3107,9 +3122,7 @@ impl App {
                     });
                     follow_btns
                         .borrow_mut()
-                        .entry(fid)
-                        .or_default()
-                        .push(follow_btn.clone());
+                        .push((group_ids.clone(), follow_btn.downgrade()));
                     row.append(&follow_btn);
                 }
                 let t = ce.title.clone();
@@ -3119,7 +3132,7 @@ impl App {
                 gesture.connect_pressed(move |_, _, _, _| {
                     this.open_episodes_alt(t.clone(), alt.clone());
                 });
-                row.add_controller(gesture);
+                content.add_controller(gesture);
 
                 let hay = crate::calendar_feed::search_haystack(
                     &ce.title.name,
@@ -3436,6 +3449,32 @@ impl App {
                 }
                 Err(e) => self.show_error(&e),
             },
+            Msg::CalendarBackground(res) => {
+                let manual = self.follow_refresh_pending.replace(false);
+                match res {
+                    Ok(days) => {
+                        *self.calendar.borrow_mut() = Some(days);
+                        if manual {
+                            if self.page_history.borrow().last() == Some(&Page::Calendar) {
+                                self.show_page(&Page::Calendar);
+                            }
+                            self.follow_tick();
+                            self.ops.info(
+                                "Takip kontrol edildi",
+                                "",
+                                std::time::Duration::from_secs(2),
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        if manual {
+                            self.show_error(&e);
+                        } else {
+                            eprintln!("[WATCH] takvim tazelenemedi: {e}");
+                        }
+                    }
+                }
+            }
             Msg::Discover(res) => match res {
                 Ok((items, total, last)) => {
                     *self.discover.borrow_mut() = Some((items, total, last));
@@ -3788,17 +3827,18 @@ impl App {
         if !self.settings.borrow().calendar_watch {
             return;
         }
+        if self.window.is_active() && self.gui_active_lock.borrow().is_none() {
+            *self.gui_active_lock.borrow_mut() = crate::follow_store::try_gui_active_lock();
+        }
         let follows = crate::follow_store::load_follows();
         if !follows.schema_ok || follows.items.is_empty() {
             return;
         }
         let now = crate::follow_store::now_secs();
         let interval = self.settings.borrow().calendar_watch_interval.max(15) * 60;
-        if self.calendar.borrow().is_none()
-            || now.saturating_sub(self.follow_last_fetch.get()) >= interval
-        {
+        if now.saturating_sub(self.follow_last_fetch.get()) >= interval {
             self.follow_last_fetch.set(now);
-            self.fetch_calendar();
+            self.fetch_calendar_background(false);
         }
         let Some(days) = self.calendar.borrow().clone() else {
             return;
@@ -3834,6 +3874,39 @@ impl App {
         if !claims.is_empty() {
             self.show_follow_toast(&claims);
         }
+    }
+
+    /// Arka planda taze takvim çeker; sayfa yeniden kurulmaz, hata toast'lanmaz.
+    fn fetch_calendar_background(&self, manual: bool) {
+        if manual {
+            self.follow_refresh_pending.set(true);
+        }
+        self.spawn(move |c| {
+            let res = c.calendar_refresh();
+            move || Msg::CalendarBackground(res)
+        });
+    }
+
+    /// "Şimdi Kontrol Et": sonucu bekleyip defteri işler.
+    fn follow_tick_force(&self) {
+        if !self.settings.borrow().calendar_watch {
+            self.ops.info(
+                "Yayın takibi kapalı",
+                "Ayarlardan ana anahtarı aç.",
+                std::time::Duration::from_secs(3),
+            );
+            return;
+        }
+        if crate::follow_store::load_follows().items.is_empty() {
+            self.ops.info(
+                "Takip listesi boş",
+                "Takvimden bir yapımı takibe al.",
+                std::time::Duration::from_secs(3),
+            );
+            return;
+        }
+        self.follow_last_fetch.set(crate::follow_store::now_secs());
+        self.fetch_calendar_background(true);
     }
 
     fn show_follow_toast(&self, claims: &[crate::follow_store::Claim]) {

@@ -298,7 +298,7 @@ pub fn dedup_calendar_json(v: &mut Value) {
         }
         let first = slots[0];
         for &s in &slots[1..] {
-            if compatible(&metas[first], &metas[s]) {
+            if can_union(&mut parent, &metas, first, s) {
                 union(&mut parent, first, s);
             }
         }
@@ -374,6 +374,12 @@ fn union(parent: &mut [usize], a: usize, b: usize) {
 }
 
 fn compatible(a: &Meta, b: &Meta) -> bool {
+    if a.mal != 0 && b.mal != 0 && a.mal != b.mal {
+        return false;
+    }
+    if a.tmdb != 0 && b.tmdb != 0 && a.tmdb != b.tmdb {
+        return false;
+    }
     if a.year != 0 && b.year != 0 && a.year != b.year {
         return false;
     }
@@ -382,6 +388,30 @@ fn compatible(a: &Meta, b: &Meta) -> bool {
         && is_movie(&a.title_type) != is_movie(&b.title_type)
     {
         return false;
+    }
+    true
+}
+
+/// İki kümeyi birleştirmeden önce tüm üyelerin birbiriyle uyumlu olduğunu
+/// doğrular; zincirleme (A-B, B-C uyumlu ama A-C değil) yanlış birleşmeyi önler.
+fn can_union(parent: &mut [usize], metas: &[Meta], a: usize, b: usize) -> bool {
+    let ra = find(parent, a);
+    let rb = find(parent, b);
+    if ra == rb {
+        return true;
+    }
+    let members_a: Vec<usize> = (0..metas.len())
+        .filter(|i| find(parent, *i) == ra)
+        .collect();
+    let members_b: Vec<usize> = (0..metas.len())
+        .filter(|i| find(parent, *i) == rb)
+        .collect();
+    for i in &members_a {
+        for j in &members_b {
+            if !compatible(&metas[*i], &metas[*j]) {
+                return false;
+            }
+        }
     }
     true
 }
@@ -863,6 +893,56 @@ mod tests {
         dedup_calendar_json(&mut v);
 
         assert_eq!(day_eps(&v, 0).len(), 2, "farklı yıl remake olabilir");
+    }
+
+    #[test]
+    fn conflicting_mal_ids_do_not_merge() {
+        let a = json!({
+            "id": 1, "name": "Hotaru no Yomeiri", "mal_id": 111, "title_type": "anime"
+        });
+        let b = json!({
+            "id": 2, "name": "Hotaru no Yomeiri", "mal_id": 222, "title_type": "anime"
+        });
+        let mut v = cal(vec![(
+            "2026-11-20T00:00:00.000Z",
+            vec![
+                ep(a, 1, 7, json!(1), false, false, "2026-11-20T00:00:00.000Z"),
+                ep(b, 1, 7, json!(2), false, false, "2026-11-20T00:00:00.000Z"),
+            ],
+        )]);
+
+        dedup_calendar_json(&mut v);
+
+        assert_eq!(day_eps(&v, 0).len(), 2, "farklı mal_id'ler birleşmemeli");
+    }
+
+    #[test]
+    fn alias_chain_respects_year_conflict() {
+        let a = json!({
+            "id": 10, "name": "Hotaru no Yomeiri", "title_type": "anime"
+        });
+        let b = json!({
+            "id": 11, "name": "Hotaru no Yomeiri", "year": 2020, "title_type": "anime"
+        });
+        let c = json!({
+            "id": 12, "name": "Hotaru no Yomeiri", "year": 2026, "title_type": "anime"
+        });
+        let mut v = cal(vec![(
+            "2026-11-20T00:00:00.000Z",
+            vec![
+                ep(a, 1, 7, json!(1), false, false, "2026-11-20T00:00:00.000Z"),
+                ep(b, 1, 7, json!(2), false, false, "2026-11-20T00:00:00.000Z"),
+                ep(c, 1, 7, json!(3), false, false, "2026-11-20T00:00:00.000Z"),
+            ],
+        )]);
+
+        dedup_calendar_json(&mut v);
+
+        assert_eq!(
+            day_eps(&v, 0).len(),
+            2,
+            "yıl çelişkisi zincirleme birleşmeyi engellemeli"
+        );
     }
 
     #[test]

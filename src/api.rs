@@ -1847,7 +1847,17 @@ impl Client {
     /// Haftalık yayın takvimi → günler + bölümler. 1 saat önbellekli.
     /// Herkese açık. (Lowell uyarlaması.)
     pub fn calendar(&self) -> Result<Vec<CalendarDay>, String> {
-        let d = self.cache_get("calendar", 3600, |http| {
+        self.calendar_with_ttl(3600)
+    }
+
+    /// Takip turu / "Şimdi Kontrol Et" için önbelleği atlayan taze takvim.
+    /// Ağ hatasında `cache_get` son disk önbelleğini döndürür.
+    pub fn calendar_refresh(&self) -> Result<Vec<CalendarDay>, String> {
+        self.calendar_with_ttl(0)
+    }
+
+    fn calendar_with_ttl(&self, ttl: u64) -> Result<Vec<CalendarDay>, String> {
+        let d = self.cache_get("calendar", ttl, |http| {
             http.get(format!("{BASE}/secure/calendar"))
                 .header("Accept", "application/json")
                 .send()
@@ -3744,7 +3754,7 @@ impl Client {
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let _ = std::fs::write(&p, serde_json::to_string_pretty(st).unwrap_or_default());
+        let _ = crate::follow_store::write_json_atomic(&p, st);
     }
 
     pub fn is_saved(&self, id: u64) -> bool {
@@ -4041,7 +4051,7 @@ impl Client {
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent).ok();
         }
-        let _ = std::fs::write(&p, serde_json::to_string_pretty(s).unwrap_or_default());
+        let _ = crate::follow_store::write_json_atomic(&p, s);
         self.remember_cover_quality(&s.cover_quality);
     }
 

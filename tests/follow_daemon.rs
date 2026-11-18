@@ -93,6 +93,31 @@ fn log_lines(home: &Path) -> Vec<String> {
 }
 
 #[test]
+fn invalid_settings_fails_once() {
+    let (home, data) = setup("badsettings", true);
+    std::fs::write(home.join(".local/share/animecix/settings.json"), "{bozuk").unwrap();
+    let f = fixture(&home, "cal.json", &[episode(1, "2026-11-14T00:00:00.000Z")]);
+    let out = run(
+        &home,
+        &data,
+        &[
+            "--once",
+            "--fixture",
+            &f.to_string_lossy(),
+            "--notify-cmd",
+            "/bin/true",
+            "--now",
+            &NOW.to_string(),
+        ],
+    );
+    assert!(
+        !out.status.success(),
+        "bozuk settings.json --once'da sıfır dışı dönmeli"
+    );
+    assert!(log_lines(&home).is_empty());
+}
+
+#[test]
 fn once_baselines_then_notifies_exactly_once() {
     let (home, data) = setup("once", true);
     let script = notify_script(&home);

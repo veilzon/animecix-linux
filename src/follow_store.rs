@@ -495,6 +495,33 @@ pub fn toggle_follow(item: FollowedTitle) -> bool {
     following
 }
 
+/// Kopya grubunu tek bir takip olarak açar/kapatır. Gruptaki herhangi bir
+/// kimlik takipteyse tümü kaldırılır (yinelenen takip oluşmaz).
+pub fn apply_group_toggle(
+    f: &mut FollowsFile,
+    primary: u64,
+    group: &[u64],
+    item: FollowedTitle,
+) -> bool {
+    let matches = |id: u64| id == primary || group.contains(&id);
+    let existing = f.items.iter().any(|i| matches(i.title_id));
+    if existing {
+        f.items.retain(|i| !matches(i.title_id));
+    } else {
+        f.items.push(item);
+    }
+    !existing
+}
+
+pub fn toggle_group(primary: u64, group: &[u64], item: FollowedTitle) -> bool {
+    let mut f = load_follows();
+    let following = apply_group_toggle(&mut f, primary, group, item);
+    f.schema = SCHEMA;
+    f.updated_at = now_secs();
+    save_follows(&f);
+    following
+}
+
 // ---------------------------------------------------------------------------
 // Defter
 // ---------------------------------------------------------------------------
@@ -562,19 +589,34 @@ pub fn detect_new(
     now: u64,
 ) -> usize {
     let now_i = now as i64;
-    let mut by_title: BTreeMap<u64, Vec<&CalendarRow>> = BTreeMap::new();
+    let followed: Vec<&FollowedTitle> = follows.items.iter().filter(|f| f.notify).collect();
+
+    // Takipten çıkarılan yapımların bekleyen kayıtları da iptal olur.
+    ledger.titles.retain(|k, _| {
+        k.parse::<u64>()
+            .map(|id| followed.iter().any(|f| f.title_id == id))
+            .unwrap_or(true)
+    });
+
+    // Defter kimliği, takvimde tutulan title_id değil, kullanıcının takip
+    // ettiği kimliktir. Kopya projeksiyonu günler arasında değişse bile
+    // (ör. E7 -> 13562, E8 yalnız 13445 + alt [13562]) baseline korunur.
+    let mut by_follow: BTreeMap<u64, Vec<&CalendarRow>> = BTreeMap::new();
     for row in rows {
-        let matched = follows
-            .items
+        let mut matched: Vec<u64> = followed
             .iter()
-            .any(|f| f.notify && (f.title_id == row.title_id || row.alt_ids.contains(&f.title_id)));
-        if matched {
-            by_title.entry(row.title_id).or_default().push(row);
+            .filter(|f| f.title_id == row.title_id || row.alt_ids.contains(&f.title_id))
+            .map(|f| f.title_id)
+            .collect();
+        matched.sort_unstable();
+        matched.dedup();
+        if let Some(&follow_id) = matched.first() {
+            by_follow.entry(follow_id).or_default().push(row);
         }
     }
 
     let mut queued = 0usize;
-    for (title_id, list) in by_title {
+    for (title_id, list) in by_follow {
         let key = title_id.to_string();
         let st = ledger.titles.entry(key).or_default();
         if st.name.is_empty() {
@@ -593,6 +635,11 @@ pub fn detect_new(
                 .filter(|r| r.release_epoch <= now_i && r.release_epoch > 0)
                 .collect();
             if released.is_empty() {
+                // Yalnız gelecek bölümler görüldü: sezonu 0 ile işaretle ki
+                // ilk bölüm yayınlandığında "yeni" sayılsın (prömiyer kaybı yok).
+                if !st.seen.contains_key(&season) {
+                    st.seen.insert(season, 0);
+                }
                 continue;
             }
             let max_ep = released.iter().map(|r| r.episode).max().unwrap_or(0);
@@ -663,6 +710,16 @@ fn prune(ledger: &mut Ledger, now: u64) {
 /// Gönderilmeye hazır kayıtları sahiplenir; `sending` işaretler. Başarılı
 /// gönderimden sonra `mark_sent`, hatada `release_claim` çağrılır.
 pub fn claim_due(ledger: &mut Ledger, now: u64, limit: usize) -> Vec<Claim> {
+    // Çökme/kesinti sonrası "sending" kalmış kayıtları geri al. Bu,
+    // bildirimin kaybolması yerine en fazla bir kez daha denenmesini sağlar.
+    for st in ledger.titles.values_mut() {
+        for e in st.entries.iter_mut() {
+            if e.state == STATE_SENDING && e.next_attempt <= now {
+                e.state = STATE_PENDING.to_string();
+                e.next_attempt = now;
+            }
+        }
+    }
     roll_daily(ledger, now);
     let remaining = DAILY_LIMIT.saturating_sub(ledger.daily.sent) as usize;
     if remaining == 0 || limit == 0 {
@@ -911,7 +968,107 @@ mod tests {
             &[t(1, 7, now as i64 - 86_400)],
             now,
         );
+        // Defter kimliği takip edilen id'dir, o gün tutulan projeksiyon değil.
+        assert_eq!(ledger.titles["13445"].seen.get(&1), Some(&7));
+        assert!(!ledger.titles.contains_key("13562"));
+    }
+
+    #[test]
+    fn kept_id_flip_does_not_swallow_new_episode() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let f = follows(&[13562]);
+        // Gün 1: E7, tutulan projeksiyon 13562.
+        detect_new(
+            &f,
+            &mut ledger,
+            &[row(13562, 1, 7, now as i64 - 86_400)],
+            now,
+        );
         assert_eq!(ledger.titles["13562"].seen.get(&1), Some(&7));
+        // Gün 2: E8 yalnız 13445'te, alt kimlik 13562.
+        let mut r = row(13445, 1, 8, now as i64 - 60);
+        r.alt_ids = vec![13562];
+        let queued = detect_new(&f, &mut ledger, &[r], now);
+        assert_eq!(queued, 1, "tutulan kimlik değişse de bölüm kaçmamalı");
+        assert_eq!(ledger.titles["13562"].entries.len(), 1);
+        assert_eq!(ledger.titles["13562"].entries[0].episode, 8);
+    }
+
+    #[test]
+    fn unfollow_prunes_pending_notifications() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let f = follows(&[500, 600]);
+        let rows = vec![
+            row(500, 1, 1, now as i64 - 86_400),
+            row(600, 1, 1, now as i64 - 86_400),
+        ];
+        detect_new(&f, &mut ledger, &rows, now);
+        let rows = vec![
+            row(500, 1, 2, now as i64 - 60),
+            row(600, 1, 2, now as i64 - 60),
+        ];
+        detect_new(&f, &mut ledger, &rows, now);
+        assert_eq!(ledger.titles["500"].entries.len(), 1);
+
+        let mut smaller = f;
+        smaller.items.retain(|i| i.title_id != 500);
+        detect_new(&smaller, &mut ledger, &rows, now);
+        assert!(
+            !ledger.titles.contains_key("500"),
+            "takipten çıkan yapının bekleyeni iptal olmalı"
+        );
+        let claims = claim_due(&mut ledger, now, 10);
+        assert!(claims.iter().all(|c| c.title_id != 500));
+    }
+
+    #[test]
+    fn future_premiere_is_notified_on_release() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let f = follows(&[1]);
+        // Sezon 2 henüz yayınlanmadı; ilk görüş.
+        detect_new(&f, &mut ledger, &[row(1, 2, 1, now as i64 + 3600)], now);
+        assert_eq!(ledger.titles["1"].seen.get(&2), Some(&0));
+        // Prömiyer yayınlandı.
+        let queued = detect_new(&f, &mut ledger, &[row(1, 2, 1, now as i64 - 60)], now);
+        assert_eq!(queued, 1, "sezon prömiyeri bildirilmeli");
+        assert_eq!(ledger.titles["1"].entries[0].episode, 1);
+    }
+
+    #[test]
+    fn stale_sending_entries_are_recovered() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let st = ledger.titles.entry("1".into()).or_default();
+        st.entries.push(LedgerEntry {
+            season: 1,
+            episode: 2,
+            state: STATE_SENDING.into(),
+            next_attempt: now - 1,
+            expires_at: now + 10_000,
+            ..Default::default()
+        });
+        assert_eq!(claim_due(&mut ledger, now, 1).len(), 1);
+
+        let st = ledger.titles.get_mut("1").unwrap();
+        st.entries[0].state = STATE_SENDING.into();
+        st.entries[0].next_attempt = now + 100;
+        assert!(
+            claim_due(&mut ledger, now, 1).is_empty(),
+            "henüz süresi dolmamış sending geri alınmamalı"
+        );
+    }
+
+    #[test]
+    fn group_toggle_adds_and_removes_alt_ids() {
+        let mut f = follows(&[13445]);
+        assert!(!apply_group_toggle(&mut f, 13562, &[13445], follow(13562)));
+        assert!(f.items.is_empty(), "gruptaki kimlik kaldırılmalı");
+        assert!(apply_group_toggle(&mut f, 13562, &[13445], follow(13562)));
+        assert_eq!(f.items.len(), 1);
+        assert_eq!(f.items[0].title_id, 13562);
     }
 
     #[test]

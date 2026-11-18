@@ -40,11 +40,14 @@ cargo build --release --locked
 
 %install
 install -Dm755 target/release/animecix %{buildroot}%{_bindir}/animecix
+install -Dm755 target/release/animecix-calendar %{buildroot}%{_bindir}/animecix-calendar
 
 mkdir -p %{buildroot}%{_datadir}/animecix/assets
 cp -r assets/* %{buildroot}%{_datadir}/animecix/assets/
 install -Dm755 packaging/post-install-cleanup.sh \
     %{buildroot}%{_datadir}/animecix/post-install-cleanup.sh
+install -Dm755 packaging/post-remove-cleanup.sh \
+    %{buildroot}%{_datadir}/animecix/post-remove-cleanup.sh
 
 mkdir -p %{buildroot}%{_datadir}/applications
 cat > %{buildroot}%{_datadir}/applications/tr.com.animecix.desktop <<'EOF'
@@ -68,6 +71,11 @@ done
 
 %post
 sh %{_datadir}/animecix/post-install-cleanup.sh || :
+
+%preun
+if [ "$1" = "0" ]; then
+  sh %{_datadir}/animecix/post-remove-cleanup.sh || :
+fi
 
 %files
 %{_bindir}/animecix
