@@ -84,6 +84,17 @@ pub fn run(path: &str) {
             on_ready: Rc::new(|| eprintln!("PLAYER_SMOKE_READY")),
             on_terminal: Rc::new(|state, msg| eprintln!("PLAYER_SMOKE_TERMINAL: {state:?} {msg}")),
         };
+        let episode_count = std::env::var("ANIMECIX_SMOKE_EPISODE_COUNT")
+            .ok()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(0);
+        let smoke_episodes: Vec<Episode> = (1..=episode_count)
+            .map(|i| Episode {
+                season: 1,
+                episode: i,
+                name: format!("{i}. Bölüm"),
+            })
+            .collect();
         let req = EmbedRequest {
             title,
             ep,
@@ -107,7 +118,7 @@ pub fn run(path: &str) {
             patience_secs: 10,
             auto_next: false,
             auto_skip_outro: false,
-            episodes: Vec::new(),
+            episodes: smoke_episodes,
         };
         let Some(player) = player::build(&window, host, req, api) else {
             eprintln!("PLAYER_SMOKE_FAIL: gömülü oynatıcı başlatılamadı");
@@ -129,7 +140,7 @@ pub fn run(path: &str) {
         let player_t = player.clone();
         let success_t = success_a.clone();
         glib::timeout_add_local(Duration::from_millis(200), move || {
-            if started.elapsed() > Duration::from_secs(15) {
+            if started.elapsed() > Duration::from_secs(15 + hold_secs) {
                 eprintln!("PLAYER_SMOKE_FAIL: 15 sn içinde video hazır olmadı");
                 app_t.quit();
                 return glib::ControlFlow::Break;

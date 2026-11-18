@@ -49,6 +49,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.2" date="2026-11-18">
+      <description>
+        <p>Takvim görünümü: Kapaklar artık başlığın solunda ve 16:9 oranında kırpılarak gösteriliyor; satır düzeni ve kapak oranı düzeldi.</p>
+      </description>
+    </release>
     <release version="1.4.1" date="2026-11-18">
       <description>
         <p>Yayın takvimi araması ve kopya temizliği: Ad, alternatif ad, bölüm adı ve `S01E07` biçimiyle arama. Aynı yapımın TMDB/AniList kopyaları bölüm verisi olan kayıtta birleşiyor; farklı gün veya sezon/bölüm satırları korunuyor.</p>

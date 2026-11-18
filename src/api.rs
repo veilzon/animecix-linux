@@ -787,6 +787,9 @@ pub struct State {
     pub right_click_tip_seen: bool,
     #[serde(default)]
     pub tools_tip_seen: bool,
+    /// Oynatıcıdaki bölüm çekmecesi ipucu gösterildi mi?
+    #[serde(default)]
+    pub player_drawer_tip_seen: bool,
     #[serde(default)]
     pub marathon: Vec<MarathonItem>,
     #[serde(default)]
@@ -3557,6 +3560,10 @@ impl Client {
             .get("tools_tip_seen")
             .and_then(|x| x.as_bool())
             .unwrap_or(false);
+        st.player_drawer_tip_seen = obj
+            .get("player_drawer_tip_seen")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false);
         st
     }
 
@@ -4133,6 +4140,16 @@ impl Client {
     pub fn set_right_click_tip_seen(&self, seen: bool) {
         let mut st = self.load_state();
         st.right_click_tip_seen = seen;
+        self.save_state(&st);
+    }
+
+    pub fn is_player_drawer_tip_seen(&self) -> bool {
+        self.load_state().player_drawer_tip_seen
+    }
+
+    pub fn set_player_drawer_tip_seen(&self, seen: bool) {
+        let mut st = self.load_state();
+        st.player_drawer_tip_seen = seen;
         self.save_state(&st);
     }
 

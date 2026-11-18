@@ -12,10 +12,20 @@ pub struct EpisodeDrawer {
     pub list: gtk::Box,
     pub count: gtk::Label,
     pub strip: gtk::Revealer,
+    pub tip: gtk::Revealer,
+    pub tip_shown: Rc<Cell<bool>>,
     pub selected_season: Rc<Cell<u64>>,
 }
 
-pub fn build(stage: &gtk::Overlay) -> EpisodeDrawer {
+/// İpucu yalnız çok bölümlü yapımlarda ve kullanıcı çekmeceyi hiç açmadıysa.
+pub fn tip_needed(seen: bool, episode_count: usize) -> bool {
+    !seen && episode_count > 1
+}
+
+/// Oynatma başladıktan sonra ipucunun görünmesi için gereken süre.
+pub const TIP_DELAY_SECS: u64 = 20;
+
+pub fn build(stage: &gtk::Overlay, on_open: Rc<dyn Fn()>) -> EpisodeDrawer {
     let panel = gtk::Box::new(gtk::Orientation::Vertical, 8);
     panel.add_css_class("ep-panel");
     panel.set_size_request(300, -1);
@@ -80,10 +90,38 @@ pub fn build(stage: &gtk::Overlay) -> EpisodeDrawer {
     strip.set_visible(false);
     stage.add_overlay(&strip);
 
+    // Sağ kenardaki çekmeceyi ilk kez keşfettirmek için 20 sn sonra
+    // gösterilen ipucu; kullanıcı çekmeceyi açınca kalıcı olarak kapanır.
+    let tip_label = gtk::Label::new(Some("Bölümler →"));
+    tip_label.add_css_class("player-drawer-tip");
+    let tip = gtk::Revealer::builder()
+        .transition_type(gtk::RevealerTransitionType::SlideLeft)
+        .transition_duration(180)
+        .child(&tip_label)
+        .build();
+    tip.set_reveal_child(false);
+    tip.set_visible(false);
+    tip.set_halign(gtk::Align::End);
+    tip.set_valign(gtk::Align::Center);
+    tip.set_margin_end(26);
+    tip.set_can_target(false);
+    stage.add_overlay(&tip);
+
+    let opened_once = Rc::new(Cell::new(false));
     {
         let rev = revealer.clone();
+        let tip_c = tip.clone();
+        let opened = opened_once.clone();
+        let on_open = on_open.clone();
         let enter = gtk::EventControllerMotion::new();
-        enter.connect_enter(move |_, _, _| rev.set_reveal_child(true));
+        enter.connect_enter(move |_, _, _| {
+            rev.set_reveal_child(true);
+            tip_c.set_reveal_child(false);
+            tip_c.set_visible(false);
+            if !opened.replace(true) {
+                on_open();
+            }
+        });
         zone.add_controller(enter);
     }
     {
@@ -99,8 +137,28 @@ pub fn build(stage: &gtk::Overlay) -> EpisodeDrawer {
         list,
         count,
         strip,
+        tip,
+        tip_shown: Rc::new(Cell::new(false)),
         selected_season: Rc::new(Cell::new(0)),
     }
+}
+
+/// 20 saniyelik oynatma sonrası ipucunu gösterir; 8 sn sonra kendiliğinden
+/// gizlenir ama kullanıcı çekmeceyi açana kadar bir sonraki oyunda tekrar denenir.
+pub fn show_tip(drawer: &EpisodeDrawer) {
+    if drawer.tip_shown.replace(true) {
+        return;
+    }
+    drawer.tip.set_visible(true);
+    drawer.tip.set_reveal_child(true);
+    let tip = drawer.tip.clone();
+    glib::timeout_add_local_once(std::time::Duration::from_secs(8), move || {
+        tip.set_reveal_child(false);
+        let tip2 = tip.clone();
+        glib::timeout_add_local_once(std::time::Duration::from_millis(220), move || {
+            tip2.set_visible(false);
+        });
+    });
 }
 
 pub fn render(
@@ -245,5 +303,19 @@ fn clear(box_: &gtk::Box) {
         let next = child.next_sibling();
         box_.remove(&child);
         cur = next;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tip_needed;
+
+    #[test]
+    fn drawer_tip_only_for_multi_episode_and_until_seen() {
+        assert!(tip_needed(false, 2));
+        assert!(tip_needed(false, 12));
+        assert!(!tip_needed(true, 12));
+        assert!(!tip_needed(false, 1));
+        assert!(!tip_needed(false, 0));
     }
 }

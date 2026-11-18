@@ -89,6 +89,11 @@ pub fn player_css() -> String {
     .player-skip-card .title-4 { color: #FFFFFF; }
     .player-skip-card .dim-label { color: rgba(255,255,255,0.72); }
     .embed-edge { background: rgba(255,255,255,0.38); border-radius: 999px; }
+    .player-drawer-tip {
+        background: rgba(10,10,14,0.88); color: #FFFFFF; border-radius: 999px;
+        padding: 7px 13px; font-weight: 700; font-size: 0.9em;
+        border: 1px solid alpha(@accent_color, 0.55);
+    }
     .ep-panel {
         background: rgba(10,10,14,0.92); border-radius: 14px 0 0 14px;
         padding: 10px; border-left: 1px solid alpha(@accent_color, 0.35);

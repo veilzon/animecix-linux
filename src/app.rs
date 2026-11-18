@@ -3086,7 +3086,6 @@ impl App {
                     tm.set_xalign(0.0);
                     vb.append(&tm);
                 }
-                row.append(&vb);
                 let mut group_ids: Vec<u64> = vec![ce.title.id];
                 group_ids.extend(ce.alt_title_ids.iter().copied());
                 group_ids.sort_unstable();
@@ -4449,6 +4448,15 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.2" => Some((
+            "Yenilikler (v1.4.2)",
+            vec![
+                "Takvimde kapaklar artık başlığın solunda ve 16:9 oranında kırpılıyor; satır düzeni düzeldi.",
+                "Oynatıcıda bölüm çekmecesi ipucu: çok bölümlü yapıda oynatma başladıktan 20 sn sonra 'Bölümler →' görünür; çekmeceyi açınca bir daha çıkmaz.",
+                "Yayın takibi nasıl açılır: Takvim'de yapımı bul → satırdaki zile bas → Ayarlar → Yayın Takibi → 'Uygulama Kapalıyken Bildir'.",
+                "1.4.1'deki takvim araması, kopya kayıt temizliği ve bildirim dayanıklılığı korunuyor.",
+            ],
+        )),
         "1.4.1" => Some((
             "Yenilikler (v1.4.1)",
             vec![

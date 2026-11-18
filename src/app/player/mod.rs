@@ -107,6 +107,9 @@ struct PlayerState {
     skip_pill_rev: gtk::Revealer,
     skip_pill: gtk::Button,
     drawer: EpisodeDrawer,
+    drawer_seen: Rc<Cell<bool>>,
+    tip_deadline: Option<Instant>,
+    tip_shown: bool,
     episodes: Vec<Episode>,
     episode_rx: Option<std::sync::mpsc::Receiver<Result<Vec<Episode>, String>>>,
     fansubs: Vec<api::FansubInfo>,
@@ -330,7 +333,17 @@ pub fn build(
     // Kartlar kontrol barının ALTINDA kalsın: bar tıklamaları öncelikli.
     let controls = ui::build_control_bar(&stage, start_volume, start_muted, &media_title);
     let topbar = ui::build_topbar(&stage);
-    let drawer = episodes::build(&stage);
+    let drawer_seen = Rc::new(Cell::new(host.client.is_player_drawer_tip_seen()));
+    let on_drawer_open = {
+        let seen = drawer_seen.clone();
+        let client = host.client.clone();
+        Rc::new(move || {
+            if !seen.replace(true) {
+                client.set_player_drawer_tip_seen(true);
+            }
+        })
+    };
+    let drawer = episodes::build(&stage, on_drawer_open);
     let initial_episodes = req.episodes.clone();
     let on_play_episode = host.on_play_episode.clone();
     let episode_rx = if initial_episodes.len() <= 1 {
@@ -400,6 +413,9 @@ pub fn build(
         skip_pill_rev: skip_pill_rev.clone(),
         skip_pill: skip_pill.clone(),
         drawer: drawer.clone(),
+        drawer_seen: drawer_seen.clone(),
+        tip_deadline: None,
+        tip_shown: false,
         episodes: initial_episodes.clone(),
         episode_rx,
         fansubs: req.fansubs.clone(),
@@ -1984,6 +2000,26 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.plan_requested = true;
             }
             eprintln!("[EMBED] video hazır");
+        }
+
+        // Bölüm çekmecesi keşif ipucu: oynatma başladıktan 20 sn sonra,
+        // kullanıcı çekmeceyi hiç açmadıysa ve çok bölümlüyse.
+        if s.drawer_seen.get() {
+            s.tip_deadline = None;
+        } else if s.media_loaded
+            && episodes::tip_needed(false, s.episodes.len())
+            && s.tip_deadline.is_none()
+        {
+            s.tip_deadline =
+                Some(Instant::now() + std::time::Duration::from_secs(episodes::TIP_DELAY_SECS));
+        }
+        if !s.drawer_seen.get() {
+            if let Some(deadline) = s.tip_deadline {
+                if Instant::now() >= deadline && !s.tip_shown {
+                    s.tip_shown = true;
+                    episodes::show_tip(&s.drawer);
+                }
+            }
         }
 
         // Önbellek doluluk katmanı: oynatılan beyaz kısmın ötesinde,

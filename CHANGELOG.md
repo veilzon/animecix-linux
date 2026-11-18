@@ -1,3 +1,17 @@
+# Changelog — v1.4.2 (güncel sürüm notları)
+
+- **Takvim görünümü:** Kapaklar artık başlığın solunda ve 16:9 oranında
+  kırpılarak gösteriliyor; satır düzeni ve kapak oranı düzeldi.
+- **Bölüm çekmecesi ipucu:** Çok bölümlü bir yapıda oynatma başladıktan
+  20 saniye sonra sağ kenarda "Bölümler →" ipucu görünür. Çekmeceyi açınca
+  bir daha gösterilmez.
+- **Yayın takibi nasıl açılır:** Takvim'de yapımı bul → satırdaki zile bas →
+  Ayarlar → Yayın Takibi. "Uygulama Kapalıyken Bildir" arka plan takipçisini
+  oturum açılışında başlatır; "Şimdi Kontrol Et" elle dener. Aynı zile tekrar
+  basmak takibi ve bekleyen bildirimi iptal eder.
+- **Sürüm notları:** 1.4.1'deki takvim araması, kopya kayıt temizliği ve
+  bildirim dayanıklılığı korunuyor.
+
 # Changelog — v1.4.1 (güncel sürüm notları)
 
 - **Yayın takvimi araması ve kopya temizliği:** Ad, alternatif ad, bölüm adı
