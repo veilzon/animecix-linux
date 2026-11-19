@@ -1,0 +1,44 @@
+name: Eski release'leri temizle
+
+# Günlük olarak eski release'leri siler. En yeni `keep` release (varsayılan 5)
+# ve taslaklar korunur. Manuel tetiklemede dry-run yapılabilir.
+on:
+  schedule:
+    - cron: "0 4 * * *"
+  workflow_dispatch:
+    inputs:
+      keep:
+        description: "Korunacak en yeni release sayısı"
+        required: false
+        default: "5"
+      delete_tags:
+        description: "Release tag'lerini de sil"
+        type: boolean
+        default: true
+      dry_run:
+        description: "Sadece göster, silme"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: prune-releases
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Eski release'leri sil
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: ${{ inputs.keep || '5' }}
+          DELETE_TAGS: ${{ inputs.delete_tags }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: bash scripts/prune-releases.sh
