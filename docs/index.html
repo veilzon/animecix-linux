@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="dark">
 <title>AnimeciX · Linux için anime, dizi ve film</title>
-<meta name="description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.">
+<meta name="description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 8 tema ve çevrimdışı indirme.">
 <meta name="keywords" content="anime, linux, gtk4, libadwaita, appimage, mpv, anime4k, anime indirme">
 <meta name="author" content="veilzon">
 <meta name="theme-color" content="#05070B">
@@ -19,7 +19,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="AnimeciX">
 <meta property="og:title" content="AnimeciX · Anime, tek pencerede.">
-<meta property="og:description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.">
+<meta property="og:description" content="Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 8 tema ve çevrimdışı indirme.">
 <meta property="og:url" content="https://veilzon.github.io/animecix-linux/">
 <meta property="og:image" content="https://veilzon.github.io/animecix-linux/assets/og.png">
 <meta property="og:image:width" content="1200">
@@ -46,10 +46,10 @@
   "name": "AnimeciX",
   "applicationCategory": "MultimediaApplication",
   "operatingSystem": "Linux",
-  "softwareVersion": "1.4.3",
+  "softwareVersion": "1.4.4",
   "dateModified": "2026-10-26",
   "inLanguage": "tr",
-  "description": "Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 5 tema ve çevrimdışı indirme.",
+  "description": "Linux için anime, dizi ve film istemcisi. Keşfet, izle, indir. MPV, intro/outro atlama, Anime4K, 8 tema ve çevrimdışı indirme.",
   "url": "https://veilzon.github.io/animecix-linux/",
   "downloadUrl": "https://github.com/veilzon/animecix-linux/releases/latest",
   "screenshot": "https://veilzon.github.io/animecix-linux/assets/screenshots/home.webp",
@@ -128,7 +128,7 @@
   <section class="hero" aria-labelledby="hero-title">
     <div class="wrap hero-grid">
       <div class="hero-copy">
-        <p class="version-line"><span class="status-dot" aria-hidden="true"></span> Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.4.3</p>
+        <p class="version-line"><span class="status-dot" aria-hidden="true"></span> Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.4.4</p>
         <h1 id="hero-title">Anime, tek pencerede.</h1>
         <p class="hero-lead">Keşfet, izle, indir. Geçmiş, favoriler ve indirmeler hep hazır.</p>
         <div class="hero-actions">
@@ -311,14 +311,17 @@
   <section class="section themes" id="temalar" aria-labelledby="themes-title">
     <div class="wrap themes-grid">
       <div class="themes-copy">
-        <h2 id="themes-title">Beş tema. Tek karakter.</h2>
-        <p>Koyu, Bordo, Orman, Lacivert, Mor. Anında geç, satırlar temaya uysun.</p>
+        <h2 id="themes-title">Sekiz tema. Tek karakter.</h2>
+        <p>Koyu, Bordo, Orman, Lacivert, Mor, Aurora, Gün Batımı, Neon. Anında geç, satırlar temaya uysun.</p>
         <div class="theme-controls" role="group" aria-label="Tema seçimi">
           <button class="theme-button" type="button" data-theme="koyu" data-theme-label="Koyu" aria-pressed="true"><span class="theme-dot" style="--dot:#3584E4" aria-hidden="true"></span>Koyu</button>
           <button class="theme-button" type="button" data-theme="bordo" data-theme-label="Bordo" aria-pressed="false"><span class="theme-dot" style="--dot:#E5484D" aria-hidden="true"></span>Bordo</button>
           <button class="theme-button" type="button" data-theme="orman" data-theme-label="Orman" aria-pressed="false"><span class="theme-dot" style="--dot:#2EC27E" aria-hidden="true"></span>Orman</button>
           <button class="theme-button" type="button" data-theme="lacivert" data-theme-label="Lacivert" aria-pressed="false"><span class="theme-dot" style="--dot:#62A0EA" aria-hidden="true"></span>Lacivert</button>
           <button class="theme-button" type="button" data-theme="mor" data-theme-label="Mor" aria-pressed="false"><span class="theme-dot" style="--dot:#7C3AED" aria-hidden="true"></span>Mor</button>
+          <button class="theme-button" type="button" data-theme="aurora" data-theme-label="Aurora" aria-pressed="false"><span class="theme-dot" style="--dot:#38BDF8" aria-hidden="true"></span>Aurora</button>
+          <button class="theme-button" type="button" data-theme="gunbatimi" data-theme-label="Gün Batımı" aria-pressed="false"><span class="theme-dot" style="--dot:#FB923C" aria-hidden="true"></span>Gün Batımı</button>
+          <button class="theme-button" type="button" data-theme="neon" data-theme-label="Neon" aria-pressed="false"><span class="theme-dot" style="--dot:#22D3EE" aria-hidden="true"></span>Neon</button>
         </div>
         <p class="theme-status" aria-live="polite">Şu an: <strong data-theme-name>Koyu</strong></p>
         <p class="theme-note">Tema seçimi anında uygulanır.</p>
@@ -331,6 +334,9 @@
             <img class="theme-preview" data-theme-preview="orman" src="assets/screenshots/theme-orman.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Orman tema" loading="lazy" decoding="async" aria-hidden="true">
             <img class="theme-preview" data-theme-preview="lacivert" src="assets/screenshots/theme-lacivert.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Lacivert tema" loading="lazy" decoding="async" aria-hidden="true">
             <img class="theme-preview" data-theme-preview="mor" src="assets/screenshots/theme-mor.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Mor tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="aurora" src="assets/screenshots/theme-aurora.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Aurora tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="gunbatimi" src="assets/screenshots/theme-gunbatimi.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Gün Batımı tema" loading="lazy" decoding="async" aria-hidden="true">
+            <img class="theme-preview" data-theme-preview="neon" src="assets/screenshots/theme-neon.webp" width="1280" height="800" alt="AnimeciX ana sayfa, Neon tema" loading="lazy" decoding="async" aria-hidden="true">
           </div>
         </div>
       </div>
@@ -427,11 +433,11 @@ chmod +x AnimeciX.AppImage
               </button>
             </div>
             <pre><code>curl -L -O \
-  https://github.com/veilzon/animecix-linux/releases/download/v1.4.3/animecix_1.4.3_amd64.deb
-sudo apt install ./animecix_1.4.3_amd64.deb</code></pre>
+  https://github.com/veilzon/animecix-linux/releases/download/v1.4.4/animecix_1.4.4_amd64.deb
+sudo apt install ./animecix_1.4.4_amd64.deb</code></pre>
           </div>
           <div class="install-actions">
-            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.4.3/animecix_1.4.3_amd64.deb">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.4.4/animecix_1.4.4_amd64.deb">
               <span>Doğrudan indir</span>
               <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
             </a>
@@ -451,11 +457,11 @@ sudo apt install ./animecix_1.4.3_amd64.deb</code></pre>
               </button>
             </div>
             <pre><code>curl -L -O \
-  https://github.com/veilzon/animecix-linux/releases/download/v1.4.3/animecix-1.4.3-1.fc40.x86_64.rpm
-sudo dnf install ./animecix-1.4.3-1.fc40.x86_64.rpm</code></pre>
+  https://github.com/veilzon/animecix-linux/releases/download/v1.4.4/animecix-1.4.4-1.fc40.x86_64.rpm
+sudo dnf install ./animecix-1.4.4-1.fc40.x86_64.rpm</code></pre>
           </div>
           <div class="install-actions">
-            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.4.3/animecix-1.4.3-1.fc40.x86_64.rpm">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.4.4/animecix-1.4.4-1.fc40.x86_64.rpm">
               <span>Doğrudan indir</span>
               <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
             </a>
@@ -524,7 +530,7 @@ sudo dnf install ./animecix-1.4.3-1.fc40.x86_64.rpm</code></pre>
       <div class="cta-panel">
         <div class="cta-copy">
           <h2 id="cta-title">Sıradaki bölüm seni bekliyor.</h2>
-          <p class="cta-meta">Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.4.3 <span class="dot-sep" aria-hidden="true">·</span> 26 MB</p>
+          <p class="cta-meta">Linux x86_64 <span class="dot-sep" aria-hidden="true">·</span> v1.4.4 <span class="dot-sep" aria-hidden="true">·</span> 26 MB</p>
         </div>
         <div class="cta-actions">
           <a class="btn btn-primary" href="#kurulum">
