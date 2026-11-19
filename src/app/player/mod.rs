@@ -140,6 +140,8 @@ struct PlayerState {
     chrome_hidden: bool,
     cursor_hidden: bool,
     we_fullscreened: bool,
+    inhibit_cookie: Option<u32>,
+    key_ctrl: Option<gtk::EventControllerKey>,
     click_pending: Rc<Cell<bool>>,
     seeking: Rc<Cell<bool>>,
     seek_spinner: Option<(Instant, f64)>,
@@ -181,6 +183,10 @@ impl EmbeddedPlayer {
             return;
         }
         s.alive.store(false, Ordering::Relaxed);
+        if let Some(k) = s.key_ctrl.take() {
+            s.window.remove_controller(&k);
+        }
+        release_inhibit(&mut s);
         if let Some(p) = s.player.as_ref() {
             p.set_pause(true);
             let pos = p.pos();
@@ -446,6 +452,8 @@ pub fn build(
         chrome_hidden: false,
         cursor_hidden: false,
         we_fullscreened: false,
+        inhibit_cookie: None,
+        key_ctrl: None,
         click_pending: click_pending.clone(),
         seeking: seeking.clone(),
         seek_spinner: None,
@@ -805,6 +813,7 @@ pub fn build(
                     s.cursor_hidden = false;
                     s.gl_area.set_cursor_from_name(None);
                     show_chrome_locked(&mut s);
+                    s.gl_area.grab_focus();
                 }
             }
         });
@@ -836,6 +845,15 @@ pub fn build(
             let Some(st) = weak.upgrade() else {
                 return glib::Propagation::Proceed;
             };
+            if !st.borrow().gl_area.is_mapped() {
+                return glib::Propagation::Proceed;
+            }
+            // Arama/metin alanı odaktaysa oynatıcı kısayollarını çalma.
+            if let Some(focus) = gtk::prelude::RootExt::focus(&st.borrow().window) {
+                if focus.is::<gtk::Text>() {
+                    return glib::Propagation::Proceed;
+                }
+            }
             let is_pop_open = {
                 let s = st.borrow();
                 s.speed_pop.is_visible()
@@ -939,7 +957,23 @@ pub fn build(
                 _ => glib::Propagation::Proceed,
             }
         });
-        root.add_controller(key);
+        key.set_propagation_phase(gtk::PropagationPhase::Capture);
+        parent.add_controller(key.clone());
+        if let Ok(mut s) = state.try_borrow_mut() {
+            s.key_ctrl = Some(key);
+        }
+    }
+    {
+        let area = gl_area.clone();
+        controls.speed_pop.connect_closed(move |_| {
+            area.grab_focus();
+        });
+    }
+    {
+        let area = gl_area.clone();
+        controls.quality_pop.connect_closed(move |_| {
+            area.grab_focus();
+        });
     }
     {
         // Sayfa stack'e eklenip görünür olunca odağı klavye kontrolüne ver.
@@ -1972,6 +2006,19 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             if let Some(p) = s.player.as_ref() {
                 p.set_pause(false);
             }
+            if s.inhibit_cookie.is_none() {
+                if let Some(app) = s.window.application() {
+                    let cookie = app.inhibit(
+                        Some(&s.window),
+                        gtk::ApplicationInhibitFlags::IDLE,
+                        Some("Video oynatılıyor"),
+                    );
+                    if cookie != 0 {
+                        s.inhibit_cookie = Some(cookie);
+                        eprintln!("[EMBED] ekran uykusu engellendi (cookie {cookie})");
+                    }
+                }
+            }
             if let Some(resume) = s.resume.take() {
                 if resume >= 1.0 {
                     if let Some(p) = s.player.as_ref() {
@@ -2254,6 +2301,9 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         cb();
     }
     if finished_now {
+        if let Ok(mut s) = st.try_borrow_mut() {
+            release_inhibit(&mut s);
+        }
         let cb = st.borrow().host.on_terminal.clone();
         cb(crate::app::PlayTerminal::Done, String::new());
     }
@@ -2282,6 +2332,15 @@ fn set_fullscreen(state: &Rc<RefCell<PlayerState>>, on: bool) {
     s.cursor_hidden = false;
     s.gl_area.set_cursor_from_name(None);
     show_chrome_locked(&mut s);
+}
+
+fn release_inhibit(s: &mut PlayerState) {
+    if let Some(cookie) = s.inhibit_cookie.take() {
+        if let Some(app) = s.window.application() {
+            app.uninhibit(cookie);
+        }
+        eprintln!("[EMBED] ekran uykusu engeli bırakıldı");
+    }
 }
 
 fn poke_activity(state: &Rc<RefCell<PlayerState>>, x: f64, y: f64) {

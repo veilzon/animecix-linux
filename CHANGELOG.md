@@ -1,3 +1,17 @@
+# Changelog — v1.4.3 (güncel sürüm notları)
+
+- **Oynatıcı kısayolları:** Tuş odağı oynatıcı dışına kaçsa veya seek çubuğu
+  ya da bir düğme odaklansa bile Space, ←/→, ↑/↓, F, A, S/E, N/P çalışır.
+  Kısayol denetleyicisi pencere yakalama fazına taşındı; popover kapanınca
+  odak videoya döner.
+- **Ekran uykusu:** Oynatma sırasında ekranın kararması/uykuya girmesi
+  engellenir (GTK/portal inhibit). Video bitince veya oynatıcıdan çıkınca
+  engel bırakılır.
+- **Yayın Takibi durumu:** "Son kontrol" satırı artık canlı güncellenir.
+  GUI'nin yaptığı kontroller ayrı `ui-status.json` dosyasına yazılır;
+  "Şimdi Kontrol Et" sonucu en geç 2 saniye içinde yansır ve eski daemon
+  durumuyla yeni GUI kontrolünden en yenisi gösterilir.
+
 # Changelog — v1.4.2 (güncel sürüm notları)
 
 - **Takvim görünümü:** Kapaklar artık başlığın solunda ve 16:9 oranında

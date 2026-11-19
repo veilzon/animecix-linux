@@ -1014,6 +1014,19 @@ impl SettingsView {
         watch_status.set_title("Arka Plan Durumu");
         watch_status.set_subtitle(&watch_status_text());
         watch_group.add(&watch_status);
+        {
+            // Sayfa açıkken durum satırı canlı kalsın; satır yok edilince
+            // weak referans düşer ve zamanlayıcı kendiliğinden biter.
+            let weak = watch_status.downgrade();
+            glib::timeout_add_seconds_local(2, move || {
+                if let Some(row) = weak.upgrade() {
+                    row.set_subtitle(&watch_status_text());
+                    glib::ControlFlow::Continue
+                } else {
+                    glib::ControlFlow::Break
+                }
+            });
+        }
 
         let list_row = adw::ActionRow::new();
         list_row.set_title("Takip Listesi");
@@ -1468,21 +1481,30 @@ fn fmt_epoch(epoch: u64) -> String {
 
 /// Ayarlar > Yayın Takibi durum satırı: daemon canlı mı, son kontrol ne zaman?
 fn watch_status_text() -> String {
-    let st = crate::follow_store::load_daemon_status();
-    let running = st.running && crate::follow_store::pid_alive(st.pid);
+    let daemon = crate::follow_store::load_daemon_status();
+    let ui = crate::follow_store::load_ui_status();
+    let running = daemon.running && crate::follow_store::pid_alive(daemon.pid);
+    let last = daemon.last_check.max(ui.last_check);
+    let err = if ui.last_check >= daemon.last_check {
+        ui.last_error.as_str()
+    } else {
+        daemon.last_error.as_str()
+    };
     if running {
-        format!(
-            "Çalışıyor (pid {}) · son kontrol {}",
-            st.pid,
-            fmt_epoch(st.last_check)
-        )
-    } else if st.last_check > 0 {
-        let err = if st.last_error.trim().is_empty() {
-            String::new()
+        let t = if daemon.last_check > 0 {
+            fmt_epoch(daemon.last_check)
         } else {
-            format!(" · {}", st.last_error)
+            "—".to_string()
         };
-        format!("Son kontrol: {}{err}", fmt_epoch(st.last_check))
+        format!("Çalışıyor (pid {}) · son kontrol {t}", daemon.pid)
+    } else if last > 0 {
+        let mut s = format!("Son kontrol: {}", fmt_epoch(last));
+        let err = err.trim();
+        if !err.is_empty() && err != "takip kapalı" {
+            s.push_str(" · ");
+            s.push_str(&err.chars().take(80).collect::<String>());
+        }
+        s
     } else if !crate::desktop::follow_worker_available() {
         "Arka plan bileşeni bu kurulumda yok".to_string()
     } else {

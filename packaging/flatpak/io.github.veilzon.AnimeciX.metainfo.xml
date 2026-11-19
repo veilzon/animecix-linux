@@ -49,6 +49,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.3" date="2026-11-19">
+      <description>
+        <p>Oynatıcı kısayolları: Tuş odağı oynatıcı dışına kaçsa veya seek çubuğu ya da bir düğme odaklansa bile Space, ←/→, ↑/↓, F, A, S/E, N/P çalışır. Kısayol denetleyicisi pencere yakalama fazına taşındı; popover kapanınca odak videoya döner.</p>
+      </description>
+    </release>
     <release version="1.4.2" date="2026-11-18">
       <description>
         <p>Takvim görünümü: Kapaklar artık başlığın solunda ve 16:9 oranında kırpılarak gösteriliyor; satır düzeni ve kapak oranı düzeldi.</p>

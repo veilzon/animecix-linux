@@ -3473,6 +3473,19 @@ impl App {
             },
             Msg::CalendarBackground(res) => {
                 let manual = self.follow_refresh_pending.replace(false);
+                let now = crate::follow_store::now_secs();
+                let mut ust = crate::follow_store::load_ui_status();
+                ust.last_check = now;
+                match &res {
+                    Ok(_) => {
+                        ust.last_success = now;
+                        ust.last_error.clear();
+                    }
+                    Err(e) => {
+                        ust.last_error = e.chars().take(200).collect();
+                    }
+                }
+                crate::follow_store::save_ui_status(&ust);
                 match res {
                     Ok(days) => {
                         *self.calendar.borrow_mut() = Some(days);
@@ -4448,6 +4461,14 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.3" => Some((
+            "Yenilikler (v1.4.3)",
+            vec![
+                "Oynatıcı kısayolları odak değişse de çalışır: Space, ←/→, ↑/↓, F, A, S/E, N/P. Popover kapanınca odak videoya döner.",
+                "Oynatma sırasında ekranın kararması/uykuya girmesi engellenir; video bitince veya çıkınca engel bırakılır.",
+                "Yayın Takibi 'Son kontrol' satırı canlı güncellenir; 'Şimdi Kontrol Et' sonucu en geç 2 saniye içinde görünür.",
+            ],
+        )),
         "1.4.2" => Some((
             "Yenilikler (v1.4.2)",
             vec![

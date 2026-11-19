@@ -411,6 +411,37 @@ pub fn save_daemon_status(st: &DaemonStatus) {
     let _ = save_daemon_status_to(&daemon_path(), st);
 }
 
+/// GUI'nin yaptığı takip kontrollerinin durumu (daemon.json'dan ayrı).
+#[derive(Clone, Debug, Serialize, Deserialize, Default)]
+pub struct UiStatus {
+    #[serde(default)]
+    pub last_check: u64,
+    #[serde(default)]
+    pub last_success: u64,
+    #[serde(default)]
+    pub last_error: String,
+}
+
+pub fn ui_status_path() -> PathBuf {
+    data_dir().join("ui-status.json")
+}
+
+pub fn load_ui_status_from(path: &Path) -> UiStatus {
+    read_json::<UiStatus>(path).0.unwrap_or_default()
+}
+
+pub fn save_ui_status_to(path: &Path, st: &UiStatus) -> std::io::Result<()> {
+    write_json_atomic(path, st)
+}
+
+pub fn load_ui_status() -> UiStatus {
+    load_ui_status_from(&ui_status_path())
+}
+
+pub fn save_ui_status(st: &UiStatus) {
+    let _ = save_ui_status_to(&ui_status_path(), st);
+}
+
 fn read_json<T: DeserializeOwned>(path: &Path) -> (Option<T>, bool) {
     let Ok(text) = std::fs::read_to_string(path) else {
         return (None, false);
@@ -1355,6 +1386,22 @@ mod tests {
         assert_eq!(back.pid, 42);
         assert_eq!(back.last_check, 123);
         assert!(back.running);
+    }
+
+    #[test]
+    fn ui_status_roundtrip() {
+        let dir = tmp("ui-status");
+        let path = dir.join("ui-status.json");
+        let st = UiStatus {
+            last_check: 456,
+            last_success: 400,
+            last_error: "ağ hatası".into(),
+        };
+        save_ui_status_to(&path, &st).unwrap();
+        let back = load_ui_status_from(&path);
+        assert_eq!(back.last_check, 456);
+        assert_eq!(back.last_success, 400);
+        assert_eq!(back.last_error, "ağ hatası");
     }
 
     #[test]
