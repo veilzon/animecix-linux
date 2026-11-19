@@ -146,6 +146,7 @@ pub fn show_flashcard_wizard(
         pages,
     }));
     let on_done = Rc::new(on_done);
+    let title_type = title.title_type.clone();
 
     let dlg = gtk::Window::builder()
         .modal(true)
@@ -207,6 +208,7 @@ pub fn show_flashcard_wizard(
     let skip_btn_r = skip_btn.clone();
     let next_btn_r = next_btn.clone();
     let apply_all_r = apply_all.clone();
+    let title_type_r = title_type.clone();
     *render.borrow_mut() = Some(Rc::new(move || {
         let s = st_r.borrow();
         let kind = s.pages[s.page];
@@ -236,7 +238,13 @@ pub fn show_flashcard_wizard(
                 stack_r.remove(&old);
             }
             stack_r.add_named(
-                &build_summary(&s.items, &s.choice, &tour_r, skipped_empty),
+                &build_summary(
+                    &s.items,
+                    &s.choice,
+                    &tour_r,
+                    skipped_empty,
+                    title_type_r.as_deref(),
+                ),
                 Some("pg_summary"),
             );
         }
@@ -322,9 +330,11 @@ pub fn show_flashcard_wizard(
         let preselected = st.borrow().choice[pos].as_ref().map(|f| f.template_id);
 
         let vbox = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        let head = gtk::Label::new(Some(&format!(
-            "S{:02}E{:02} — {}",
-            ep.season, ep.episode, ep.name
+        let head = gtk::Label::new(Some(&crate::ui::components::episode_label_compact_for(
+            title_type.as_deref(),
+            ep.season,
+            ep.episode,
+            &ep.name,
         )));
         head.set_xalign(0.0);
         head.add_css_class("title-2");
@@ -443,6 +453,7 @@ fn build_summary(
     choice: &[Option<FansubInfo>],
     tour: &[usize],
     skipped_empty: usize,
+    title_type: Option<&str>,
 ) -> gtk::Box {
     let vbox = gtk::Box::new(gtk::Orientation::Vertical, 6);
     vbox.set_margin_top(8);
@@ -451,17 +462,12 @@ fn build_summary(
     let list = gtk::Box::new(gtk::Orientation::Vertical, 4);
     for (pos, &t) in tour.iter().enumerate() {
         let (ep, _) = &items[t];
+        let ep_label = crate::ui::components::episode_label_compact_for(
+            title_type, ep.season, ep.episode, &ep.name,
+        );
         let txt = match choice.get(pos).and_then(|c| c.as_ref()) {
-            Some(fs) => format!(
-                "{} → {} ({:.1}★)",
-                crate::ui::components::episode_label_compact(ep.season, ep.episode, &ep.name),
-                fs.name,
-                fs.rating
-            ),
-            None => format!(
-                "{} → atlanacak",
-                crate::ui::components::episode_label_compact(ep.season, ep.episode, &ep.name)
-            ),
+            Some(fs) => format!("{} → {} ({:.1}★)", ep_label, fs.name, fs.rating),
+            None => format!("{ep_label} → atlanacak"),
         };
         let lbl = gtk::Label::new(Some(&txt));
         lbl.set_xalign(0.0);

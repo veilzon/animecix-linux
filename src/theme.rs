@@ -5,12 +5,15 @@ use gtk::prelude::*;
 
 /// (id, görünen ad). Sıra ComboRow indeksleriyle eşleşir.
 /// Yalnızca koyu aile: açık tema kaldırıldı.
-pub const THEMES: [(&str, &str); 5] = [
+pub const THEMES: [(&str, &str); 8] = [
     ("koyu", "Koyu"),
     ("bordo", "Bordo"),
     ("orman", "Orman"),
     ("lacivert", "Lacivert"),
     ("mor", "Mor"),
+    ("aurora", "Aurora"),
+    ("gunbatimi", "Gün Batımı"),
+    ("neon", "Neon"),
 ];
 
 pub const DEFAULT_THEME: &str = "koyu";
@@ -64,6 +67,33 @@ fn palette(id: &str) -> Palette {
             on_accent: "#FFFFFF",
             row_tint: "#7C3AED",
             header_bg: "#211640",
+        },
+        "aurora" => Palette {
+            base: "#08111F",
+            over1: "rgba(56,189,248,0.26)",
+            over2: "rgba(168,85,247,0.24)",
+            accent: "#38BDF8",
+            on_accent: "#07131F",
+            row_tint: "#38BDF8",
+            header_bg: "#0D1B30",
+        },
+        "gunbatimi" => Palette {
+            base: "#1A0D0A",
+            over1: "rgba(251,146,60,0.28)",
+            over2: "rgba(190,24,93,0.24)",
+            accent: "#FB923C",
+            on_accent: "#231007",
+            row_tint: "#FB923C",
+            header_bg: "#2B1410",
+        },
+        "neon" => Palette {
+            base: "#070A12",
+            over1: "rgba(34,211,238,0.28)",
+            over2: "rgba(217,70,239,0.22)",
+            accent: "#22D3EE",
+            on_accent: "#061018",
+            row_tint: "#22D3EE",
+            header_bg: "#0D1422",
         },
         "koyu" => Palette {
             base: "#1E1E1E",
@@ -173,7 +203,7 @@ mod tests {
 
     #[test]
     fn all_themes_produce_contrast_safe_base() {
-        assert_eq!(THEMES.len(), 5, "yalnızca koyu aile");
+        assert_eq!(THEMES.len(), 8, "yalnızca koyu aile");
         for (id, _) in THEMES {
             let css = theme_css(id);
             assert!(!css.is_empty(), "{id}: css boş olamaz");
@@ -186,6 +216,16 @@ mod tests {
             assert!(
                 css.contains("@define-color row_tint"),
                 "{id}: satır boyası yok"
+            );
+        }
+    }
+
+    #[test]
+    fn gradient_themes_are_available() {
+        for id in ["aurora", "gunbatimi", "neon"] {
+            assert!(
+                THEMES.iter().any(|(theme, _)| *theme == id),
+                "{id}: gradyan tema eksik"
             );
         }
     }
@@ -251,7 +291,7 @@ mod tests {
 
     #[test]
     fn theme_index_roundtrip() {
-        assert_eq!(THEMES.len(), 5);
+        assert_eq!(THEMES.len(), 8);
         assert_eq!(THEMES[0].0, "koyu");
         assert!(THEMES.iter().any(|(i, _)| *i == "mor"));
         assert!(

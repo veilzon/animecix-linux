@@ -11,13 +11,19 @@ pub fn safe_fname(s: &str) -> String {
     out
 }
 
-pub fn screenshot_filename(title: &str, season: u64, episode: u64, timestamp: u64) -> String {
-    format!(
-        "{}-S{:02}E{:02}-{timestamp}.png",
-        safe_fname(title),
-        season,
-        episode
-    )
+pub fn screenshot_filename(
+    title: &str,
+    season: u64,
+    episode: u64,
+    is_movie: bool,
+    timestamp: u64,
+) -> String {
+    let context = if is_movie {
+        "Film".to_string()
+    } else {
+        format!("S{season:02}E{episode:02}")
+    };
+    format!("{}-{context}-{timestamp}.png", safe_fname(title))
 }
 
 pub fn info_text(info: &[(String, String)]) -> String {
@@ -34,9 +40,11 @@ pub fn info_text(info: &[(String, String)]) -> String {
 mod tests {
     #[test]
     fn screenshot_filename_sanitizes_and_has_context() {
-        let n = super::screenshot_filename("Witch/Hat: Atelier", 1, 3, 42);
+        let n = super::screenshot_filename("Witch/Hat: Atelier", 1, 3, false, 42);
         assert!(n.starts_with("WitchHat Atelier-S01E03-42"));
         assert!(!n.contains('/') && !n.contains(':'));
+        let movie = super::screenshot_filename("Suzume", 1, 1, true, 42);
+        assert_eq!(movie, "Suzume-Film-42.png");
     }
 
     #[test]

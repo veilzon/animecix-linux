@@ -302,7 +302,7 @@ fn hero_pool(cats: &[api::Category]) -> Vec<Title> {
             if t.backdrop.is_none() && t.poster.is_none() {
                 continue;
             }
-            let is_movie = t.title_type.as_deref() == Some("movie");
+            let is_movie = t.is_movie();
             if !is_movie && t.episode_count == Some(0) {
                 continue;
             }
@@ -2100,7 +2100,12 @@ impl App {
         flow.set_min_children_per_line(1);
         // Devam rafı sayfalanmaz: kartlar ortalanır, arada küçük boşluk kalır.
         for (t, ep) in items {
-            let sub = components::episode_label_compact(ep.season, ep.episode, &ep.name);
+            let sub = components::episode_label_compact_for(
+                t.title_type.as_deref(),
+                ep.season,
+                ep.episode,
+                &ep.name,
+            );
             flow.append(&self.create_title_card_sub(&t, cw, Some(sub)));
         }
         root.append(&flow);
@@ -2263,7 +2268,7 @@ impl App {
             move |title| {
                 this_click.open_episodes(title);
             },
-            move |id| {
+            move |id, checked| {
                 let item = this_toggle
                     .client
                     .get_marathon()
@@ -2272,11 +2277,16 @@ impl App {
                 let Some(item) = item else {
                     return;
                 };
-                if item.completed {
+                let is_movie = item.title.is_movie();
+                if !checked {
                     this_toggle.client.mark_title_unwatched(id);
                     this_toggle.client.set_marathon_completed(id, false);
                     this_toggle.ops.info(
-                        "⏳ Tüm bölümler izlenmedi olarak işaretlendi",
+                        if is_movie {
+                            "⏳ Film izlenmedi olarak işaretlendi"
+                        } else {
+                            "⏳ Tüm bölümler izlenmedi olarak işaretlendi"
+                        },
                         "",
                         std::time::Duration::from_secs(2),
                     );
@@ -2296,11 +2306,14 @@ impl App {
                         match msg {
                             Ok(Ok(n)) => {
                                 this_async.client.set_marathon_completed(id, true);
-                                this_async.ops.info(
-                                    &format!("🏁 {n} bölüm izlendi olarak işaretlendi!"),
-                                    "",
-                                    std::time::Duration::from_secs(2),
-                                );
+                                let msg = if is_movie {
+                                    "🏁 Film izlendi olarak işaretlendi!".to_string()
+                                } else {
+                                    format!("🏁 {n} bölüm izlendi olarak işaretlendi!")
+                                };
+                                this_async
+                                    .ops
+                                    .info(&msg, "", std::time::Duration::from_secs(2));
                             }
                             _ => {
                                 this_async.ops.info(
@@ -2576,20 +2589,20 @@ impl App {
             .chain(st.history.iter().map(|h| &h.title))
             .chain(st.marathon.iter().map(|m| &m.title))
         {
-            if t.title_type.as_deref() == Some("movie") {
+            if t.is_movie() {
                 movie_ids.insert(t.id);
             }
         }
         for cat in self.cats.borrow().iter() {
             for t in &cat.items {
-                if t.title_type.as_deref() == Some("movie") {
+                if t.is_movie() {
                     movie_ids.insert(t.id);
                 }
             }
         }
         for list in st.watched.values() {
             for w in list {
-                if w.title_type.as_deref() == Some("movie") {
+                if crate::api::is_movie_type(w.title_type.as_deref()) {
                     movie_ids.insert(w.title_id);
                 }
             }
@@ -3067,10 +3080,19 @@ impl App {
                 let vb = gtk::Box::new(gtk::Orientation::Vertical, 2);
                 vb.set_valign(gtk::Align::Center);
                 vb.set_hexpand(true);
-                let name = gtk::Label::new(Some(&format!(
-                    "{} S{:02}E{:02} · {}",
-                    ce.title.name, ce.season, ce.episode, ce.name
-                )));
+                let name_text = if ce.title.is_movie() {
+                    if ce.name.trim().is_empty() {
+                        format!("{} · Film", ce.title.name)
+                    } else {
+                        format!("{} · {}", ce.title.name, ce.name)
+                    }
+                } else {
+                    format!(
+                        "{} S{:02}E{:02} · {}",
+                        ce.title.name, ce.season, ce.episode, ce.name
+                    )
+                };
+                let name = gtk::Label::new(Some(&name_text));
                 name.add_css_class("title-4");
                 name.set_xalign(0.0);
                 name.set_single_line_mode(true);
@@ -3093,7 +3115,7 @@ impl App {
                 let following = group_ids.iter().any(|id| followed.contains(id));
                 content.append(&vb);
                 row.append(&content);
-                if ce.title.title_type.as_deref() != Some("movie") {
+                if !ce.title.is_movie() {
                     let follow_btn = components::follow_button(following);
                     let fid = ce.title.id;
                     let alt_ids = ce.alt_title_ids.clone();
@@ -3592,7 +3614,12 @@ impl App {
                             &format!(
                                 "{} — {}",
                                 title.name,
-                                components::episode_label_compact(ep.season, ep.episode, &ep.name)
+                                components::episode_label_compact_for(
+                                    title.title_type.as_deref(),
+                                    ep.season,
+                                    ep.episode,
+                                    &ep.name
+                                )
                             ),
                             &labels,
                             move |choice| match choice {
@@ -3648,18 +3675,24 @@ impl App {
                     let this_c = self.clone_ref();
                     let dir = this_c.effective_download_dir();
                     let series = crate::download::sanitize_filename(&title_c.name);
+                    let is_movie_c = title_c.is_movie();
                     self.spawn(move |c| {
                         let mut recs = Vec::new();
                         let mut skipped = Vec::new();
                         for (ep, fs) in &auto {
                             match crate::download::resolve_for_download(
-                                &c, &dir, title_c.id, &series, ep, fs, &quality_c,
+                                &c, &dir, title_c.id, &series, ep, fs, &quality_c, is_movie_c,
                             ) {
                                 Ok(rec) => recs.push(rec),
                                 Err(e) => {
                                     eprintln!("[DL] çözümleme atlandı: {e}");
-                                    skipped
-                                        .push(format!("S{:02}E{:02}: {e}", ep.season, ep.episode));
+                                    let ep_label = components::episode_label_compact_for(
+                                        title_c.title_type.as_deref(),
+                                        ep.season,
+                                        ep.episode,
+                                        &ep.name,
+                                    );
+                                    skipped.push(format!("{ep_label}: {e}"));
                                 }
                             }
                         }
@@ -3671,6 +3704,8 @@ impl App {
                 let this_c = self.clone_ref();
                 let dir = this_c.effective_download_dir();
                 let series = crate::download::sanitize_filename(&title.name);
+                let title_type_c = title.title_type.clone();
+                let is_movie_c = title.is_movie();
                 crate::ui::flashcard::show_flashcard_wizard(
                     &self.window,
                     &title,
@@ -3683,6 +3718,7 @@ impl App {
                         let series_c = series.clone();
                         let quality_cc = quality_c.clone();
                         let title_id_c = title.id;
+                        let title_type_d = title_type_c.clone();
                         this_c.spawn(move |c| {
                             let mut recs = Vec::new();
                             let mut skipped = Vec::new();
@@ -3695,14 +3731,18 @@ impl App {
                                     ep,
                                     fs,
                                     &quality_cc,
+                                    is_movie_c,
                                 ) {
                                     Ok(rec) => recs.push(rec),
                                     Err(e) => {
                                         eprintln!("[DL] çözümleme atlandı: {e}");
-                                        skipped.push(format!(
-                                            "S{:02}E{:02}: {e}",
-                                            ep.season, ep.episode
-                                        ));
+                                        let ep_label = components::episode_label_compact_for(
+                                            title_type_d.as_deref(),
+                                            ep.season,
+                                            ep.episode,
+                                            &ep.name,
+                                        );
+                                        skipped.push(format!("{ep_label}: {e}"));
                                     }
                                 }
                             }
@@ -3979,12 +4019,61 @@ impl App {
     }
 
     pub(crate) fn download_episode(&self, title: Title, ep: Episode) {
+        if title.is_movie() {
+            self.download_movie(title);
+            return;
+        }
         let this_q = self.clone_ref();
         let this = self.clone_ref();
         this_q.ask_download_quality(move |quality| {
             if let Some(quality) = quality {
                 this.start_download_prefetch(title.clone(), vec![ep.clone()], quality, true);
             }
+        });
+    }
+
+    /// Film indirmesi tek kaynak üzerinden yürür; bölüm/çevirmen aramaz.
+    pub(crate) fn download_movie(&self, title: Title) {
+        let this = self.clone_ref();
+        self.ask_download_quality(move |quality| {
+            let Some(quality) = quality else { return };
+            let title = title.clone();
+            let dir = this.effective_download_dir();
+            this.busy(true);
+            this.spawn(move |c| {
+                let res = c.resolve_movie(title.id).map(|url| {
+                    let series = crate::download::sanitize_filename(&title.name);
+                    let dest = dir.join(&series).join(format!(
+                        "{} [{}].mp4",
+                        series,
+                        crate::download::sanitize_filename(&quality)
+                    ));
+                    crate::download::DownloadRecord {
+                        id: format!("film:{}:{quality}", title.id),
+                        title_id: title.id,
+                        title: series,
+                        season: 1,
+                        episode: 1,
+                        is_movie: true,
+                        ep_name: title.name.clone(),
+                        fansub: String::new(),
+                        quality: quality.clone(),
+                        url,
+                        referer: None,
+                        dest,
+                        total: 0,
+                        have: 0,
+                        status: crate::download::DownloadStatus::Queued,
+                    }
+                });
+                move || match res {
+                    Ok(rec) => Msg::DlBatchResolved(vec![rec], Vec::new(), true),
+                    Err(e) => {
+                        eprintln!("[DL] film çözülemedi: {e}");
+                        Msg::DlBatchResolved(Vec::new(), vec![e], true)
+                    }
+                }
+            });
         });
     }
 
@@ -4297,13 +4386,10 @@ impl App {
 
     /// Başlık + bölümleri Episodes/Movie sayfasında gösterir (Eps + palet ortak).
     fn show_title_eps(&self, title: Title, eps: Vec<Episode>) {
-        let page = if eps.is_empty() {
+        let page = if eps.is_empty() || title.is_movie() {
             Page::Movie { title, eps }
         } else {
-            match title.title_type.as_deref() {
-                Some("movie") => Page::Movie { title, eps },
-                _ => Page::Episodes { title, eps },
-            }
+            Page::Episodes { title, eps }
         };
         {
             let mut st = self.page_history.borrow_mut();
@@ -4461,6 +4547,14 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.4" => Some((
+            "Yenilikler (v1.4.4)",
+            vec![
+                "Filmlerde izlendi işaretleme ve maraton tamamlanması düzeldi; film ilerlemesi anında ve kalıcı yansıyor.",
+                "Ayarlar → Donanım Hızlandırma: Kapalı (varsayılan) veya Otomatik; gömülü ve harici mpv için geçerli. Kasma/CPU yüküne göre seç; altında kısa yönlendirme var.",
+                "Üç yeni gradyan tema: Aurora, Gün Batımı, Neon. Bazı kullanıcı iyileştirmeleri.",
+            ],
+        )),
         "1.4.3" => Some((
             "Yenilikler (v1.4.3)",
             vec![

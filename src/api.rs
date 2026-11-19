@@ -174,7 +174,22 @@ pub struct Title {
     pub rating: Option<f64>,
 }
 
+/// Film türü varyantları ("movie", "movies", "film") tek yerden tanınır.
+pub fn is_movie_type(kind: Option<&str>) -> bool {
+    kind.map(|k| {
+        matches!(
+            k.trim().to_ascii_lowercase().as_str(),
+            "movie" | "movies" | "film"
+        )
+    })
+    .unwrap_or(false)
+}
+
 impl Title {
+    pub fn is_movie(&self) -> bool {
+        is_movie_type(self.title_type.as_deref())
+    }
+
     pub fn from_value(r: &serde_json::Value) -> Option<Title> {
         let id = r["id"].as_u64().or_else(|| r["title_id"].as_u64())?;
         let tt = r["title_type"].as_str().unwrap_or("").to_string();
@@ -295,8 +310,10 @@ impl Title {
         if let Some(y) = self.year {
             return y.to_string();
         }
+        if self.is_movie() {
+            return "Film".to_string();
+        }
         match self.title_type.as_deref() {
-            Some("movie") => "Film".to_string(),
             Some("anime") => "Anime".to_string(),
             _ => " ".to_string(),
         }
@@ -325,7 +342,7 @@ impl Title {
         }
         match self.episode_count {
             Some(ec) if ec > 0 => facts.push(format!("{} bölüm", ec)),
-            _ if self.title_type.as_deref() == Some("movie") => facts.push("Film".to_string()),
+            _ if self.is_movie() => facts.push("Film".to_string()),
             _ => {}
         }
         if let Some(rd) = &self.release_date {
@@ -347,7 +364,9 @@ impl Title {
                 }
                 .to_string()
             }),
-            self.season_count.map(|s| format!("{s} Sezon")),
+            self.season_count
+                .filter(|s| *s > 0 && !self.is_movie())
+                .map(|s| format!("{s} Sezon")),
         ]
         .into_iter()
         .flatten()
@@ -827,6 +846,9 @@ pub struct Settings {
     pub notify_uptodate: bool,
     #[serde(default = "default_upscale")]
     pub upscale: String,
+    /// Donanım decode: "off" (CPU/yazılım) veya "auto" (auto-safe).
+    #[serde(default = "default_hwdec")]
+    pub hwdec: String,
     #[serde(default)]
     pub light_mode: bool,
     #[serde(default = "default_patience")]
@@ -922,6 +944,9 @@ fn default_true() -> bool {
 }
 fn default_upscale() -> String {
     "hafif".into()
+}
+fn default_hwdec() -> String {
+    "off".into()
 }
 fn default_patience() -> u64 {
     20
@@ -1294,6 +1319,14 @@ pub fn fansub_fallback_order(chosen: &FansubInfo, rest: &[FansubInfo]) -> Vec<Fa
     out
 }
 
+/// Ayarlardaki kullanıcı dostu donanım hızlandırma modunu mpv değerine çevirir.
+pub(crate) fn hwdec_mpv_value(mode: &str) -> &'static str {
+    match mode {
+        "auto" => "auto-safe",
+        _ => "no",
+    }
+}
+
 /// Upscale için mpv argümanlarını üretir.
 ///
 /// `video_height` biliniyorsa (mpv açılmadan önceki metadata) akıllı skip uygular:
@@ -1365,6 +1398,7 @@ impl Default for Settings {
             auto_update: default_true(),
             notify_uptodate: default_true(),
             upscale: default_upscale(),
+            hwdec: default_hwdec(),
             light_mode: false,
             source_patience_secs: default_patience(),
             max_parallel_downloads: default_max_parallel(),
@@ -2012,7 +2046,7 @@ impl Client {
     }
 
     pub fn episodes(&self, t: &Title) -> Result<Vec<Episode>, String> {
-        if t.title_type.as_deref() == Some("movie") {
+        if t.is_movie() {
             return self.movie_episodes(t.id);
         }
         let seasons = t.season_count.unwrap_or(1).max(1) as u64;
@@ -3936,7 +3970,10 @@ impl Client {
     }
 
     pub fn title_progress_frac(&self, t: &Title) -> f64 {
-        if t.title_type.as_deref() == Some("movie") {
+        if t.is_movie() {
+            if self.is_watched(t.id, 1, 1) {
+                return 1.0;
+            }
             if let Some((pos, dur)) = self.get_progress(t.id, 1, 1) {
                 if dur > 0.0 {
                     return (pos / dur).clamp(0.0, 1.0);
@@ -4050,6 +4087,9 @@ impl Client {
         }
         if !matches!(s.calendar_watch_interval, 15 | 30 | 60) {
             s.calendar_watch_interval = default_calendar_watch_interval();
+        }
+        if !matches!(s.hwdec.as_str(), "off" | "auto") {
+            s.hwdec = default_hwdec();
         }
     }
 
@@ -4662,6 +4702,33 @@ mod tests {
     }
 
     #[test]
+    fn movie_type_variants_are_recognized() {
+        for kind in ["movie", "movies", "film", " Movie "] {
+            assert!(super::is_movie_type(Some(kind)), "{kind}");
+        }
+        assert!(!super::is_movie_type(Some("anime")));
+        assert!(!super::is_movie_type(None));
+
+        let mut t = sample("movies", None, None);
+        assert!(t.is_movie());
+        assert_eq!(t.card_subtitle(), "Film");
+        t.title_type = Some("film".into());
+        assert!(t.is_movie());
+    }
+
+    #[test]
+    fn meta_line_movie_hides_season_count() {
+        let mut t = sample("movie", Some(2020), Some(0));
+        assert_eq!(t.meta_line(), "2020  •  Film", "filmde 0 Sezon görünmemeli");
+        t.season_count = Some(1);
+        assert_eq!(
+            t.meta_line(),
+            "2020  •  Film",
+            "filmde sezon etiketi olmamalı"
+        );
+    }
+
+    #[test]
     fn meta_line_movie_no_seasons() {
         let t = sample("movie", Some(2019), None);
         assert_eq!(t.meta_line(), "2019  •  Film");
@@ -5125,6 +5192,34 @@ mod tests {
     }
 
     #[test]
+    fn movie_progress_frac_counts_manual_watched_mark() {
+        use_isolated_state();
+        let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let c = Client::new();
+        let tid: u64 = 999_992;
+        let mut t = sample("movie", None, None);
+        t.id = tid;
+
+        c.save_watched(
+            &Watched {
+                title_id: tid,
+                episode: 1,
+                season: 1,
+                title_name: Some("Film".into()),
+                title_type: Some("movie".into()),
+                ..Default::default()
+            },
+            "Film",
+        );
+        assert_eq!(
+            c.title_progress_frac(&t),
+            1.0,
+            "elle izlendi işaretlenen film tamamlanmış sayılmalı"
+        );
+        c.mark_title_unwatched(tid);
+    }
+
+    #[test]
     fn movie_progress_frac_reflects_playback() {
         use_isolated_state();
         let _g = STATE_LOCK.lock().unwrap_or_else(|e| e.into_inner());
@@ -5243,6 +5338,24 @@ mod tests {
         s.auto_skip_outro = true;
         let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
         assert!(back.auto_skip_outro);
+    }
+
+    #[test]
+    fn settings_hwdec_defaults_off_and_roundtrips() {
+        let old: Settings = serde_json::from_str("{}").unwrap();
+        assert_eq!(old.hwdec, "off", "mevcut akıcı davranış korunmalı");
+        let mut s = Settings::default();
+        s.hwdec = "auto".into();
+        let back: Settings = serde_json::from_str(&serde_json::to_string(&s).unwrap()).unwrap();
+        assert_eq!(back.hwdec, "auto");
+        assert_eq!(super::hwdec_mpv_value("auto"), "auto-safe");
+        assert_eq!(super::hwdec_mpv_value("off"), "no");
+        assert_eq!(super::hwdec_mpv_value("bozuk"), "no");
+
+        let mut bad = Settings::default();
+        bad.hwdec = "bozuk".into();
+        Client::normalize_settings(&mut bad);
+        assert_eq!(bad.hwdec, "off", "geçersiz ayar güvenli varsayılana döner");
     }
 
     #[test]

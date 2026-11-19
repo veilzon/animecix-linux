@@ -1,4 +1,19 @@
-# Changelog — v1.4.3 (güncel sürüm notları)
+# Changelog — v1.4.4 (güncel sürüm notları)
+
+- **Film ilerlemesi ve maraton:** İzlendi işaretlenen filmlerin ilerleme çubuğu
+  anında doluyor ve bu durum yeniden açılışta korunuyor. Maraton listesinde
+  filmler de tamamlandı sayılıyor; tamamlanan filmi geri almak için onay
+  kutusunu kullanabilirsin.
+- **Donanım Hızlandırma:** Ayarlar → Görüntü İyileştirme altına eklendi.
+  Varsayılan **Kapalı (yazılım)** gömülü oynatıcıdaki mevcut akıcı davranışı
+  korur; CPU yükü veya 4K/HEVC'de takılma olursa **Otomatik (donanım)**
+  seçilebilir. Ayar gömülü ve harici mpv için geçerlidir; altındaki açıklama
+  kasma/siyah görüntü durumunda ne yapılacağını anlatır.
+- **Gradyan temalar:** Aurora, Gün Batımı ve Neon eklendi; tema listesi
+  sekiz koyu seçeneğe çıktı.
+- **Bazı kullanıcı iyileştirmeleri.**
+
+# Changelog — v1.4.3
 
 - **Oynatıcı kısayolları:** Tuş odağı oynatıcı dışına kaçsa veya seek çubuğu
   ya da bir düğme odaklansa bile Space, ←/→, ↑/↓, F, A, S/E, N/P çalışır.

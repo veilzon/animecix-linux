@@ -29,6 +29,8 @@ pub struct DownloadRecord {
     pub title: String,
     pub season: u64,
     pub episode: u64,
+    /// Film indirmelerinde sezon/bölüm kodu gösterilmez.
+    pub is_movie: bool,
     /// Bölüm adı (satır başlığı için).
     /// NOT: kalıcılık elde yazılır (save/load_queue); struct'ta `serde`
     /// derive'u olmadığı için `#[serde(default)]` yerine `load_queue`
@@ -322,24 +324,37 @@ pub fn build_record(
     fs: &crate::api::FansubInfo,
     label: &str,
     url: &str,
+    is_movie: bool,
 ) -> DownloadRecord {
     let label = if label.is_empty() {
         "en iyi".to_string()
     } else {
         label.to_string()
     };
-    let dest = base_dir.join(series).join(episode_filename(
-        ep.season, ep.episode, &ep.name, &fs.name, &label,
-    ));
-    DownloadRecord {
-        id: format!(
+    let dest = if is_movie {
+        base_dir
+            .join(series)
+            .join(format!("{} [{}].mp4", series, sanitize_filename(&label)))
+    } else {
+        base_dir.join(series).join(episode_filename(
+            ep.season, ep.episode, &ep.name, &fs.name, &label,
+        ))
+    };
+    let id = if is_movie {
+        format!("film:{title_id}:{}", fs.template_id)
+    } else {
+        format!(
             "{series}:S{:02}E{:02}:{}",
             ep.season, ep.episode, fs.template_id
-        ),
+        )
+    };
+    DownloadRecord {
+        id,
         title_id,
         title: series.to_string(),
         season: ep.season,
         episode: ep.episode,
+        is_movie,
         ep_name: ep.name.clone(),
         fansub: fs.name.clone(),
         quality: label,
@@ -362,6 +377,7 @@ pub fn resolve_for_download(
     ep: &crate::api::Episode,
     fs: &crate::api::FansubInfo,
     quality: &str,
+    is_movie: bool,
 ) -> Result<DownloadRecord, String> {
     let mut last_err = "ayna yok".to_string();
     for m in &fs.mirrors {
@@ -373,7 +389,7 @@ pub fn resolve_for_download(
                     label
                 };
                 return Ok(build_record(
-                    base_dir, title_id, series, ep, fs, &label, &url,
+                    base_dir, title_id, series, ep, fs, &label, &url, is_movie,
                 ));
             }
             Err(e) => last_err = e,
@@ -397,7 +413,7 @@ pub fn save_queue(path: &Path, items: &[DownloadRecord]) -> Result<(), String> {
             serde_json::json!({
                 "id": r.id, "title_id": r.title_id,
                 "title": r.title, "season": r.season, "episode": r.episode,
-                "ep_name": r.ep_name,
+                "is_movie": r.is_movie, "ep_name": r.ep_name,
                 "fansub": r.fansub, "quality": r.quality, "url": r.url,
                 "referer": r.referer, "dest": r.dest.to_string_lossy(),
                 "total": r.total, "have": r.have, "status": status,
@@ -447,6 +463,12 @@ pub fn load_queue(path: &Path) -> Vec<DownloadRecord> {
                 title: r["title"].as_str().unwrap_or("").to_string(),
                 season: r["season"].as_u64().unwrap_or(0),
                 episode: r["episode"].as_u64().unwrap_or(0),
+                is_movie: r["is_movie"].as_bool().unwrap_or_else(|| {
+                    r["id"]
+                        .as_str()
+                        .map(|id| id.starts_with("film:"))
+                        .unwrap_or(false)
+                }),
                 ep_name: r["ep_name"].as_str().unwrap_or("").to_string(),
                 fansub: r["fansub"].as_str().unwrap_or("").to_string(),
                 quality,
@@ -893,6 +915,7 @@ mod tests {
             &test_fs(),
             "1080p",
             "https://cdn/v.mp4",
+            false,
         );
         assert_eq!(r.quality, "1080p", "kalite etikettir: {}", r.quality);
         assert_eq!(r.url, "https://cdn/v.mp4", "url adrestir: {}", r.url);
@@ -909,6 +932,7 @@ mod tests {
             &test_fs(),
             "",
             "https://cdn/v.mp4",
+            false,
         );
         assert_eq!(r2.quality, "en iyi");
         assert_eq!(r2.url, "https://cdn/v.mp4");
@@ -924,8 +948,34 @@ mod tests {
             &test_fs(),
             "1080p",
             "https://cdn/v.mp4",
+            false,
         );
         assert_eq!(r.ep_name, "Bölüm", "bölüm adı ep.name'den gelmeli");
+    }
+
+    #[test]
+    fn movie_record_has_no_season_code() {
+        let r = build_record(
+            Path::new("/tmp/x"),
+            7,
+            "Film",
+            &test_ep(),
+            &test_fs(),
+            "1080p",
+            "https://cdn/v.mp4",
+            true,
+        );
+        assert!(r.is_movie);
+        assert_eq!(r.id, "film:7:7");
+        assert!(
+            !r.dest.to_string_lossy().contains("S01E01"),
+            "film dosya adında sezon kodu olmamalı: {}",
+            r.dest.display()
+        );
+        assert_eq!(
+            r.dest.file_name().and_then(|s| s.to_str()),
+            Some("Film [1080p].mp4")
+        );
     }
 
     #[test]
@@ -1017,6 +1067,7 @@ mod tests {
             title: "Frieren".into(),
             season: 1,
             episode: 7,
+            is_movie: true,
             ep_name: "Gün Batımı".into(),
             fansub: "Raion".into(),
             quality: "1080p".into(),
@@ -1032,6 +1083,19 @@ mod tests {
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].episode, 7);
         assert_eq!(back[0].title_id, 42, "başlık kimliği korunmalı");
+        assert!(back[0].is_movie, "film bayrağı kuyrukta korunmalı");
+        // Eski film kayıtlarında alan yoksa kimlikten çıkarılır.
+        let legacy = serde_json::json!([{
+            "id": "film:7:1080p", "title_id": 7, "title": "Film",
+            "season": 1, "episode": 1, "ep_name": "Film",
+            "fansub": "", "quality": "1080p", "url": "https://ornek/v.mp4",
+            "referer": null, "dest": dir.join("film.mp4"),
+            "total": 0, "have": 0, "status": "queued"
+        }]);
+        let legacy_path = dir.join("legacy.json");
+        std::fs::write(&legacy_path, serde_json::to_string(&legacy).unwrap()).unwrap();
+        assert!(load_queue(&legacy_path)[0].is_movie);
+
         // Devam eden, kuyruğa döner.
         assert_eq!(back[0].status, DownloadStatus::Queued);
         let _ = std::fs::remove_dir_all(&dir);
@@ -1328,6 +1392,7 @@ mod tests {
             title: "T".into(),
             season: 1,
             episode: 1,
+            is_movie: false,
             ep_name: String::new(),
             fansub: "F".into(),
             quality: "1080p".into(),

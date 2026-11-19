@@ -19,7 +19,8 @@
       <li>Türkçe arayüz ve Türkçe altyazılı içerik desteği</li>
       <li>Bölüm ve film indirme: çok bağlantılı hızlı indirme, kaldığı yerden devam, toplu indirme</li>
       <li>Sayfalar menüsü (Ctrl+T): Ana Sayfa, Favoriler, Maraton, Geçmiş, İndirilenler, Ayarlar tek menüde</li>
-      <li>5 koyu tema: Koyu, Bordo, Orman, Lacivert, Mor</li>
+      <li>8 koyu tema: Koyu, Bordo, Orman, Lacivert, Mor, Aurora, Gün Batımı, Neon</li>
+      <li>Donanım hızlandırma seçeneği: yazılım (varsayılan) veya otomatik GPU decode</li>
       <li>Resmi intro/outro atlama ('s' / 'e' tuşları) + şarkı bilgisi (Shift+M ile tarayıcıda açma)</li>
       <li>Kaldığın yerden devam etme ve sürükle-bırak sıralamalı izleme maratonu</li>
       <li>Anime4K görsel iyileştirme modları</li>
@@ -49,6 +50,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.4" date="2026-11-19">
+      <description>
+        <p>Film ilerlemesi ve maraton tamamlanması düzeldi. Ayarlar'a Donanım Hızlandırma seçeneği (varsayılan yazılım; isteğe bağlı otomatik GPU decode) ve Aurora, Gün Batımı, Neon gradyan temaları eklendi. Bazı kullanıcı iyileştirmeleri.</p>
+      </description>
+    </release>
     <release version="1.4.3" date="2026-11-19">
       <description>
         <p>Oynatıcı kısayolları: Tuş odağı oynatıcı dışına kaçsa veya seek çubuğu ya da bir düğme odaklansa bile Space, ←/→, ↑/↓, F, A, S/E, N/P çalışır. Kısayol denetleyicisi pencere yakalama fazına taşındı; popover kapanınca odak videoya döner.</p>

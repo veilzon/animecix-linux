@@ -167,9 +167,10 @@ pub fn render(
     current_season: u64,
     current_episode: u64,
     runtime: Option<i64>,
+    is_movie: bool,
     on_play: &Rc<dyn Fn(Episode)>,
 ) {
-    drawer.strip.set_visible(episodes.len() > 1);
+    drawer.strip.set_visible(!is_movie && episodes.len() > 1);
     if episodes.is_empty() {
         clear(&drawer.season_bar);
         clear(&drawer.list);
@@ -200,6 +201,7 @@ pub fn render(
         current_season,
         current_episode,
         runtime,
+        is_movie,
         on_play,
     );
 }
@@ -211,6 +213,7 @@ fn render_season(
     current_season: u64,
     current_episode: u64,
     runtime: Option<i64>,
+    is_movie: bool,
     on_play: &Rc<dyn Fn(Episode)>,
 ) {
     clear(&drawer.season_bar);
@@ -219,7 +222,7 @@ fn render_season(
     let mut seasons: Vec<u64> = episodes.iter().map(|e| e.season).collect();
     seasons.sort_unstable();
     seasons.dedup();
-    for s in seasons {
+    for s in seasons.into_iter().filter(|_| !is_movie) {
         let b = gtk::Button::with_label(&format!("S{s}"));
         b.add_css_class("season-tab");
         if s == season {
@@ -237,6 +240,7 @@ fn render_season(
                 current_season,
                 current_episode,
                 runtime,
+                is_movie,
                 &cb,
             );
         });
@@ -245,7 +249,12 @@ fn render_season(
 
     let mut current: Vec<&Episode> = episodes.iter().filter(|e| e.season == season).collect();
     current.sort_by_key(|e| e.episode);
-    drawer.count.set_text(&format!("{} bölüm", current.len()));
+    let count_text = if is_movie {
+        "Film".to_string()
+    } else {
+        format!("{} bölüm", current.len())
+    };
+    drawer.count.set_text(&count_text);
     for e in current {
         let is_current = e.season == current_season && e.episode == current_episode;
         let b = gtk::Button::new();
@@ -258,7 +267,11 @@ fn render_season(
         vb.set_margin_start(8);
         vb.set_margin_end(8);
         let name = if e.name.trim().is_empty() {
-            format!("Bölüm {}", e.episode)
+            if is_movie {
+                "Film".to_string()
+            } else {
+                format!("Bölüm {}", e.episode)
+            }
         } else {
             e.name.clone()
         };
@@ -269,7 +282,11 @@ fn render_season(
         nm.set_ellipsize(gtk::pango::EllipsizeMode::End);
         nm.set_hexpand(true);
         vb.append(&nm);
-        let mut sub = format!("S{:02}E{:02}", e.season, e.episode);
+        let mut sub = if is_movie {
+            "Film".to_string()
+        } else {
+            format!("S{:02}E{:02}", e.season, e.episode)
+        };
         if let Some(rt) = runtime.filter(|r| *r > 0) {
             sub.push_str(&format!(" · {rt} dk"));
         }

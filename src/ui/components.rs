@@ -1,4 +1,4 @@
-use crate::api::{Client, Title};
+use crate::api::{is_movie_type, Client, Title};
 use adw::prelude::*;
 
 pub fn bookmark_button(client: &Client, t: &Title) -> gtk::Button {
@@ -121,9 +121,38 @@ pub fn episode_label_compact(season: u64, episode: u64, name: &str) -> String {
     format!("S{:02}E{:02}{}", season, episode, episode_name_suffix(name))
 }
 
+/// Filmlerde sezon/bölüm kodu gösterilmez; sade "Film" etiketi döner.
+pub fn episode_label_spaced_for(
+    title_type: Option<&str>,
+    season: u64,
+    episode: u64,
+    name: &str,
+) -> String {
+    if is_movie_type(title_type) {
+        return "Film".to_string();
+    }
+    episode_label_spaced(season, episode, name)
+}
+
+/// Filmlerde sezon/bölüm kodu gösterilmez; sade "Film" etiketi döner.
+pub fn episode_label_compact_for(
+    title_type: Option<&str>,
+    season: u64,
+    episode: u64,
+    name: &str,
+) -> String {
+    if is_movie_type(title_type) {
+        return "Film".to_string();
+    }
+    episode_label_compact(season, episode, name)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{episode_label_compact, episode_label_spaced};
+    use super::{
+        episode_label_compact, episode_label_compact_for, episode_label_spaced,
+        episode_label_spaced_for,
+    };
 
     #[test]
     fn episode_labels_skip_empty_names() {
@@ -135,5 +164,22 @@ mod tests {
     fn episode_labels_append_real_names() {
         assert_eq!(episode_label_spaced(1, 2, "Ad"), "S01 E02 · Ad");
         assert_eq!(episode_label_compact(1, 2, "Ad"), "S01E02 · Ad");
+    }
+
+    #[test]
+    fn movie_labels_hide_season_and_episode() {
+        assert_eq!(
+            episode_label_compact_for(Some("movie"), 1, 1, "Filmi izle"),
+            "Film"
+        );
+        assert_eq!(episode_label_spaced_for(Some("movie"), 1, 1, ""), "Film");
+        assert_eq!(
+            episode_label_compact_for(Some("film"), 1, 1, "Movie"),
+            "Film"
+        );
+        assert_eq!(
+            episode_label_compact_for(Some("anime"), 1, 2, "Ad"),
+            "S01E02 · Ad"
+        );
     }
 }

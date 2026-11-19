@@ -55,6 +55,7 @@ pub struct EmbedRequest {
     pub plan: Option<SkipPlan>,
     pub saved_pos: Option<f64>,
     pub upscale: String,
+    pub hwdec: String,
     pub auto_fullscreen: bool,
     pub show_skip_button: bool,
     pub show_song_card: bool,
@@ -234,7 +235,12 @@ pub fn build(
     let media_title = format!(
         "{} — {}",
         req.title.name,
-        crate::ui::components::episode_label_compact(req.ep.season, req.ep.episode, &req.ep.name)
+        crate::ui::components::episode_label_compact_for(
+            req.title.title_type.as_deref(),
+            req.ep.season,
+            req.ep.episode,
+            &req.ep.name
+        )
     );
     eprintln!(
         "[EMBED] açılıyor: {media_title} (kaynak={})",
@@ -259,6 +265,7 @@ pub fn build(
             "stream-lavf-o".into(),
             "reconnect=1,reconnect_streamed=1,reconnect_delay_max=5".into(),
         ),
+        ("hwdec".into(), api::hwdec_mpv_value(&req.hwdec).to_string()),
     ];
     let shader = match req.upscale.as_str() {
         "hafif" => crate::app::resolve_upscale_shader("Anime4K_Upscale_DTD_x2.glsl"),
@@ -287,7 +294,7 @@ pub fn build(
         &req.source_labels,
         &req.fallback_labels,
     );
-    let is_movie = req.title.title_type.as_deref() == Some("movie");
+    let is_movie = req.title.is_movie();
     let discord_state =
         crate::discord_rpc::episode_state(req.ep.season, req.ep.episode, &req.ep.name, is_movie);
     host.discord
@@ -991,6 +998,7 @@ pub fn build(
         req.ep.season,
         req.ep.episode,
         req.title.runtime,
+        req.title.is_movie(),
         &on_play_episode,
     );
 
@@ -1724,7 +1732,13 @@ fn take_screenshot(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
-    let path = dir.join(menu::screenshot_filename(title, season, episode, ts));
+    let is_movie = state
+        .try_borrow()
+        .map(|s| s.title.is_movie())
+        .unwrap_or(false);
+    let path = dir.join(menu::screenshot_filename(
+        title, season, episode, is_movie, ts,
+    ));
     let result = {
         let Ok(s) = state.try_borrow() else { return };
         let Some(p) = s.player.as_ref() else { return };
@@ -1764,7 +1778,16 @@ fn show_video_info(state: &Rc<RefCell<PlayerState>>, window: &adw::ApplicationWi
     };
     let heading = {
         let s = state.borrow();
-        format!("{} — S{:02}E{:02}", s.title.name, s.ep.season, s.ep.episode)
+        format!(
+            "{} — {}",
+            s.title.name,
+            crate::ui::components::episode_label_compact_for(
+                s.title.title_type.as_deref(),
+                s.ep.season,
+                s.ep.episode,
+                &s.ep.name
+            )
+        )
     };
     let dlg = adw::MessageDialog::builder()
         .heading(&heading)
@@ -1899,7 +1922,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         updated
     };
     if episodes_updated {
-        let (drawer, eps, season, episode, runtime, cb) = {
+        let (drawer, eps, season, episode, runtime, is_movie, cb) = {
             let s = match st.try_borrow() {
                 Ok(s) => s,
                 Err(_) => return,
@@ -1910,10 +1933,11 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.ep.season,
                 s.ep.episode,
                 s.title.runtime,
+                s.title.is_movie(),
                 s.host.on_play_episode.clone(),
             )
         };
-        episodes::render(&drawer, &eps, season, episode, runtime, &cb);
+        episodes::render(&drawer, &eps, season, episode, runtime, is_movie, &cb);
     }
 
     // Embed çözümleme sonucu geldi mi?
@@ -2126,10 +2150,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.terminal_sent = true;
                 finished_now = true;
                 s.host.discord.clear();
-                if s.auto_next_enabled
-                    && !s.auto_next_fired
-                    && s.title.title_type.as_deref() != Some("movie")
-                {
+                if s.auto_next_enabled && !s.auto_next_fired && !s.title.is_movie() {
                     s.auto_next_fired = true;
                     auto_next_now = true;
                 }
@@ -2181,7 +2202,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 && s.auto_next_enabled
                 && s.auto_skip_outro
                 && !s.auto_next_fired
-                && s.title.title_type.as_deref() != Some("movie")
+                && !s.title.is_movie()
             {
                 skip_outro_now = true;
             }

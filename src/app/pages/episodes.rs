@@ -3,7 +3,7 @@ use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 
 use crate::api::{self, Episode, Title};
-use crate::app::{episode_bar_display, App, EpisodeBar, Msg};
+use crate::app::{episode_bar_display, App, EpisodeBar};
 use crate::ui::{components, episodes_view};
 
 /// Sezon çubuğunda doğrudan gösterilen sezon sayısı; kalanı `…` popover'ına.
@@ -49,7 +49,7 @@ impl App {
         scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         scroll.add_css_class("clear-scroll");
 
-        let is_movie = title.title_type.as_deref() == Some("movie")
+        let is_movie = title.is_movie()
             || (eps.len() <= 1
                 && eps
                     .first()
@@ -149,48 +149,7 @@ impl App {
                 let this_dl = self.clone_ref();
                 let title_dl = title.clone();
                 dl_film.connect_clicked(move |_| {
-                    let this_q = this_dl.clone_ref();
-                    let this2 = this_dl.clone_ref();
-                    let title2 = title_dl.clone();
-                    this_q.ask_download_quality(move |q| {
-                        let Some(quality) = q else { return };
-                        let title3 = title2.clone();
-                        let dir = this2.effective_download_dir();
-                        this2.busy(true);
-                        this2.spawn(move |c| {
-                            let res = c.resolve_movie(title3.id).map(|url| {
-                                let series = crate::download::sanitize_filename(&title3.name);
-                                let dest = dir.join(&series).join(format!(
-                                    "{} [{}].mp4",
-                                    series,
-                                    crate::download::sanitize_filename(&quality)
-                                ));
-                                crate::download::DownloadRecord {
-                                    id: format!("film:{}:{quality}", title3.id),
-                                    title_id: title3.id,
-                                    title: series,
-                                    season: 1,
-                                    episode: 1,
-                                    ep_name: title3.name.clone(),
-                                    fansub: String::new(),
-                                    quality: quality.clone(),
-                                    url,
-                                    referer: None,
-                                    dest,
-                                    total: 0,
-                                    have: 0,
-                                    status: crate::download::DownloadStatus::Queued,
-                                }
-                            });
-                            move || match res {
-                                Ok(rec) => Msg::DlBatchResolved(vec![rec], Vec::new(), true),
-                                Err(e) => {
-                                    eprintln!("[DL] film çözülemedi: {e}");
-                                    Msg::DlBatchResolved(Vec::new(), vec![e], true)
-                                }
-                            }
-                        });
-                    });
+                    this_dl.download_movie(title_dl.clone());
                 });
             }
             scroll.set_child(Some(&movie_view));

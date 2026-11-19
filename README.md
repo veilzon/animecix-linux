@@ -25,7 +25,7 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Yan menü**: Ana Sayfa, Keşfet, Favoriler, Maraton, Geçmiş, İstatistikler, Takvim, Haberler, İndirilenler, Ayarlar ve Kısayollar tek tıkla; daraltınca sadece simgeler kalır
 - **Ana sayfa**: tam genişlikte öne çıkan (hero) öneri, iskelet yükleme, kaldığın bölümler (Devam rafı, sayfalanmaz) ve sayfalı raflar
 - **Keşfet / Takvim / Haberler**: tür-sıralama filtreli katalog, ad/alternatif ad/bölüm aramalı ve takip edilebilir yayın takvimi, uygulama içi haberler (yazı boyu ayarlanabilir)
-- **5 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor; karşılama ekranında canlı önizleme
+- **8 koyu tema**: Koyu, Bordo, Orman, Lacivert, Mor, Aurora, Gün Batımı, Neon; karşılama ekranında canlı önizleme
 - **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
 - **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Oynatma geri bildirimi**: Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci ve seek sırasında görsel geri bildirim; otomatik sonraki bölümle birlikte outro'yu atlama
@@ -41,7 +41,7 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Otomatik güncelleme**: AppImage, .deb, .rpm ve Flatpak kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
-- **Ayarlar**: tema, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, yayın takibi, masaüstü başlatıcı, veri sıfırlama
+- **Ayarlar**: tema, donanım hızlandırma, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, yayın takibi, masaüstü başlatıcı, veri sıfırlama
 - **Hızlı yükleme**: HTTP/2 multiplexing ve bağlantı havuzu (keep-alive);
   kapak görselleri paralel (3 worker) indirilir
 
@@ -346,7 +346,8 @@ Geliştirme, test ve hata ayıklama için kullanılabilecek değişkenler:
 | `ANIMECIX_LIBMPV_PATH=/yol/libmpv.so.2` | Belirli bir libmpv dosyasını kullanmaya zorlar. |
 | `ANIMECIX_STATE_DIR=/tmp/animecix-test` | `state.json` için farklı bir dizin kullanır (temiz profil testi). |
 | `ANIMECIX_SMOKE_HOLD=5` | `--player-smoke` testinde videoyu 5 sn tutar; normal oynatıcıda kontrollerin otomatik gizlenmesini engeller. |
-| `ANIMECIX_SMOKE_THEME=bordo` | `--player-smoke` teması: `koyu`, `bordo`, `orman`, `lacivert`, `mor`. |
+| `ANIMECIX_SMOKE_THEME=bordo` | `--player-smoke` teması: `koyu`, `bordo`, `orman`, `lacivert`, `mor`, `aurora`, `gunbatimi`, `neon`. |
+| `ANIMECIX_SMOKE_HWDEC=auto` | `--player-smoke` donanım decode modu: `off` (varsayılan) veya `auto`. |
 | `ANIMECIX_FAKE_INSTALL_KIND=deb` | Yalnız debug derlemede güncelleme akışındaki kurulum türünü taklit eder (`deb`, `rpm`, `arch` veya `appimage`). |
 | `ANIMECIX_FAKE_PKG_VERSION=1.2.3` | Yalnız debug derlemede kurulu paket sürümünü taklit eder. |
 | `ANIMECIX_VAULT_URL=...` | İntro/outro kasa adresini geçici olarak değiştirir. |

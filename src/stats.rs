@@ -328,6 +328,7 @@ mod tests {
             title: "Dizi".into(),
             season: 1,
             episode: 1,
+            is_movie: false,
             ep_name: "Bölüm".into(),
             fansub: "F".into(),
             quality: "1080p".into(),

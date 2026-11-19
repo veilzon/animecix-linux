@@ -109,6 +109,7 @@ pub fn run(path: &str) {
             plan: None,
             saved_pos: None,
             upscale: "off".into(),
+            hwdec: std::env::var("ANIMECIX_SMOKE_HWDEC").unwrap_or_else(|_| "off".into()),
             auto_fullscreen: false,
             show_skip_button: true,
             show_song_card: true,

@@ -643,6 +643,7 @@ mod tests {
             title: "Anime".into(),
             season: 1,
             episode: 1,
+            is_movie: false,
             ep_name: "Ad".into(),
             fansub: "Fansub".into(),
             quality: "1080p".into(),

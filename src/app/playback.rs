@@ -9,6 +9,16 @@ use crate::app::{
 use crate::ui::components;
 use crate::ui::operation_stack::OperationState;
 
+/// İndirme kaydından yerel oynatma başlığı üretir; film kimliği korunur.
+pub(crate) fn local_playback_title(rec: &crate::download::DownloadRecord, title_id: u64) -> Title {
+    Title {
+        id: title_id,
+        name: rec.title.clone(),
+        title_type: rec.is_movie.then(|| "movie".to_string()),
+        ..Default::default()
+    }
+}
+
 impl App {
     pub(crate) fn play(&self, title: &Title, ep: &Episode) {
         if let Some(rec) = crate::local_playback::find_for_episode(
@@ -29,7 +39,7 @@ impl App {
         );
         // İzleme geçmişi/değişir → eve dönüşte devam rafı tazelensin.
         self.home_dirty.set(true);
-        let is_movie = title.title_type.as_deref() == Some("movie");
+        let is_movie = title.is_movie();
         if is_movie {
             self.play_resolved(&title, &ep, None);
             return;
@@ -150,7 +160,12 @@ impl App {
             &format!(
                 "{} — {}",
                 title.name,
-                components::episode_label_compact(ep.season, ep.episode, &ep.name)
+                components::episode_label_compact_for(
+                    title.title_type.as_deref(),
+                    ep.season,
+                    ep.episode,
+                    &ep.name
+                )
             ),
             fansubs,
             Some(qrx),
@@ -350,7 +365,7 @@ impl App {
         self.busy(true);
         self.spawn(move |c| {
             let pref = c.get_preferred_host(title.id);
-            let res = if title.title_type.as_deref() == Some("movie") {
+            let res = if title.is_movie() {
                 // Filmde atlama planı yok (bölüm eşlemesi belirsiz).
                 c.resolve_movie(title.id).map(|u| PlaySources {
                     candidates: vec![u],
@@ -413,7 +428,7 @@ impl App {
     /// komşuyu bulur, `Msg::NextEp` ile oynatır. Sınırda toast'lık hata döner
     /// (filmde liste boşsa da aynı yol). `dir`: +1 sonraki, -1 önceki.
     pub(crate) fn request_neighbor(&self, title: &Title, cur: &Episode, dir: i8) {
-        if title.title_type.as_deref() == Some("movie") {
+        if title.is_movie() {
             self.ops.info(
                 "Filmde sonraki bölüm yok",
                 "",
@@ -478,11 +493,7 @@ impl App {
                 std::time::Duration::from_secs(4),
             );
         }
-        let title = Title {
-            id: title_id,
-            name: rec.title.clone(),
-            ..Default::default()
-        };
+        let title = local_playback_title(rec, title_id);
         let ep = Episode {
             season: rec.season,
             episode: rec.episode,
@@ -601,6 +612,7 @@ impl App {
 
         let (
             upscale,
+            hwdec,
             auto_fullscreen,
             embedded_skip_button,
             embedded_song_card,
@@ -609,6 +621,7 @@ impl App {
             let s = self.settings.borrow();
             (
                 s.upscale.clone(),
+                s.hwdec.clone(),
                 s.auto_fullscreen,
                 s.embedded_skip_button,
                 s.embedded_song_card,
@@ -647,7 +660,12 @@ impl App {
         let media_title = format!(
             "{} — {}",
             title.name,
-            components::episode_label_compact(ep.season, ep.episode, &ep.name)
+            components::episode_label_compact_for(
+                title.title_type.as_deref(),
+                ep.season,
+                ep.episode,
+                &ep.name
+            )
         );
         let op_id = format!("play:{}:{}:{}", title.id, ep.season, ep.episode);
         self.ops.begin(&op_id, "Açılıyor", &media_title);
@@ -766,6 +784,7 @@ impl App {
             plan,
             saved_pos,
             upscale,
+            hwdec,
             auto_fullscreen,
             show_skip_button: embedded_skip_button,
             show_song_card: embedded_song_card,
@@ -916,7 +935,12 @@ impl App {
         let media_title = format!(
             "{} | {}",
             title.name,
-            components::episode_label_compact(ep.season, ep.episode, &ep.name)
+            components::episode_label_compact_for(
+                title.title_type.as_deref(),
+                ep.season,
+                ep.episode,
+                &ep.name
+            )
         );
         let tid = title.id;
         let season = ep.season;
@@ -927,7 +951,7 @@ impl App {
 
         let saved_pos = self.client.start_pos(tid, season, episode);
 
-        let is_movie = title.title_type.as_deref() == Some("movie");
+        let is_movie = title.is_movie();
         let discord_state = crate::discord_rpc::episode_state(season, episode, &ep.name, is_movie);
         self.discord_rpc
             .set_activity(crate::discord_rpc::Activity::from_playback(
@@ -944,6 +968,7 @@ impl App {
 
         let auto_fullscreen = self.settings.borrow().auto_fullscreen;
         let upscale = self.settings.borrow().upscale.clone();
+        let hwdec = self.settings.borrow().hwdec.clone();
         let show_intro_hint = self.settings.borrow().show_intro_hint;
         let show_music_hint = self.settings.borrow().show_music_hint;
         let skip_times = plan.as_ref().map(|p| p.times.clone()).unwrap_or_default();
@@ -1339,6 +1364,7 @@ impl App {
             let saved_pos_c = saved_pos;
             let auto_fullscreen_c = auto_fullscreen;
             let upscale_c = upscale;
+            let hwdec_c = hwdec;
             let ass_path_c = ass_path.clone();
             let mpv_child_c = mpv_child.clone();
             let play_gen_c = self.play_gen.clone();
@@ -1448,7 +1474,7 @@ impl App {
                         .arg("--cache-secs=120")
                         .arg("--stream-lavf-o=reconnect=1,reconnect_streamed=1,reconnect_delay_max=5")
                         .arg("--network-timeout=10")
-                        .arg("--hwdec=auto-safe")
+                        .arg(format!("--hwdec={}", crate::api::hwdec_mpv_value(&hwdec_c)))
                         .args(crate::api::upscale_mpv_args(&upscale_c, match upscale_c.as_str() {
                             "hafif" => crate::app::resolve_upscale_shader("Anime4K_Upscale_DTD_x2.glsl"),
                             "ultra" => crate::app::resolve_upscale_shader("Anime4K_Upscale_CNN_x2_UL.glsl"),
@@ -1715,5 +1741,40 @@ impl App {
                 let _ = std::fs::remove_file(&sock_path_c);
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::local_playback_title;
+    use crate::download::{DownloadRecord, DownloadStatus};
+    use std::path::PathBuf;
+
+    fn rec(is_movie: bool) -> DownloadRecord {
+        DownloadRecord {
+            id: "x".into(),
+            title_id: 7,
+            title: "Film".into(),
+            season: 1,
+            episode: 1,
+            is_movie,
+            ep_name: "Film".into(),
+            fansub: String::new(),
+            quality: "1080p".into(),
+            url: "https://example/v.mp4".into(),
+            referer: None,
+            dest: PathBuf::from("/tmp/film.mp4"),
+            total: 0,
+            have: 0,
+            status: DownloadStatus::Done,
+        }
+    }
+
+    #[test]
+    fn local_movie_download_keeps_movie_type() {
+        let t = local_playback_title(&rec(true), 7);
+        assert!(t.is_movie(), "indirilmiş film seri gibi açılmamalı");
+        assert_eq!(t.name, "Film");
+        assert!(!local_playback_title(&rec(false), 7).is_movie());
     }
 }

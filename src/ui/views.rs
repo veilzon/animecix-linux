@@ -10,7 +10,7 @@ impl MarathonView {
     pub fn build(
         client: std::sync::Arc<Client>,
         on_item_click: impl Fn(Title) + 'static,
-        on_toggle_completed: impl Fn(u64) + 'static,
+        on_toggle_completed: impl Fn(u64, bool) + 'static,
         on_remove_item: impl Fn(u64) + 'static,
         on_clear_all: impl Fn() + 'static,
         on_reorder: impl Fn(u64, usize) + 'static,
@@ -165,11 +165,11 @@ impl MarathonView {
             let on_t_c = on_toggle_rc.clone();
             let chk_guard = Rc::new(std::cell::Cell::new(false));
             let chk_guard_c = chk_guard.clone();
-            chk.connect_toggled(move |_| {
+            chk.connect_toggled(move |c| {
                 if chk_guard_c.get() {
                     return;
                 }
-                on_t_c(tid);
+                on_t_c(tid, c.is_active());
             });
 
             let pic = gtk::Picture::new();
@@ -430,7 +430,8 @@ impl HistoryView {
             name.set_ellipsize(gtk::pango::EllipsizeMode::End);
             name.add_css_class("title-3");
 
-            let sub_text = crate::ui::components::episode_label_spaced(
+            let sub_text = crate::ui::components::episode_label_spaced_for(
+                h.title.title_type.as_deref(),
                 h.episode.season,
                 h.episode.episode,
                 &h.episode.name,
@@ -865,8 +866,6 @@ impl SettingsView {
                 .position(|(id, _)| *id == settings.cover_quality)
                 .unwrap_or(1) as u32,
         );
-        img_group.add(&cover_q_row);
-
         let upscale_desc = gtk::Label::new(Some(
             "Yalnızca kaynak çözünürlüğü ekrandan küçükse etki eder.\nHafif: DTD (iGPU dostu, hafif). Ultra: CNN (en kaliteli). Hafif + Keskinleştirme: DTD + keskinleştirme filtresi.",
         ));
@@ -878,6 +877,28 @@ impl SettingsView {
         upscale_desc.set_selectable(false);
         upscale_desc.add_css_class("dim-label");
         img_group.add(&upscale_desc);
+
+        let hwdec_row = adw::ComboRow::new();
+        hwdec_row.set_title("Donanım Hızlandırma");
+        hwdec_row.set_subtitle("Kapalı: CPU ile çözer, Anime4K ile en uyumlu. Otomatik: GPU decode kullanır; 4K/HEVC'de rahatlatır. Gömülü ve harici mpv için bir sonraki oynatmada geçerli.");
+        let hwdec_model = gtk::StringList::new(&["Kapalı (yazılım)", "Otomatik (donanım)"]);
+        hwdec_row.set_model(Some(&hwdec_model));
+        hwdec_row.set_selected(if settings.hwdec == "auto" { 1 } else { 0 });
+        img_group.add(&hwdec_row);
+
+        let hwdec_desc = gtk::Label::new(Some(
+            "Kasma olursa 'Kapalı', CPU yükü veya 4K'da takılma olursa 'Otomatik' seç. Otomatik'te siyah görüntü/takılma olursa Kapalı'ya dön.",
+        ));
+        hwdec_desc.set_wrap(true);
+        hwdec_desc.set_xalign(0.0);
+        hwdec_desc.set_margin_top(0);
+        hwdec_desc.set_margin_bottom(8);
+        hwdec_desc.set_margin_start(14);
+        hwdec_desc.set_selectable(false);
+        hwdec_desc.add_css_class("dim-label");
+        img_group.add(&hwdec_desc);
+
+        img_group.add(&cover_q_row);
         root.append(&img_group);
 
         let fansub_group = adw::PreferencesGroup::new();
@@ -1067,6 +1088,7 @@ impl SettingsView {
             let au_r = auto_update_sw.clone();
             let notify_r = notify_sw.clone();
             let up_r = upscale_row.clone();
+            let hw_r = hwdec_row.clone();
             let cq_r = cover_q_row.clone();
             let light_r = light_sw.clone();
             let patience_spin_c = patience_spin.clone();
@@ -1126,6 +1148,11 @@ impl SettingsView {
                     3 => "ultra".into(),
                     4 => "hafif_keskin".into(),
                     _ => "off".into(),
+                };
+                updated.hwdec = if hw_r.selected() == 1 {
+                    "auto".into()
+                } else {
+                    "off".into()
                 };
                 updated.cover_quality = crate::api::COVER_QUALITIES
                     .get(cq_r.selected() as usize)
@@ -1216,6 +1243,8 @@ impl SettingsView {
         notify_sw.connect_active_notify(move |_| sa7());
         let sa8 = save_all.clone();
         upscale_row.connect_selected_notify(move |_| sa8());
+        let sa_hw = save_all.clone();
+        hwdec_row.connect_selected_notify(move |_| sa_hw());
         let sa_cq = save_all.clone();
         cover_q_row.connect_selected_notify(move |_| sa_cq());
         let sa_mp = save_all.clone();

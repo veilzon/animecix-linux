@@ -73,6 +73,7 @@ mod tests {
             title: title.into(),
             season,
             episode,
+            is_movie: false,
             ep_name: format!("Bölüm {episode}"),
             fansub: "Fansub".into(),
             quality: "1080p".into(),

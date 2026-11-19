@@ -100,8 +100,12 @@ impl DownloadsView {
     /// Bölüm adı boşsa `· …` düşer, fansub boşsa `[]` basılmaz,
     /// kalite boş/`en iyi` ise etiket düşer.
     pub fn row_title(rec: &DownloadRecord) -> String {
-        let mut t = format!("{} — S{:02}E{:02}", rec.title, rec.season, rec.episode);
-        if !rec.ep_name.trim().is_empty() {
+        let mut t = if rec.is_movie {
+            format!("{} — Film", rec.title)
+        } else {
+            format!("{} — S{:02}E{:02}", rec.title, rec.season, rec.episode)
+        };
+        if !rec.is_movie && !rec.ep_name.trim().is_empty() {
             t.push_str(&format!(" · {}", rec.ep_name.trim()));
         }
         if !rec.fansub.trim().is_empty() {
@@ -434,6 +438,7 @@ mod tests {
             title: "Frieren".into(),
             season: 1,
             episode: 7,
+            is_movie: false,
             ep_name: ep_name.into(),
             fansub: fansub.into(),
             quality: quality.into(),
@@ -453,6 +458,16 @@ mod tests {
         assert_eq!(
             DownloadsView::row_title(&r),
             "Frieren — S01E07 · Gün Batımı [Raion] [1080p]"
+        );
+    }
+
+    #[test]
+    fn movie_title_hides_season_code() {
+        let mut r = rec(DownloadStatus::Queued, 0, 0, "Film Adı", "Raion", "1080p");
+        r.is_movie = true;
+        assert_eq!(
+            DownloadsView::row_title(&r),
+            "Frieren — Film [Raion] [1080p]"
         );
     }
 
