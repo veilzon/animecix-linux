@@ -41,7 +41,7 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Otomatik güncelleme**: AppImage, .deb, .rpm ve Flatpak kurulumları başlatmada yeni sürümü denetler, tek tıkla günceller (yetki istenir); GitHub indirmeleri paralel parçalarla hızlandırılır
 - **Kurulum sihirbazı**: bağımlılık kontrolü ve masaüstü başlatıcı kurulumu
 - **Arayüz ölçeği**: %100–%125 arası serbest değer, anında uygulanır
-- **Ayarlar**: tema, donanım hızlandırma, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, yayın takibi, masaüstü başlatıcı, veri sıfırlama
+- **Ayarlar**: tema, donanım hızlandırma, kısayollar, haber yazı boyu, indirme klasörü, Discord RPC, yayın takibi, masaüstü başlatıcı, veri dışa/içe aktarma, önceki yedeklere dönüş
 - **Hızlı yükleme**: HTTP/2 multiplexing ve bağlantı havuzu (keep-alive);
   kapak görselleri paralel (3 worker) indirilir
 
@@ -412,12 +412,30 @@ Başlıca veriler şurada tutulur:
 ~/state.json                              # izleme geçmişi, favoriler, maraton, ilerleme
 ~/.local/share/animecix/settings.json     # ayarlar
 ~/.local/share/animecix/downloads.json    # indirme kuyruğu
+~/.local/share/animecix/follow/           # yayın takibi listesi ve bildirim defteri
+~/.local/share/animecix/backups/          # son 5 otomatik yedek
 ~/.local/share/animecix/restart.log       # güncelleme sonrası yeniden başlatma günlüğü
 ~/.cache/animecix/                        # API ve kapak önbelleği
 ~/.cache/animecix/updates/                # indirilen güncelleme paketleri
 ```
 
-*Ayarlardan* “Tüm Verileri Sıfırla ve Temizle” ile sıfırlanabilir.
+### Yedekleme ve geri yükleme
+
+**Ayarlar → Veri Yönetimi → Verileri Dışa Aktar** ile ayarlar, izleme verileri
+ve yayın takibi tek bir JSON dosyasına yedeklenir. Gizli alanlar
+(`cf_clearance`, `official_skip_secret`) ve cihaza özel yollar yedeğe girmez.
+
+**Verileri İçe Aktar** ile bir yedek seçilir; özetin ardından **Tam Geri Yükle**
+veya **Birleştir** seçilebilir. Her iki modda önce mevcut durum otomatik
+yedeklenir. **Önceki Yedekler** bölümü son 5 otomatik yedeği listeler ve tek
+tıkla geri yüklemeyi sağlar.
+
+**Tüm Verileri Sıfırla** canlı verileri, indirme kuyruğunu ve önbelleği siler;
+otomatik yedekleri korur ve sıfırlama öncesi ayrıca güvenlik yedeği alır.
+
+**Uygulamayı Kaldır (Verileri Koru)** paketi/uygulamayı kaldırır; izleme
+geçmişi, ayarlar, takip listesi ve yedekler korunur. Flatpak'ta kaldırma
+komutu terminalde gösterilir.
 
 ---
 

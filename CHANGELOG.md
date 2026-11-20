@@ -1,3 +1,15 @@
+# Yayınlanmadı — veri yönetimi
+
+- **Yedekleme:** Ayarlar → Veri Yönetimi'nden ayarlar, izleme verileri ve
+  yayın takibi tek JSON dosyasına dışa aktarılabilir. Gizli alanlar ve cihaza
+  özel yollar yedeğe girmez.
+- **İçe aktarma ve geri dönüş:** Yedek önizlendikten sonra **Tam Geri Yükle**
+  veya **Birleştir** seçilebilir. Son 5 otomatik yedek listelenir ve tek tıkla
+  geri yüklenebilir; her işlem öncesi yeni bir güvenlik yedeği alınır.
+- **Güvenli kaldırma:** **Uygulamayı Kaldır (Verileri Koru)** paketi/uygulamayı
+  kaldırır ama veri ve yedekleri silmez. **Tüm Verileri Sıfırla** yalnız canlı
+  veriyi temizler; otomatik yedekleri korur.
+
 # Changelog — v1.4.4 (güncel sürüm notları)
 
 - **Film ilerlemesi ve maraton:** İzlendi işaretlenen filmlerin ilerleme çubuğu
