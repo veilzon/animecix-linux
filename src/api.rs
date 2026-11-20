@@ -4132,14 +4132,12 @@ impl Client {
             c.clear();
         }
 
-        let st = State::default();
-        self.save_state(&st);
-        self.save_settings(&Settings::default());
-
-        let mut cache_dir = dirs_cache_or_home();
-        cache_dir.push(".cache/animecix");
-        let _ = std::fs::remove_dir_all(&cache_dir);
-        let _ = std::fs::create_dir_all(&cache_dir);
+        let paths = crate::data_management::DataPaths::system();
+        if let Err(e) = crate::data_management::reset_live_data(&paths) {
+            eprintln!("[WIPE] canlı veri sıfırlanamadı: {e}");
+        }
+        let default = Settings::default();
+        self.remember_cover_quality(&default.cover_quality);
 
         if let Ok(entries) = std::fs::read_dir("/tmp") {
             for entry in entries.flatten() {
@@ -4150,11 +4148,10 @@ impl Client {
             }
         }
 
-        // Yayın takibi: arka plan sürecini durdur, yönetilen autostart'ı ve
-        // takip verisini temizle.
+        // Yayın takibi: arka plan sürecini durdur ve yönetilen autostart'ı
+        // temizle. Yedekler korunur.
         crate::follow_store::stop_daemon();
         crate::follow_store::remove_autostart();
-        let _ = std::fs::remove_dir_all(crate::follow_store::data_dir());
     }
 
     pub fn set_welcome_seen(&self, seen: bool) {

@@ -2817,11 +2817,37 @@ impl App {
                 }
             },
             move || {
+                let paths = crate::data_management::DataPaths::system();
+                let backup = match crate::data_management::auto_backup(&paths, "reset") {
+                    Ok(path) => path,
+                    Err(e) => {
+                        this_wipe.ops.error(
+                            "Sıfırlama yedeği alınamadı",
+                            &e,
+                            std::time::Duration::from_secs(8),
+                        );
+                        return;
+                    }
+                };
                 this_wipe.client.wipe_all_data();
+                let defaults = crate::api::Settings::default();
+                *this_wipe.settings.borrow_mut() = defaults.clone();
+                this_wipe.client.set_cf_clearance(&defaults.cf_clearance);
+                crate::theme::apply_theme(&this_wipe.window, &defaults.theme);
+                this_wipe.apply_ui_scale();
+                this_wipe
+                    .discord_rpc
+                    .configure(crate::discord_rpc::DiscordConfig {
+                        enabled: defaults.discord_rpc_enabled,
+                        socket: None,
+                    });
+                this_wipe.progress.borrow_mut().clear();
+                this_wipe.progress_bars.borrow_mut().clear();
+                this_wipe.server_history.borrow_mut().clear();
                 this_wipe.ops.info(
-                    "Tüm veriler temizlendi ve sıfırlandı!",
-                    "",
-                    std::time::Duration::from_secs(3),
+                    "Tüm veriler sıfırlandı",
+                    &format!("Güvenlik yedeği: {}", backup.display()),
+                    std::time::Duration::from_secs(5),
                 );
                 this_wipe.page_history.borrow_mut().clear();
                 this_wipe.page_history.borrow_mut().push(Page::Welcome);
