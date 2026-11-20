@@ -2829,7 +2829,14 @@ impl App {
                         return;
                     }
                 };
-                this_wipe.client.wipe_all_data();
+                if let Err(e) = this_wipe.client.wipe_all_data() {
+                    this_wipe.ops.error(
+                        "Sıfırlama başarısız",
+                        &e,
+                        std::time::Duration::from_secs(8),
+                    );
+                    return;
+                }
                 let defaults = crate::api::Settings::default();
                 *this_wipe.settings.borrow_mut() = defaults.clone();
                 this_wipe.client.set_cf_clearance(&defaults.cf_clearance);
@@ -2841,6 +2848,8 @@ impl App {
                         enabled: defaults.discord_rpc_enabled,
                         socket: None,
                     });
+                this_wipe.dl_manager.clear();
+                this_wipe.dl_rows.borrow_mut().clear();
                 this_wipe.progress.borrow_mut().clear();
                 this_wipe.progress_bars.borrow_mut().clear();
                 this_wipe.server_history.borrow_mut().clear();
@@ -2909,7 +2918,7 @@ impl App {
             .heading("Yedeği İçe Aktar")
             .body(body)
             .close_response("cancel")
-            .default_response("replace")
+            .default_response("cancel")
             .build();
         dialog.set_transient_for(Some(&self.window));
         dialog.add_response("cancel", "İptal");
@@ -2962,15 +2971,26 @@ impl App {
     }
 
     fn reconcile_follow_after_import(&self, settings: &crate::api::Settings) {
-        crate::follow_store::stop_daemon();
+        let stopped = crate::follow_store::stop_daemon_and_wait(std::time::Duration::from_secs(6));
         crate::follow_store::remove_autostart();
-        if follow_daemon_should_run(settings) {
-            if let Err(e) = crate::desktop::install_follow_autostart() {
-                eprintln!("[WATCH] autostart kurulamadı: {e}");
-            }
-            if let Err(e) = crate::desktop::spawn_follow_daemon() {
-                eprintln!("[WATCH] {e}");
-            }
+        if !follow_daemon_should_run(settings) {
+            return;
+        }
+        if let Err(e) = crate::desktop::install_follow_autostart() {
+            self.ops
+                .error("Takip autostart", &e, std::time::Duration::from_secs(6));
+        }
+        if !stopped {
+            self.ops.error(
+                "Arka plan takipçisi",
+                "Eski takipçi kapanmadı; yeni takipçi başlatılamadı.",
+                std::time::Duration::from_secs(8),
+            );
+            return;
+        }
+        if let Err(e) = crate::desktop::spawn_follow_daemon() {
+            self.ops
+                .error("Arka plan takipçisi", &e, std::time::Duration::from_secs(8));
         }
     }
 

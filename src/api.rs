@@ -4127,15 +4127,17 @@ impl Client {
         let _ = std::fs::write(self.cache_dir.join(WIPE_FLAG_FILE), "");
     }
 
-    pub fn wipe_all_data(&self) {
+    pub fn wipe_all_data(&self) -> Result<(), String> {
         if let Ok(mut c) = self.cache.lock() {
             c.clear();
         }
 
+        // Takipçiyi veri silinmeden önce durdur; aksi halde daemon.json
+        // silindiği için stop isteği kaybolur.
+        crate::follow_store::stop_daemon_and_wait(std::time::Duration::from_secs(6));
+
         let paths = crate::data_management::DataPaths::system();
-        if let Err(e) = crate::data_management::reset_live_data(&paths) {
-            eprintln!("[WIPE] canlı veri sıfırlanamadı: {e}");
-        }
+        crate::data_management::reset_live_data(&paths)?;
         let default = Settings::default();
         self.remember_cover_quality(&default.cover_quality);
 
@@ -4148,10 +4150,8 @@ impl Client {
             }
         }
 
-        // Yayın takibi: arka plan sürecini durdur ve yönetilen autostart'ı
-        // temizle. Yedekler korunur.
-        crate::follow_store::stop_daemon();
         crate::follow_store::remove_autostart();
+        Ok(())
     }
 
     pub fn set_welcome_seen(&self, seen: bool) {

@@ -428,7 +428,8 @@ ve yayın takibi tek bir JSON dosyasına yedeklenir. Gizli alanlar
 **Verileri İçe Aktar** ile bir yedek seçilir; özetin ardından **Tam Geri Yükle**
 veya **Birleştir** seçilebilir. Her iki modda önce mevcut durum otomatik
 yedeklenir. **Önceki Yedekler** bölümü son 5 otomatik yedeği listeler ve tek
-tıkla geri yüklemeyi sağlar.
+tıkla geri yüklemeyi sağlar; **Tüm Yedekleri Sil** ile otomatik yedekler
+kaldırılabilir.
 
 **Tüm Verileri Sıfırla** canlı verileri, indirme kuyruğunu ve önbelleği siler;
 otomatik yedekleri korur ve sıfırlama öncesi ayrıca güvenlik yedeği alır.

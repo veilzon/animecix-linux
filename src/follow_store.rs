@@ -136,6 +136,35 @@ pub fn stop_daemon() {
     }
 }
 
+/// Takipçiyi durdurur ve süreç gerçekten çıkana kadar bekler.
+/// SIGTERM yeterli olmazsa doğrulanmış PID'e SIGKILL gönderir.
+pub fn stop_daemon_and_wait(timeout: Duration) -> bool {
+    let st = load_daemon_status();
+    if !st.running || !pid_is_watch_daemon(st.pid) {
+        return true;
+    }
+    stop_daemon();
+    let deadline = Instant::now() + timeout;
+    while Instant::now() < deadline {
+        if !pid_alive(st.pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    if pid_is_watch_daemon(st.pid) {
+        unsafe {
+            libc::kill(st.pid as libc::pid_t, libc::SIGKILL);
+        }
+    }
+    for _ in 0..10 {
+        if !pid_alive(st.pid) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    !pid_alive(st.pid)
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct DaemonStatus {
     #[serde(default)]

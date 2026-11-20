@@ -597,6 +597,23 @@ impl DownloadManager {
             .unwrap_or_default()
     }
 
+    /// Kuyruğu ve çalışan indirmeleri bırakır; veri sıfırlamada kullanılır.
+    pub fn clear(&self) {
+        if let Ok(handles) = self.inner.handles.lock() {
+            for handle in handles.values() {
+                handle.cancel();
+            }
+        }
+        if let Ok(mut queue) = self.inner.queue.lock() {
+            queue.clear();
+        }
+        if let Ok(mut handles) = self.inner.handles.lock() {
+            handles.clear();
+        }
+        let _ = std::fs::remove_file(&self.inner.queue_path);
+        self.emit(UiEvent::Changed);
+    }
+
     /// Kuyruğa ekler (aynı hedef zaten sıradaysa tekrar eklemez).
     pub fn enqueue(&self, mut rec: DownloadRecord, _quiet: bool) {
         let mut q = match self.inner.queue.lock() {
@@ -989,6 +1006,22 @@ mod tests {
         let back = load_queue(&path);
         assert_eq!(back.len(), 1);
         assert_eq!(back[0].ep_name, "Gün Batımı");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn clear_empties_queue_and_removes_file() {
+        let dir = std::env::temp_dir().join("animecix-dl-clear");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("downloads.json");
+        save_queue(&path, &[test_record("a", dir.join("a.mp4"))]).unwrap();
+        let (tx, _rx) = mpsc::channel();
+        let manager = DownloadManager::new(path.clone(), tx);
+        assert_eq!(manager.snapshot().len(), 1);
+        manager.clear();
+        assert!(manager.snapshot().is_empty());
+        assert!(!path.exists(), "kuyruk dosyası da silinmeli");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

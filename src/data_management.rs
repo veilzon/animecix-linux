@@ -67,17 +67,13 @@ impl DataPaths {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BackupBundle {
-    #[serde(default = "default_format")]
     pub format: String,
-    #[serde(default = "default_format_version")]
     pub format_version: u32,
     #[serde(default)]
     pub app_version: String,
     #[serde(default)]
     pub exported_at: u64,
-    #[serde(default)]
     pub state: api::State,
-    #[serde(default)]
     pub settings: api::Settings,
     #[serde(default)]
     pub follows: Vec<FollowedTitle>,
@@ -95,14 +91,6 @@ impl Default for BackupBundle {
             follows: Vec::new(),
         }
     }
-}
-
-fn default_format() -> String {
-    FORMAT.to_string()
-}
-
-fn default_format_version() -> u32 {
-    FORMAT_VERSION
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -129,16 +117,20 @@ pub fn summary(bundle: &BackupBundle) -> BackupSummary {
 }
 
 pub fn suggested_filename() -> String {
-    let date = glib::DateTime::now_local()
+    match glib::DateTime::now_local()
         .ok()
         .and_then(|d| d.format("%Y-%m-%d").ok())
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "yedek".to_string());
-    format!("animecix-yedek-{date}.json")
+    {
+        Some(date) => format!("animecix-yedek-{date}.json"),
+        None => "animecix-yedek.json".to_string(),
+    }
 }
 
 /// Canlı veriyi tek JSON yedeğe yazar.
 pub fn export_bundle(paths: &DataPaths, dest: &Path) -> Result<BackupSummary, String> {
+    if is_managed_path(paths, dest) {
+        return Err("canlı veri dosyasının üzerine yedek yazılamaz".to_string());
+    }
     let state: api::State = read_json_or_default(&paths.state)?;
     let mut settings: api::Settings = read_json_or_default(&paths.settings)?;
     Client::normalize_settings(&mut settings);
@@ -207,8 +199,41 @@ fn validate_bundle(bundle: &BackupBundle) -> Result<(), String> {
 }
 
 fn write_bundle(dest: &Path, bundle: &BackupBundle) -> Result<(), String> {
-    follow_store::write_json_atomic(dest, bundle)
+    let body = serde_json::to_string_pretty(bundle)
+        .map_err(|e| format!("yedek serileştirilemedi: {e}"))?;
+    if body.len() as u64 > MAX_BACKUP_BYTES {
+        return Err(format!(
+            "yedek çok büyük ({} bayt; en fazla {} bayt)",
+            body.len(),
+            MAX_BACKUP_BYTES
+        ));
+    }
+    follow_store::write_text_atomic(dest, &body)
         .map_err(|e| format!("{} yazılamadı: {e}", dest.display()))
+}
+
+fn normalized_path(path: &Path) -> PathBuf {
+    if let Ok(canonical) = std::fs::canonicalize(path) {
+        return canonical;
+    }
+    if let (Some(parent), Some(name)) = (path.parent(), path.file_name()) {
+        if let Ok(canonical_parent) = std::fs::canonicalize(parent) {
+            return canonical_parent.join(name);
+        }
+    }
+    path.to_path_buf()
+}
+
+fn is_managed_path(paths: &DataPaths, dest: &Path) -> bool {
+    let dest = normalized_path(dest);
+    [
+        &paths.state,
+        &paths.settings,
+        &paths.follows,
+        &paths.downloads,
+    ]
+    .iter()
+    .any(|path| normalized_path(path) == dest)
 }
 
 fn read_json_or_default<T: DeserializeOwned + Default>(path: &Path) -> Result<T, String> {
@@ -218,6 +243,16 @@ fn read_json_or_default<T: DeserializeOwned + Default>(path: &Path) -> Result<T,
         }
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(T::default()),
         Err(e) => Err(format!("{} okunamadı: {e}", path.display())),
+    }
+}
+
+fn read_json_lenient<T: DeserializeOwned + Default>(path: &Path) -> T {
+    match read_json_or_default(path) {
+        Ok(value) => value,
+        Err(e) => {
+            eprintln!("[IMPORT] {e}; varsayılan değer kullanılıyor (ham kopya yedekte)");
+            T::default()
+        }
     }
 }
 
@@ -264,9 +299,34 @@ pub fn auto_backup(paths: &DataPaths, kind: &str) -> Result<PathBuf, String> {
     let path = paths
         .backups
         .join(format!("auto-{}-{stamp}.json", sanitize_kind(kind)));
-    export_bundle(paths, &path)?;
-    trim_auto_backups(paths)?;
-    Ok(path)
+    match export_bundle(paths, &path) {
+        Ok(_) => {
+            trim_auto_backups(paths)?;
+            Ok(path)
+        }
+        Err(e) => {
+            eprintln!("[BACKUP] normal yedek alınamadı: {e}; ham kopya alınıyor");
+            let _ = std::fs::remove_file(&path);
+            let raw = paths
+                .backups
+                .join(format!("auto-{}-{stamp}-raw", sanitize_kind(kind)));
+            std::fs::create_dir_all(&raw)
+                .map_err(|e| format!("{} oluşturulamadı: {e}", raw.display()))?;
+            for (src, name) in [
+                (&paths.state, "state.json"),
+                (&paths.settings, "settings.json"),
+                (&paths.follows, "follows.json"),
+                (&paths.downloads, "downloads.json"),
+            ] {
+                if src.is_file() {
+                    std::fs::copy(src, raw.join(name))
+                        .map_err(|e| format!("{} ham yedeğe kopyalanamadı: {e}", src.display()))?;
+                }
+            }
+            trim_raw_backups(paths)?;
+            Ok(raw)
+        }
+    }
 }
 
 /// Son 5 otomatik yedeği (en yeniden eskiye) listeler.
@@ -274,7 +334,7 @@ pub fn list_auto_backups(paths: &DataPaths) -> Vec<BackupInfo> {
     auto_backup_files(paths)
         .into_iter()
         .take(AUTO_BACKUP_KEEP)
-        .map(|(path, created_at, _, size)| BackupInfo {
+        .map(|(path, created_at, size)| BackupInfo {
             kind: backup_kind(&path),
             path,
             created_at,
@@ -286,9 +346,18 @@ pub fn list_auto_backups(paths: &DataPaths) -> Vec<BackupInfo> {
 /// Otomatik yedekleri siler; kaç dosya silindiğini döndürür.
 pub fn delete_all_backups(paths: &DataPaths) -> Result<usize, String> {
     let mut removed = 0;
-    for (path, _, _, _) in auto_backup_files(paths) {
-        if std::fs::remove_file(&path).is_ok() {
-            removed += 1;
+    for (path, _, _) in auto_backup_files(paths) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{} silinemedi: {e}", path.display())),
+        }
+    }
+    for path in raw_backup_dirs(paths) {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => removed += 1,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{} silinemedi: {e}", path.display())),
         }
     }
     Ok(removed)
@@ -301,19 +370,35 @@ pub fn reset_live_data(paths: &DataPaths) -> Result<(), String> {
     follow_store::write_json_atomic(&paths.settings, &api::Settings::default())
         .map_err(|e| format!("{} yazılamadı: {e}", paths.settings.display()))?;
 
-    let _ = std::fs::remove_file(&paths.follows);
+    remove_file_if_exists(&paths.follows)?;
     if let Some(parent) = paths.follows.parent() {
         if parent
             .file_name()
             .map(|n| n.to_string_lossy() == "follow")
             .unwrap_or(false)
         {
-            let _ = std::fs::remove_dir_all(parent);
+            remove_dir_if_exists(parent)?;
         }
     }
-    let _ = std::fs::remove_file(&paths.downloads);
-    let _ = std::fs::remove_dir_all(&paths.cache);
+    remove_file_if_exists(&paths.downloads)?;
+    remove_dir_if_exists(&paths.cache)?;
     Ok(())
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), String> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{} silinemedi: {e}", path.display())),
+    }
+}
+
+fn remove_dir_if_exists(path: &Path) -> Result<(), String> {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("{} silinemedi: {e}", path.display())),
+    }
 }
 
 /// Yedekteki veriyi mevcut veriyle birleştirir.
@@ -407,9 +492,9 @@ pub fn import_bundle(
     validate_bundle(bundle)?;
     let auto_backup = auto_backup(paths, "import")?;
 
-    let local_state: api::State = read_json_or_default(&paths.state)?;
-    let local_settings: api::Settings = read_json_or_default(&paths.settings)?;
-    let local_follows: FollowsFile = read_json_or_default(&paths.follows)?;
+    let local_state: api::State = read_json_lenient(&paths.state);
+    let local_settings: api::Settings = read_json_lenient(&paths.settings);
+    let local_follows: FollowsFile = read_json_lenient(&paths.follows);
 
     let (new_state, new_settings, new_follows) = match mode {
         ImportMode::Replace => (
@@ -419,23 +504,62 @@ pub fn import_bundle(
         ),
         ImportMode::Merge => (
             merge_state(&local_state, &bundle.state),
-            local_settings,
+            local_settings.clone(),
             merge_follows(&local_follows.items, &bundle.follows),
         ),
     };
 
-    follow_store::write_json_atomic(&paths.state, &new_state)
-        .map_err(|e| format!("{} yazılamadı: {e}", paths.state.display()))?;
-    follow_store::write_json_atomic(&paths.settings, &new_settings)
-        .map_err(|e| format!("{} yazılamadı: {e}", paths.settings.display()))?;
     let follows_file = FollowsFile {
         schema: follow_store::SCHEMA,
         updated_at: follow_store::now_secs(),
         items: new_follows.clone(),
         ..Default::default()
     };
-    follow_store::write_json_atomic(&paths.follows, &follows_file)
-        .map_err(|e| format!("{} yazılamadı: {e}", paths.follows.display()))?;
+
+    // Üç dosyayı da önce geçici adlara yaz; hepsi hazır olunca taşı.
+    // Böylece normal hata yollarında canlı veri yarım kalmaz.
+    let state_stage = match stage_json(&paths.state, &new_state) {
+        Ok(path) => path,
+        Err(e) => return Err(e),
+    };
+    let settings_stage = match stage_json(&paths.settings, &new_settings) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = std::fs::remove_file(&state_stage);
+            return Err(e);
+        }
+    };
+    let follows_stage = match stage_json(&paths.follows, &follows_file) {
+        Ok(path) => path,
+        Err(e) => {
+            let _ = std::fs::remove_file(&state_stage);
+            let _ = std::fs::remove_file(&settings_stage);
+            return Err(e);
+        }
+    };
+
+    let commit = (|| -> Result<(), String> {
+        for (stage, target) in [
+            (&state_stage, &paths.state),
+            (&settings_stage, &paths.settings),
+            (&follows_stage, &paths.follows),
+        ] {
+            std::fs::rename(stage, target)
+                .map_err(|e| format!("{} taşınamadı: {e}", target.display()))?;
+        }
+        Ok(())
+    })();
+
+    if let Err(e) = commit {
+        // Taşıma yarıda kaldıysa eski değerleri geri yaz.
+        let _ = follow_store::write_json_atomic(&paths.state, &local_state);
+        let _ = follow_store::write_json_atomic(&paths.settings, &local_settings);
+        let _ = follow_store::write_json_atomic(&paths.follows, &local_follows);
+        let _ = std::fs::remove_file(&state_stage);
+        let _ = std::fs::remove_file(&settings_stage);
+        let _ = std::fs::remove_file(&follows_stage);
+        return Err(e);
+    }
 
     Ok(ImportReport {
         mode,
@@ -448,7 +572,27 @@ pub fn import_bundle(
     })
 }
 
-fn auto_backup_files(paths: &DataPaths) -> Vec<(PathBuf, u64, u128, u64)> {
+fn stage_json<T: serde::Serialize>(target: &Path, value: &T) -> Result<PathBuf, String> {
+    let parent = target
+        .parent()
+        .ok_or_else(|| format!("{} için üst dizin yok", target.display()))?;
+    std::fs::create_dir_all(parent)
+        .map_err(|e| format!("{} oluşturulamadı: {e}", parent.display()))?;
+    let name = target
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("veri");
+    let stamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let stage = parent.join(format!(".{name}.import-{}.{stamp}", std::process::id()));
+    follow_store::write_json_atomic(&stage, value)
+        .map_err(|e| format!("{} yazılamadı: {e}", stage.display()))?;
+    Ok(stage)
+}
+
+fn auto_backup_files(paths: &DataPaths) -> Vec<(PathBuf, u64, u64)> {
     let Ok(entries) = std::fs::read_dir(&paths.backups) else {
         return Vec::new();
     };
@@ -466,17 +610,68 @@ fn auto_backup_files(paths: &DataPaths) -> Vec<(PathBuf, u64, u128, u64)> {
         };
         let modified = meta.modified().unwrap_or(UNIX_EPOCH);
         let dur = modified.duration_since(UNIX_EPOCH).unwrap_or_default();
-        out.push((path, dur.as_secs(), dur.as_nanos(), meta.len()));
+        out.push((path, dur.as_secs(), meta.len()));
     }
-    out.sort_by_key(|(_, _, nanos, _)| std::cmp::Reverse(*nanos));
+    out.sort_by_key(|(path, _, _)| std::cmp::Reverse(backup_stamp(path)));
     out
 }
 
 fn trim_auto_backups(paths: &DataPaths) -> Result<(), String> {
-    for (path, _, _, _) in auto_backup_files(paths).into_iter().skip(AUTO_BACKUP_KEEP) {
-        std::fs::remove_file(&path).map_err(|e| format!("{} silinemedi: {e}", path.display()))?;
+    for (path, _, _) in auto_backup_files(paths).into_iter().skip(AUTO_BACKUP_KEEP) {
+        match std::fs::remove_file(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{} silinemedi: {e}", path.display())),
+        }
     }
     Ok(())
+}
+
+fn raw_backup_dirs(paths: &DataPaths) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(&paths.backups) else {
+        return Vec::new();
+    };
+    let mut out: Vec<PathBuf> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.is_dir()
+                && path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n.starts_with("auto-") && n.ends_with("-raw"))
+                    .unwrap_or(false)
+        })
+        .collect();
+    out.sort_by_key(|path| std::cmp::Reverse(raw_stamp(path)));
+    out
+}
+
+fn trim_raw_backups(paths: &DataPaths) -> Result<(), String> {
+    for path in raw_backup_dirs(paths).into_iter().skip(AUTO_BACKUP_KEEP) {
+        match std::fs::remove_dir_all(&path) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("{} silinemedi: {e}", path.display())),
+        }
+    }
+    Ok(())
+}
+
+fn backup_stamp(path: &Path) -> u128 {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.trim_end_matches(".json").rsplit('-').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+}
+
+fn raw_stamp(path: &Path) -> u128 {
+    path.file_name()
+        .and_then(|n| n.to_str())
+        .and_then(|n| n.trim_end_matches("-raw").rsplit('-').next())
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
 }
 
 fn backup_kind(path: &Path) -> String {
@@ -502,7 +697,7 @@ mod tests {
     use super::*;
     use crate::api::{Settings, State, Title, Watched};
     use crate::follow_store::{FollowedTitle, FollowsFile};
-    use std::path::{Path, PathBuf};
+    use std::path::Path;
 
     fn temp_paths(tag: &str) -> DataPaths {
         let base = std::env::temp_dir().join(format!("animecix-data-{tag}-{}", std::process::id()));
@@ -723,13 +918,13 @@ mod tests {
         write_json(&paths.state, &State::default());
         write_json(&paths.settings, &Settings::default());
         write_json(&paths.follows, &FollowsFile::default());
-        for _ in 0..6 {
+        let first = auto_backup(&paths, "import").expect("backup");
+        for _ in 0..5 {
             auto_backup(&paths, "import").expect("backup");
-            std::thread::sleep(std::time::Duration::from_millis(2));
         }
         let list = list_auto_backups(&paths);
         assert_eq!(list.len(), AUTO_BACKUP_KEEP);
-        assert!(list[0].created_at >= list[1].created_at);
+        assert!(!first.exists(), "en eski yedek budanmalı");
         assert_eq!(delete_all_backups(&paths).unwrap(), AUTO_BACKUP_KEEP);
         assert!(list_auto_backups(&paths).is_empty());
     }
@@ -826,7 +1021,81 @@ mod tests {
         let big = dir.join("big.json");
         std::fs::write(&big, vec![b'0'; (MAX_BACKUP_BYTES as usize) + 1]).unwrap();
         assert!(read_bundle(&big).is_err(), "aşırı büyük dosya reddedilmeli");
+
+        let empty = dir.join("empty.json");
+        std::fs::write(&empty, b"{}").unwrap();
+        assert!(read_bundle(&empty).is_err(), "boş JSON yedek sayılmamalı");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn read_bundle_rejects_live_files() {
+        let paths = temp_paths("live-json");
+        write_json(&paths.state, &sample_state());
+        write_json(&paths.settings, &Settings::default());
+        write_json(&paths.follows, &FollowsFile::default());
+        for path in [&paths.state, &paths.settings, &paths.follows] {
+            assert!(
+                read_bundle(path).is_err(),
+                "canlı dosya yedek olarak kabul edilmemeli: {}",
+                path.display()
+            );
+        }
+        let _ = std::fs::remove_dir_all(paths.state.parent().unwrap());
+    }
+
+    #[test]
+    fn export_rejects_live_paths() {
+        let paths = temp_paths("export-live");
+        write_json(&paths.state, &sample_state());
+        write_json(&paths.settings, &Settings::default());
+        write_json(&paths.follows, &FollowsFile::default());
+        assert!(export_bundle(&paths, &paths.state).is_err());
+        assert!(export_bundle(&paths, &paths.settings).is_err());
+        assert!(export_bundle(&paths, &paths.follows).is_err());
+        assert!(export_bundle(&paths, &paths.downloads).is_err());
+        let _ = std::fs::remove_dir_all(paths.state.parent().unwrap());
+    }
+
+    #[test]
+    fn auto_backup_falls_back_to_raw_copy_for_corrupt_live_file() {
+        let paths = temp_paths("raw-backup");
+        write_json(&paths.state, &sample_state());
+        write_json(&paths.settings, &Settings::default());
+        std::fs::create_dir_all(paths.follows.parent().unwrap()).unwrap();
+        std::fs::write(&paths.follows, b"{bozuk-json").unwrap();
+
+        let backup = auto_backup(&paths, "import").expect("raw backup");
+        assert!(backup.is_dir(), "ham kopya dizini dönmeli");
+        assert!(backup.join("state.json").exists());
+        assert!(backup.join("follows.json").exists());
+        let _ = std::fs::remove_dir_all(paths.state.parent().unwrap());
+    }
+
+    #[test]
+    fn import_replace_with_corrupt_live_files_is_recoverable() {
+        let paths = temp_paths("corrupt-import");
+        std::fs::create_dir_all(paths.state.parent().unwrap()).unwrap();
+        std::fs::write(&paths.state, b"{bozuk").unwrap();
+        std::fs::write(&paths.settings, b"{bozuk").unwrap();
+        std::fs::create_dir_all(paths.follows.parent().unwrap()).unwrap();
+        std::fs::write(&paths.follows, b"{bozuk").unwrap();
+
+        let bundle = BackupBundle {
+            format: FORMAT.into(),
+            format_version: FORMAT_VERSION,
+            app_version: "1.4.4".into(),
+            exported_at: 1,
+            state: sample_state(),
+            settings: Settings::default(),
+            follows: vec![],
+        };
+        let report = import_bundle(&paths, &bundle, ImportMode::Replace).expect("import");
+        assert!(report.auto_backup.is_dir(), "ham güvenlik yedeği alınmalı");
+        let saved: State =
+            serde_json::from_str(&std::fs::read_to_string(&paths.state).unwrap()).unwrap();
+        assert_eq!(saved.saved.len(), 1);
+        let _ = std::fs::remove_dir_all(paths.state.parent().unwrap());
     }
 
     #[test]
