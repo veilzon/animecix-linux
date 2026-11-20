@@ -2670,7 +2670,12 @@ impl App {
         scroll.set_policy(gtk::PolicyType::Never, gtk::PolicyType::Automatic);
         let settings = self.settings.borrow();
         let this_save = self.clone_ref();
+        let this_export = self.clone_ref();
+        let this_import = self.clone_ref();
+        let this_restore = self.clone_ref();
+        let this_delete = self.clone_ref();
         let this_wipe = self.clone_ref();
+        let this_uninstall = self.clone_ref();
         let this_check = self.clone_ref();
 
         let last_save: Rc<RefCell<std::time::Instant>> =
@@ -2767,39 +2772,77 @@ impl App {
                         .info("Ayarlar kaydedildi", "", std::time::Duration::from_secs(2));
                 }
             },
-            move |remove_app| {
-                if remove_app {
-                    if crate::flatpak::is_flatpak() {
-                        this_wipe.ops.info(
-                            "Flatpak Uygulaması",
-                            "Kaldırmak için terminalde: flatpak uninstall io.github.veilzon.AnimeciX",
-                            std::time::Duration::from_secs(8),
+            move |path: std::path::PathBuf| {
+                let paths = crate::data_management::DataPaths::system();
+                match crate::data_management::export_bundle(&paths, &path) {
+                    Ok(sum) => this_export.ops.info(
+                        "Yedek alındı",
+                        &format!(
+                            "{} • {} favori, {} takip",
+                            path.display(),
+                            sum.favorites,
+                            sum.follows
+                        ),
+                        std::time::Duration::from_secs(5),
+                    ),
+                    Err(e) => this_export.ops.error(
+                        "Yedek alınamadı",
+                        &e,
+                        std::time::Duration::from_secs(8),
+                    ),
+                }
+            },
+            move |path: std::path::PathBuf| {
+                this_import.show_import_dialog(path);
+            },
+            move |path: std::path::PathBuf| {
+                this_restore.show_import_dialog(path);
+            },
+            move || {
+                let paths = crate::data_management::DataPaths::system();
+                match crate::data_management::delete_all_backups(&paths) {
+                    Ok(n) => {
+                        this_delete.ops.info(
+                            "Yedekler silindi",
+                            &format!("{n} otomatik yedek kaldırıldı"),
+                            std::time::Duration::from_secs(3),
                         );
-                        return;
+                        this_delete.show_page(&Page::Settings);
                     }
-                    match crate::native_package::uninstall() {
-                        Ok(()) => {
-                            this_wipe.client.wipe_all_data();
-                            std::process::exit(0);
-                        }
-                        Err(e) => {
-                            this_wipe.ops.error(
-                                "Kaldırma başarısız",
-                                &e,
-                                std::time::Duration::from_secs(8),
-                            );
-                        }
-                    }
-                } else {
-                    this_wipe.client.wipe_all_data();
-                    this_wipe.ops.info(
-                        "Tüm veriler temizlendi ve sıfırlandı!",
-                        "",
-                        std::time::Duration::from_secs(3),
+                    Err(e) => this_delete.ops.error(
+                        "Yedekler silinemedi",
+                        &e,
+                        std::time::Duration::from_secs(6),
+                    ),
+                }
+            },
+            move || {
+                this_wipe.client.wipe_all_data();
+                this_wipe.ops.info(
+                    "Tüm veriler temizlendi ve sıfırlandı!",
+                    "",
+                    std::time::Duration::from_secs(3),
+                );
+                this_wipe.page_history.borrow_mut().clear();
+                this_wipe.page_history.borrow_mut().push(Page::Welcome);
+                this_wipe.show_page(&Page::Welcome);
+            },
+            move || {
+                if crate::flatpak::is_flatpak() {
+                    this_uninstall.ops.info(
+                        "Flatpak Uygulaması",
+                        "Verileriniz korunacak. Kaldırmak için terminalde: flatpak uninstall io.github.veilzon.AnimeciX",
+                        std::time::Duration::from_secs(10),
                     );
-                    this_wipe.page_history.borrow_mut().clear();
-                    this_wipe.page_history.borrow_mut().push(Page::Welcome);
-                    this_wipe.show_page(&Page::Welcome);
+                    return;
+                }
+                match crate::native_package::uninstall() {
+                    Ok(()) => std::process::exit(0),
+                    Err(e) => this_uninstall.ops.error(
+                        "Kaldırma başarısız",
+                        &e,
+                        std::time::Duration::from_secs(8),
+                    ),
                 }
             },
             move || {
@@ -2809,6 +2852,100 @@ impl App {
 
         scroll.set_child(Some(&view));
         scroll
+    }
+
+    /// Seçilen yedeğin özetini gösterir; kullanıcı modu seçince uygular.
+    fn show_import_dialog(&self, path: std::path::PathBuf) {
+        let bundle = match crate::data_management::read_bundle(&path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.ops
+                    .error("Yedek okunamadı", &e, std::time::Duration::from_secs(8));
+                return;
+            }
+        };
+        let summary = crate::data_management::summary(&bundle);
+        let date = glib::DateTime::from_unix_local(summary.exported_at as i64)
+            .ok()
+            .and_then(|d| d.format("%d.%m.%Y %H:%M").ok())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| "bilinmeyen tarih".to_string());
+        let body = format!(
+            "Yedek: {date}\nSürüm: {}\n\nFavoriler: {}\nİzlenen bölüm: {}\nGeçmiş: {}\nMaraton: {}\nTakip: {}\n\nHer iki modda da önce mevcut durum otomatik yedeklenir.",
+            summary.app_version,
+            summary.favorites,
+            summary.watched_episodes,
+            summary.history,
+            summary.marathon,
+            summary.follows
+        );
+        let dialog = adw::MessageDialog::builder()
+            .heading("Yedeği İçe Aktar")
+            .body(body)
+            .close_response("cancel")
+            .default_response("replace")
+            .build();
+        dialog.set_transient_for(Some(&self.window));
+        dialog.add_response("cancel", "İptal");
+        dialog.add_response("merge", "Birleştir");
+        dialog.add_response("replace", "Tam Geri Yükle");
+        dialog.set_response_appearance("replace", adw::ResponseAppearance::Suggested);
+        let this = self.clone_ref();
+        dialog.connect_response(None, move |_, response| {
+            let mode = match response {
+                "replace" => Some(crate::data_management::ImportMode::Replace),
+                "merge" => Some(crate::data_management::ImportMode::Merge),
+                _ => None,
+            };
+            if let Some(mode) = mode {
+                this.apply_import(bundle.clone(), mode);
+            }
+        });
+        dialog.present();
+    }
+
+    fn apply_import(
+        &self,
+        bundle: crate::data_management::BackupBundle,
+        mode: crate::data_management::ImportMode,
+    ) {
+        let paths = crate::data_management::DataPaths::system();
+        match crate::data_management::import_bundle(&paths, &bundle, mode) {
+            Ok(report) => {
+                let new_s = self.client.load_settings();
+                *self.settings.borrow_mut() = new_s.clone();
+                self.client.set_cf_clearance(&new_s.cf_clearance);
+                self.reconcile_follow_after_import(&new_s);
+                self.home_dirty.set(true);
+                self.ops.info(
+                    "Yedek geri yüklendi",
+                    &format!("Otomatik yedek: {}", report.auto_backup.display()),
+                    std::time::Duration::from_secs(4),
+                );
+                glib::timeout_add_local_once(
+                    std::time::Duration::from_millis(700),
+                    crate::restart_app,
+                );
+            }
+            Err(e) => self.ops.error(
+                "İçe aktarma başarısız",
+                &e,
+                std::time::Duration::from_secs(8),
+            ),
+        }
+    }
+
+    fn reconcile_follow_after_import(&self, settings: &crate::api::Settings) {
+        crate::follow_store::stop_daemon();
+        crate::follow_store::remove_autostart();
+        if follow_daemon_should_run(settings) {
+            if let Err(e) = crate::desktop::install_follow_autostart() {
+                eprintln!("[WATCH] autostart kurulamadı: {e}");
+            }
+            if let Err(e) = crate::desktop::spawn_follow_daemon() {
+                eprintln!("[WATCH] {e}");
+            }
+        }
     }
 
     /// Haberler: kart listesi + sayfalayıcı (Lowell uyarlaması).
@@ -4539,6 +4676,10 @@ fn set_search_text_caret_end(entry: &gtk::SearchEntry, text: &str) {
     entry.set_position(-1);
 }
 
+pub(crate) fn follow_daemon_should_run(settings: &crate::api::Settings) -> bool {
+    settings.calendar_watch && settings.calendar_watch_autostart
+}
+
 fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
     preview || seen != current
 }
@@ -5015,5 +5156,66 @@ mod play_lifecycle_tests {
         );
         assert_eq!(opening_finish_delay(Duration::from_secs(10)), None);
         assert_eq!(opening_finish_delay(Duration::from_secs(11)), None);
+    }
+}
+
+#[cfg(test)]
+mod data_management_ui_tests {
+    use adw::prelude::*;
+
+    fn collect_text(widget: &gtk::Widget, out: &mut String) {
+        if let Some(label) = widget.downcast_ref::<gtk::Label>() {
+            out.push_str(label.text().as_str());
+            out.push('\n');
+        }
+        if let Some(row) = widget.downcast_ref::<adw::ActionRow>() {
+            out.push_str(row.title().as_str());
+            out.push('\n');
+        }
+        if let Some(group) = widget.downcast_ref::<adw::PreferencesGroup>() {
+            out.push_str(group.title().as_str());
+            out.push('\n');
+        }
+        if let Some(button) = widget.downcast_ref::<gtk::Button>() {
+            out.push_str(button.label().unwrap_or_default().as_str());
+            out.push('\n');
+        }
+        let mut child = widget.first_child();
+        while let Some(node) = child {
+            collect_text(&node, out);
+            child = node.next_sibling();
+        }
+    }
+
+    #[gtk::test]
+    fn settings_data_group_has_export_and_previous_backups() {
+        let view = crate::ui::views::SettingsView::build(
+            &crate::api::Settings::default(),
+            |_| {},
+            |_| {},
+            |_| {},
+            |_| {},
+            || {},
+            || {},
+            || {},
+            || {},
+        );
+        let mut text = String::new();
+        collect_text(view.upcast_ref(), &mut text);
+        assert!(text.contains("Verileri Dışa Aktar"), "{text}");
+        assert!(text.contains("Verileri İçe Aktar"), "{text}");
+        assert!(text.contains("Önceki Yedekler"), "{text}");
+        assert!(text.contains("Uygulamayı Kaldır (Verileri Koru)"), "{text}");
+        assert!(text.contains("Tüm Verileri Sıfırla"), "{text}");
+    }
+
+    #[test]
+    fn follow_daemon_after_import_requires_both_flags() {
+        let mut s = crate::api::Settings::default();
+        s.calendar_watch = false;
+        s.calendar_watch_autostart = true;
+        assert!(!super::follow_daemon_should_run(&s));
+        s.calendar_watch = true;
+        assert!(super::follow_daemon_should_run(&s));
     }
 }

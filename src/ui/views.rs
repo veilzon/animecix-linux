@@ -511,7 +511,12 @@ impl SettingsView {
     pub fn build(
         settings: &Settings,
         on_save: impl Fn(Settings) + 'static,
-        on_wipe: impl Fn(bool) + 'static,
+        on_export: impl Fn(std::path::PathBuf) + 'static,
+        on_import: impl Fn(std::path::PathBuf) + 'static,
+        on_restore_backup: impl Fn(std::path::PathBuf) + 'static,
+        on_delete_backups: impl Fn() + 'static,
+        on_wipe: impl Fn() + 'static,
+        on_uninstall: impl Fn() + 'static,
         on_check: impl Fn() + 'static,
     ) -> gtk::Box {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 12);
@@ -1316,65 +1321,231 @@ impl SettingsView {
         let data_group = adw::PreferencesGroup::new();
         data_group.set_title("Veri Yönetimi");
         let system_managed = crate::native_package::system_package_managed();
-        let (uninstall_row, uninstall_sw) = crate::ui::components::switch_row(
-            if flatpak {
-                "Flatpak Uygulamasını Kaldır"
-            } else if system_managed {
-                "Paketi Sistemden Kaldır"
-            } else {
-                "Uygulamayı ve Başlatıcıyı da Sistemden Kaldır"
-            },
-            if flatpak {
-                "Terminalde: flatpak uninstall io.github.veilzon.AnimeciX"
-            } else if system_managed {
-                "Paket yöneticisiyle kaldırılır (yetki istenir)"
-            } else {
-                "Sıfırlama ile birlikte uygulama binary dosyasını ve masaüstü kısayollarını tamamen siler"
-            },
-            false,
-        );
-        uninstall_sw.set_sensitive(!flatpak);
-        data_group.add(&uninstall_row);
-
-        let wipe_btn = gtk::Button::with_label("Tüm Verileri Sıfırla ve Temizle");
-        wipe_btn.add_css_class("destructive-action");
-        wipe_btn.set_margin_top(8);
+        let on_export = Rc::new(on_export);
+        let on_import = Rc::new(on_import);
+        let on_restore_backup = Rc::new(on_restore_backup);
+        let on_delete_backups = Rc::new(on_delete_backups);
         let on_wipe = Rc::new(on_wipe);
-        let un_c = uninstall_sw.clone();
+        let on_uninstall = Rc::new(on_uninstall);
 
-        wipe_btn.connect_clicked(move |btn| {
-            let remove_app = un_c.is_active();
-            let parent_win = btn.root().and_downcast::<gtk::Window>();
-
-            let dialog = adw::MessageDialog::builder()
-                .heading("Kalıcı Sıfırlama Onayı ⚠️")
-                .body(if remove_app {
-                    "Tüm izleme geçmişiniz, ayarlarınız, kapak önbelleği ve UYGULAMA DOSYALARI sisteminizden kalıcı olarak silinecek. Emin misiniz?"
-                } else {
-                    "Tüm izleme geçmişiniz, ayarlarınız ve kapak önbelleği sıfırlanacak. Emin misiniz?"
-                })
-                .close_response("cancel")
-                .default_response("cancel")
-                .build();
-
-            if let Some(win) = parent_win.as_ref() {
-                dialog.set_transient_for(Some(win));
-            }
-
-            dialog.add_response("cancel", "İptal");
-            dialog.add_response("wipe", "Evet, Kalıcı Olarak Sil");
-            dialog.set_response_appearance("wipe", adw::ResponseAppearance::Destructive);
-
-            let on_wipe_c = on_wipe.clone();
-            dialog.connect_response(None, move |_, resp| {
-                if resp == "wipe" {
-                    on_wipe_c(remove_app);
-                }
+        let export_row = adw::ActionRow::new();
+        export_row.set_title("Verileri Dışa Aktar");
+        export_row.set_subtitle(
+            "Ayarlar, izleme verileri ve yayın takibi tek JSON dosyasına yedeklenir.",
+        );
+        let export_btn = gtk::Button::with_label("Dışa Aktar");
+        export_btn.add_css_class("flat");
+        export_btn.add_css_class("pill");
+        export_btn.set_valign(gtk::Align::Center);
+        export_row.add_suffix(&export_btn);
+        data_group.add(&export_row);
+        {
+            let cb = on_export.clone();
+            export_btn.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk::Window>();
+                let dlg = gtk::FileChooserNative::new(
+                    Some("Yedeği Kaydet"),
+                    parent.as_ref(),
+                    gtk::FileChooserAction::Save,
+                    Some("_Kaydet"),
+                    Some("_Vazgeç"),
+                );
+                dlg.set_modal(true);
+                dlg.set_current_name(&crate::data_management::suggested_filename());
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("AnimeciX yedeği (*.json)"));
+                filter.add_pattern("*.json");
+                dlg.add_filter(&filter);
+                let cb = cb.clone();
+                dlg.connect_response(move |d, r| {
+                    if r == gtk::ResponseType::Accept {
+                        if let Some(path) = d.file().and_then(|f| f.path()) {
+                            cb(path);
+                        }
+                    }
+                });
+                dlg.show();
             });
+        }
 
-            dialog.present();
+        let import_row = adw::ActionRow::new();
+        import_row.set_title("Verileri İçe Aktar");
+        import_row.set_subtitle("Daha önce alınmış bir AnimeciX yedeğini geri yükle.");
+        let import_btn = gtk::Button::with_label("İçe Aktar");
+        import_btn.add_css_class("flat");
+        import_btn.add_css_class("pill");
+        import_btn.set_valign(gtk::Align::Center);
+        import_row.add_suffix(&import_btn);
+        data_group.add(&import_row);
+        {
+            let cb = on_import.clone();
+            import_btn.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk::Window>();
+                let dlg = gtk::FileChooserNative::new(
+                    Some("Yedek Dosyası Seç"),
+                    parent.as_ref(),
+                    gtk::FileChooserAction::Open,
+                    Some("_Aç"),
+                    Some("_Vazgeç"),
+                );
+                dlg.set_modal(true);
+                let filter = gtk::FileFilter::new();
+                filter.set_name(Some("AnimeciX yedeği (*.json)"));
+                filter.add_pattern("*.json");
+                dlg.add_filter(&filter);
+                let cb = cb.clone();
+                dlg.connect_response(move |d, r| {
+                    if r == gtk::ResponseType::Accept {
+                        if let Some(path) = d.file().and_then(|f| f.path()) {
+                            cb(path);
+                        }
+                    }
+                });
+                dlg.show();
+            });
+        }
+
+        let backups_title = adw::ActionRow::new();
+        backups_title.set_title("Önceki Yedekler");
+        backups_title.set_subtitle("İçe aktarma ve sıfırlama öncesi otomatik yedekler (son 5).");
+        data_group.add(&backups_title);
+
+        let backups =
+            crate::data_management::list_auto_backups(&crate::data_management::DataPaths::system());
+        if backups.is_empty() {
+            let empty = adw::ActionRow::new();
+            empty.set_title("Henüz otomatik yedek yok.");
+            empty.set_subtitle(
+                "Bir yedeği içe aktardığınızda veya verileri sıfırladığınızda burada görünür.",
+            );
+            data_group.add(&empty);
+        } else {
+            for info in backups {
+                let row = adw::ActionRow::new();
+                row.set_title(&backup_time_label(info.created_at));
+                row.set_subtitle(&format!(
+                    "{} • {}",
+                    backup_kind_label(&info.kind),
+                    crate::download::fmt_bytes(info.size)
+                ));
+                let restore_btn = gtk::Button::with_label("Geri Yükle");
+                restore_btn.add_css_class("flat");
+                restore_btn.add_css_class("pill");
+                restore_btn.set_valign(gtk::Align::Center);
+                let cb = on_restore_backup.clone();
+                let path = info.path.clone();
+                restore_btn.connect_clicked(move |_| cb(path.clone()));
+                row.add_suffix(&restore_btn);
+                data_group.add(&row);
+            }
+            let clear_backups = gtk::Button::with_label("Tüm Yedekleri Sil");
+            clear_backups.add_css_class("flat");
+            clear_backups.add_css_class("destructive-action");
+            clear_backups.set_margin_top(4);
+            let cb = on_delete_backups.clone();
+            clear_backups.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk::Window>();
+                let dialog = adw::MessageDialog::builder()
+                    .heading("Yedekleri Sil")
+                    .body("Tüm otomatik yedekler kalıcı olarak silinecek. Canlı veriler ve dışa aktardığınız dosyalar bundan etkilenmez.")
+                    .close_response("cancel")
+                    .default_response("cancel")
+                    .build();
+                if let Some(win) = parent.as_ref() {
+                    dialog.set_transient_for(Some(win));
+                }
+                dialog.add_response("cancel", "İptal");
+                dialog.add_response("delete", "Yedekleri Sil");
+                dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+                let cb = cb.clone();
+                dialog.connect_response(None, move |_, resp| {
+                    if resp == "delete" {
+                        cb();
+                    }
+                });
+                dialog.present();
+            });
+            data_group.add(&clear_backups);
+        }
+
+        let uninstall_row = adw::ActionRow::new();
+        uninstall_row.set_title("Uygulamayı Kaldır (Verileri Koru)");
+        uninstall_row.set_subtitle(if flatpak {
+            "Verileriniz korunur. Terminalde: flatpak uninstall io.github.veilzon.AnimeciX"
+        } else if system_managed {
+            "Paket yöneticisiyle kaldırılır; izleme geçmişi, ayarlar ve yedekler korunur."
+        } else {
+            "Uygulama ve masaüstü kısayolları kaldırılır; izleme geçmişi, ayarlar ve yedekler korunur."
         });
-        data_group.add(&wipe_btn);
+        let uninstall_btn = gtk::Button::with_label("Kaldır");
+        uninstall_btn.add_css_class("flat");
+        uninstall_btn.add_css_class("pill");
+        uninstall_btn.set_valign(gtk::Align::Center);
+        uninstall_row.add_suffix(&uninstall_btn);
+        data_group.add(&uninstall_row);
+        {
+            let cb = on_uninstall.clone();
+            uninstall_btn.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk::Window>();
+                let dialog = adw::MessageDialog::builder()
+                    .heading("Uygulamayı Kaldır")
+                    .body("Paket/uygulama sistemden kaldırılacak. İzleme geçmişi, ayarlar, takip verileri ve yedekler korunacak.")
+                    .close_response("cancel")
+                    .default_response("cancel")
+                    .build();
+                if let Some(win) = parent.as_ref() {
+                    dialog.set_transient_for(Some(win));
+                }
+                dialog.add_response("cancel", "İptal");
+                dialog.add_response("uninstall", "Kaldır");
+                dialog.set_response_appearance("uninstall", adw::ResponseAppearance::Destructive);
+                let cb = cb.clone();
+                dialog.connect_response(None, move |_, resp| {
+                    if resp == "uninstall" {
+                        cb();
+                    }
+                });
+                dialog.present();
+            });
+        }
+
+        let reset_row = adw::ActionRow::new();
+        reset_row.set_title("Tüm Verileri Sıfırla");
+        reset_row.set_subtitle(
+            "Canlı verileri, indirme kuyruğunu ve önbelleği siler; otomatik yedekler korunur.",
+        );
+        let reset_btn = gtk::Button::with_label("Sıfırla");
+        reset_btn.add_css_class("flat");
+        reset_btn.add_css_class("destructive-action");
+        reset_btn.set_valign(gtk::Align::Center);
+        reset_row.add_suffix(&reset_btn);
+        data_group.add(&reset_row);
+        {
+            let cb = on_wipe.clone();
+            reset_btn.connect_clicked(move |btn| {
+                let parent = btn.root().and_downcast::<gtk::Window>();
+                let dialog = adw::MessageDialog::builder()
+                    .heading("Verileri Sıfırla")
+                    .body("Canlı veriler, indirme kuyruğu ve önbellek silinecek. Uygulama kurulu kalacak; otomatik yedekler korunacak.")
+                    .close_response("cancel")
+                    .default_response("cancel")
+                    .build();
+                if let Some(win) = parent.as_ref() {
+                    dialog.set_transient_for(Some(win));
+                }
+                dialog.add_response("cancel", "İptal");
+                dialog.add_response("wipe", "Sıfırla");
+                dialog.set_response_appearance("wipe", adw::ResponseAppearance::Destructive);
+                let cb = cb.clone();
+                dialog.connect_response(None, move |_, resp| {
+                    if resp == "wipe" {
+                        cb();
+                    }
+                });
+                dialog.present();
+            });
+        }
+
         root.append(&data_group);
 
         let info_group = adw::PreferencesGroup::new();
@@ -1566,6 +1737,23 @@ pub fn tr_fold(s: &str) -> String {
         }
     }
     out
+}
+
+fn backup_time_label(epoch: u64) -> String {
+    glib::DateTime::from_unix_local(epoch as i64)
+        .ok()
+        .and_then(|d| d.format("%d.%m.%Y %H:%M").ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "Bilinmeyen tarih".to_string())
+}
+
+fn backup_kind_label(kind: &str) -> &'static str {
+    match kind {
+        "import" => "İçe aktarma öncesi",
+        "reset" => "Sıfırlama öncesi",
+        "restore" => "Geri yükleme öncesi",
+        _ => "Otomatik yedek",
+    }
 }
 
 /// Grup içindeki aranabilir satırları toplar (ActionRow + bağımsız butonlar).
