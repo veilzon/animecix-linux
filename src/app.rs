@@ -4734,6 +4734,14 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
+        "1.4.5" => Some((
+            "Yenilikler (v1.4.5)",
+            vec![
+                "Veri Yönetimi: ayarlar, izleme verileri ve yayın takibi tek JSON dosyasına dışa/içe aktarılabilir; gizli alanlar yedeğe girmez.",
+                "Önceki Yedekler: son 5 otomatik yedek listelenir, tek tıkla geri yüklenir; her işlem öncesi güvenlik yedeği alınır.",
+                "Uygulamayı Kaldır (Verileri Koru) verileri silmez; Tüm Verileri Sıfırla yalnız canlı veriyi temizler ve yedekleri korur.",
+            ],
+        )),
         "1.4.4" => Some((
             "Yenilikler (v1.4.4)",
             vec![

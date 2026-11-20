@@ -12,6 +12,10 @@ on:
         description: "Sürüm etiketi (örn. v1.2.6)"
         required: true
         default: "v1.2.6"
+      upload_release:
+        description: "Paketleri GitHub release'ine yükle (test derlemesinde kapat)"
+        type: boolean
+        default: true
   release:
     types: [published]
 
@@ -190,6 +194,7 @@ jobs:
           path: animecix_*_amd64.deb
 
       - name: Release'e yükle
+        if: github.event_name == 'release' || inputs.upload_release
         run: |
           VER=$(cat girdi/VER)
           TAG="v$VER"
@@ -270,7 +275,14 @@ jobs:
           xvfb-run -a env LIBGL_ALWAYS_SOFTWARE=1 animecix --player-smoke \
             /usr/share/animecix/assets/changelog/ekrangoruntusu.mp4
 
+      - name: RPM artifact'ını paylaş
+        uses: actions/upload-artifact@v4
+        with:
+          name: animecix-rpm
+          path: animecix-*.x86_64.rpm
+
       - name: Release'e yükle
+        if: github.event_name == 'release' || inputs.upload_release
         run: |
           VER=$(cat girdi/VER)
           TAG="v$VER"

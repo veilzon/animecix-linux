@@ -50,6 +50,11 @@
     <binary>animecix</binary>
   </provides>
   <releases>
+    <release version="1.4.5" date="2026-11-20">
+      <description>
+        <p>Veri Yönetimi: ayarlar, izleme verileri ve yayın takibi dışa/içe aktarılabilir; son 5 otomatik yedek geri yüklenebilir. Uygulamayı Kaldır (Verileri Koru) verileri silmez, Tüm Verileri Sıfırla yalnız canlı veriyi temizler.</p>
+      </description>
+    </release>
     <release version="1.4.4" date="2026-11-19">
       <description>
         <p>Film ilerlemesi ve maraton tamamlanması düzeldi. Ayarlar'a Donanım Hızlandırma seçeneği (varsayılan yazılım; isteğe bağlı otomatik GPU decode) ve Aurora, Gün Batımı, Neon gradyan temaları eklendi. Bazı kullanıcı iyileştirmeleri.</p>

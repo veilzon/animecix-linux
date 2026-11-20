@@ -1,4 +1,4 @@
-# Yayınlanmadı — veri yönetimi
+# Changelog — v1.4.5 (güncel sürüm notları)
 
 - **Yedekleme:** Ayarlar → Veri Yönetimi'nden ayarlar, izleme verileri ve
   yayın takibi tek JSON dosyasına dışa aktarılabilir. Gizli alanlar ve cihaza
