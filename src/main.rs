@@ -4,6 +4,7 @@ mod aria;
 mod auth;
 mod calendar_feed;
 mod covers;
+mod data_management;
 mod desktop;
 mod diagnostics;
 mod discord_rpc;
