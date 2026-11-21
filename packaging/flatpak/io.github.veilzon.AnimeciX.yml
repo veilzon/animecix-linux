@@ -73,7 +73,7 @@ modules:
       - type: git
         url: https://github.com/LuaJIT/LuaJIT.git
         branch: v2.1
-        commit: 0c28742ba7d6d09ec154f796388b1e5ad9163f1e
+        commit: 96f7b297326e9fd454b7186c6858b2773f94a0dc
 
   - name: mpv
     buildsystem: meson
