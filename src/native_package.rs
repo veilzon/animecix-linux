@@ -15,6 +15,7 @@ pub fn system_package_managed_for(kind: crate::update::InstallKind) -> bool {
         crate::update::InstallKind::Deb
             | crate::update::InstallKind::Rpm
             | crate::update::InstallKind::Arch
+            | crate::update::InstallKind::Gentoo
     )
 }
 
@@ -127,6 +128,7 @@ mod tests {
         assert!(system_package_managed_for(InstallKind::Deb));
         assert!(system_package_managed_for(InstallKind::Rpm));
         assert!(system_package_managed_for(InstallKind::Arch));
+        assert!(system_package_managed_for(InstallKind::Gentoo));
         assert!(!system_package_managed_for(InstallKind::AppImage));
         assert!(!system_package_managed_for(InstallKind::Unknown));
     }

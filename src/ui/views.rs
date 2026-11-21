@@ -946,8 +946,11 @@ impl SettingsView {
                 crate::update::InstallKind::Arch => {
                     "Başlatmada yeni sürümü kontrol eder; Arch paketini pacman deposundan günceller (yetki istenir)"
                 }
+                crate::update::InstallKind::Gentoo => {
+                    "Başlatmada yeni sürümü kontrol eder; Gentoo'da güncelleme komutunu gösterir"
+                }
                 crate::update::InstallKind::Unknown => {
-                    "Yalnızca AppImage, .deb, .rpm veya Arch kurulumlarında kullanılabilir"
+                    "Yalnızca AppImage, .deb, .rpm, Arch veya Gentoo kurulumlarında kullanılabilir"
                 }
             }
         };

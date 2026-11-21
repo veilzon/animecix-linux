@@ -35,11 +35,17 @@ owner() {
         echo arch
         return
     fi
+    if compgen -G "/var/db/pkg/media-video/animecix-*" >/dev/null 2>&1; then
+        echo gentoo
+        return
+    fi
     echo source
 }
 
 manager() {
-    if command -v apt-get >/dev/null 2>&1; then
+    if [ "$(owner)" = gentoo ]; then
+        echo emerge
+    elif command -v apt-get >/dev/null 2>&1; then
         echo apt-get
     elif command -v dnf >/dev/null 2>&1; then
         echo dnf
@@ -81,6 +87,7 @@ install_pkg() {
         dnf) run_priv dnf install -y "$pkg" ;;
         zypper) run_priv zypper --non-interactive install --allow-unsigned-rpm "$pkg" ;;
         pacman) run_priv pacman -U --noconfirm "$pkg" ;;
+        emerge) die "Gentoo'da paket emerge ile kurulur; bu yol kullanılmaz" ;;
         *) die "bilinmeyen paket yöneticisi: $m" ;;
     esac
 }
@@ -93,6 +100,7 @@ uninstall_native() {
         dnf) run_priv dnf remove -y animecix ;;
         zypper) run_priv zypper --non-interactive remove animecix ;;
         pacman) run_priv pacman -Rns --noconfirm animecix ;;
+        emerge) run_priv sh -c 'yes | emerge --unmerge media-video/animecix' ;;
         *) die "bilinmeyen paket yöneticisi: $m" ;;
     esac
 }

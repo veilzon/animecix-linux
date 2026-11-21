@@ -11,6 +11,8 @@ use serde::Deserialize;
 
 const UPDATE_REPO: &str = "veilzon/animecix-linux";
 const ASSET_APPIMAGE: &str = "AnimeciX-x86_64.AppImage";
+const GENTOO_UPDATE_COMMAND: &str =
+    "sudo emaint sync -r animecix\nsudo emerge -avu media-video/animecix";
 pub const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 #[derive(Deserialize)]
@@ -32,6 +34,7 @@ pub enum InstallKind {
     Deb,
     Rpm,
     Arch,
+    Gentoo,
     Unknown,
 }
 
@@ -43,6 +46,7 @@ impl InstallKind {
             InstallKind::Deb => ".deb paketi",
             InstallKind::Rpm => ".rpm paketi",
             InstallKind::Arch => "Arch paketi",
+            InstallKind::Gentoo => "Gentoo paketi",
             InstallKind::Unknown => "bilinmeyen kurulum",
         }
     }
@@ -62,6 +66,7 @@ fn fake_kind_env() -> Option<InstallKind> {
         "deb" => Some(InstallKind::Deb),
         "rpm" => Some(InstallKind::Rpm),
         "arch" => Some(InstallKind::Arch),
+        "gentoo" => Some(InstallKind::Gentoo),
         "appimage" => Some(InstallKind::AppImage),
         _ => None,
     }
@@ -88,6 +93,9 @@ pub fn install_kind() -> InstallKind {
         }
         if arch_package_installed() {
             return InstallKind::Arch;
+        }
+        if gentoo_package_version().is_some() {
+            return InstallKind::Gentoo;
         }
         InstallKind::Unknown
     })
@@ -124,6 +132,31 @@ fn arch_package_installed() -> bool {
         .output()
         .map(|o| o.status.success())
         .unwrap_or(false)
+}
+
+/// Portage VDB'sindeki kurulu sürüm: `/var/db/pkg/media-video/animecix-1.4.5`.
+/// `portageq`/`qlist` gerekmediği için Gentoo dışında da güvenle `None` döner.
+fn gentoo_package_version() -> Option<String> {
+    let entries = std::fs::read_dir("/var/db/pkg/media-video").ok()?;
+    let mut best: Option<String> = None;
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some(raw) = name.strip_prefix("animecix-") else {
+            continue;
+        };
+        let version = normalize_pkg_version(raw);
+        if version.is_empty() {
+            continue;
+        }
+        if best
+            .as_deref()
+            .map_or(true, |current| needs_update(current, &version))
+        {
+            best = Some(version);
+        }
+    }
+    best
 }
 
 /// `pacman -Q animecix` çıktısındaki sürüm alanı: "animecix 1.4.0-1".
@@ -165,6 +198,7 @@ fn installed_package_version(kind: InstallKind) -> Option<String> {
             .args(["-Q", "animecix"])
             .output()
             .ok()?,
+        InstallKind::Gentoo => return gentoo_package_version(),
         _ => return None,
     };
     if !out.status.success() {
@@ -246,6 +280,7 @@ fn pick_asset(kind: InstallKind, assets: &[GithubAsset]) -> Option<&GithubAsset>
         InstallKind::Deb => assets.iter().find(|a| a.name.ends_with("_amd64.deb")),
         InstallKind::Rpm => assets.iter().find(|a| a.name.ends_with(".x86_64.rpm")),
         InstallKind::Arch => None,
+        InstallKind::Gentoo => None,
         InstallKind::Unknown => None,
     }
 }
@@ -260,6 +295,7 @@ fn package_magic_ok(kind: InstallKind, bytes: &[u8]) -> bool {
         InstallKind::Rpm => bytes.starts_with(&[0xED, 0xAB, 0xEE, 0xDB]),
         InstallKind::AppImage => bytes.starts_with(b"\x7fELF"),
         InstallKind::Arch => false,
+        InstallKind::Gentoo => false,
         InstallKind::Unknown => false,
     }
 }
@@ -557,8 +593,9 @@ pub fn check_and_prompt<W: IsA<gtk::Window> + Clone + 'static>(
             if !needs_update(&base, &rel.tag_name) {
                 return Ok(None);
             }
-            if kind == InstallKind::Arch {
-                // Arch güncellemesi GitHub asset'i indirmez; pacman deposundan kurulur.
+            if kind == InstallKind::Arch || kind == InstallKind::Gentoo {
+                // Arch/Gentoo güncellemesi GitHub asset'i indirmez; paket
+                // yöneticisinin kendi deposundan güncellenir.
                 return Ok(Some((rel.tag_name.clone(), String::new(), String::new())));
             }
             let asset = pick_asset(kind, &rel.assets).ok_or_else(|| {
@@ -769,6 +806,9 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
         InstallKind::Arch => format!(
             "AnimeciX v{tag} yayınlandı. Arch paketi pacman deposundan güncellenecek; yetki istenecek. Güncellensin mi?"
         ),
+        InstallKind::Gentoo => format!(
+            "AnimeciX v{tag} yayınlandı.\n\nGentoo overlay'inde güncellemek için terminalde:\n\n{GENTOO_UPDATE_COMMAND}\n\nKomutu kopyalayıp kullanabilirsin."
+        ),
         _ => format!(
             "AnimeciX v{tag} yayınlandı. {} indirilip sistem paket yöneticisiyle kurulacak; yetki istenecek. Güncellensin mi?",
             kind.label()
@@ -781,17 +821,29 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
         .default_response("later")
         .build();
     dialog.add_response("later", "Daha Sonra");
-    dialog.add_response(
-        "update",
-        if kind == InstallKind::AppImage {
-            "Güncelle ve Yeniden Başlat"
-        } else {
-            "Kur ve Yeniden Başlat"
-        },
-    );
-    dialog.set_response_appearance("update", adw::ResponseAppearance::Suggested);
+    if kind == InstallKind::Gentoo {
+        dialog.add_response("copy", "Komutu Kopyala");
+        dialog.set_response_appearance("copy", adw::ResponseAppearance::Suggested);
+    } else {
+        dialog.add_response(
+            "update",
+            if kind == InstallKind::AppImage {
+                "Güncelle ve Yeniden Başlat"
+            } else {
+                "Kur ve Yeniden Başlat"
+            },
+        );
+        dialog.set_response_appearance("update", adw::ResponseAppearance::Suggested);
+    }
     dialog.set_transient_for(Some(&window));
     dialog.connect_response(None, move |dlg, resp| {
+        if kind == InstallKind::Gentoo {
+            if resp == "copy" {
+                copy_to_clipboard(GENTOO_UPDATE_COMMAND);
+                dlg.set_response_label("copy", "Kopyalandı");
+            }
+            return;
+        }
         if resp == "update" {
             dlg.close();
             if kind == InstallKind::Arch {
@@ -809,6 +861,12 @@ fn present_update_dialog<W: IsA<gtk::Window> + Clone + 'static>(
         }
     });
     dialog.present();
+}
+
+fn copy_to_clipboard(text: &str) {
+    if let Some(display) = gtk::gdk::Display::default() {
+        display.clipboard().set_text(text);
+    }
 }
 
 /// Arch paketini pacman deposundan günceller ve sürümü doğrular.
@@ -1070,6 +1128,7 @@ mod tests {
         );
         assert!(pick_asset(InstallKind::Unknown, &assets).is_none());
         assert!(pick_asset(InstallKind::Arch, &assets).is_none());
+        assert!(pick_asset(InstallKind::Gentoo, &assets).is_none());
         assert!(pick_asset(InstallKind::Deb, &assets[..2]).is_some());
     }
 
@@ -1078,6 +1137,13 @@ mod tests {
         assert_eq!(parse_pacman_version("animecix 1.4.0-1\n"), "1.4.0");
         assert_eq!(parse_pacman_version("animecix 1.4.0-2\n"), "1.4.0");
         assert_eq!(parse_pacman_version(""), "");
+    }
+
+    #[test]
+    fn gentoo_vdb_version_normalization() {
+        assert_eq!(normalize_pkg_version("animecix-1.4.5"), "animecix-1.4.5");
+        assert_eq!(normalize_pkg_version("1.4.5-r1"), "1.4.5");
+        assert_eq!(normalize_pkg_version("1.4.10"), "1.4.10");
     }
 
     #[test]
@@ -1094,6 +1160,7 @@ mod tests {
         assert!(package_magic_ok(InstallKind::AppImage, b"\x7fELFrest"));
         assert!(!package_magic_ok(InstallKind::AppImage, b"nope"));
         assert!(!package_magic_ok(InstallKind::Arch, b"\x7fELF"));
+        assert!(!package_magic_ok(InstallKind::Gentoo, b"\x7fELF"));
         assert!(!package_magic_ok(InstallKind::Unknown, b"\x7fELF"));
     }
 
