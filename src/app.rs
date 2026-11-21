@@ -4798,20 +4798,13 @@ fn should_show_changelog(current: &str, seen: &str, preview: bool) -> bool {
 /// Kaynak: CHANGELOG.md (sürüm başlığı altındaki düz liste).
 fn changelog_items(v: &str) -> Option<(&'static str, Vec<&'static str>)> {
     match v {
-        "1.4.6" => Some((
-            "Yenilikler (v1.4.6)",
-            vec![
-                "Yayın Takibi artık takvim tarihi yerine takip edilen yapımların bölüm listesini kontrol ediyor; geçici takvim tarihleri erken bildirim üretmiyor.",
-                "Masaüstü bildirimi gönderilmiş ama uygulamada görülmemiş bölümler, uygulama açılınca bir kez uygulama içi bildirim olarak gösteriliyor.",
-                "Autostart girdisi eksikse uygulama açılışta kendini onarıyor ve arka plan takipçisini başlatıyor.",
-            ],
-        )),
         "1.4.5" => Some((
             "Yenilikler (v1.4.5)",
             vec![
                 "Veri Yönetimi: ayarlar, izleme verileri ve yayın takibi tek JSON dosyasına dışa/içe aktarılabilir; gizli alanlar yedeğe girmez.",
                 "Önceki Yedekler: son 5 otomatik yedek listelenir, tek tıkla geri yüklenir; her işlem öncesi güvenlik yedeği alınır.",
                 "Uygulamayı Kaldır (Verileri Koru) verileri silmez; Tüm Verileri Sıfırla yalnız canlı veriyi temizler ve yedekleri korur.",
+                "Yayın Takibi artık bölüm listesini kontrol eder; kaçırılan bildirim uygulama açılınca bir kez gösterilir ve eksik autostart kendini onarır.",
             ],
         )),
         "1.4.4" => Some((

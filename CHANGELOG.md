@@ -1,15 +1,4 @@
-# Changelog — v1.4.6 (güncel sürüm notları)
-
-- **Yayın Takibi:** Bildirimler artık yayın takvimi tarihine değil, takip
-  edilen yapımların **bölüm listesine** göre verilir. Takvimdeki geçici veya
-  gece yarısı tarihleri erken bildirim üretmez.
-- **Kaçırılan bildirim:** Masaüstü bildirimi gönderilmiş ama uygulamada
-  gösterilmemiş bölümler, uygulama açılınca bir kez uygulama içi bildirim
-  olarak gösterilir.
-- **Arka plan takipçisi:** Autostart girdisi eksikse uygulama açılışta kendini
-  onarır ve takipçiyi başlatır.
-
-# Changelog — v1.4.5
+# Changelog — v1.4.5 (güncel sürüm notları)
 
 - **Yedekleme:** Ayarlar → Veri Yönetimi'nden ayarlar, izleme verileri ve
   yayın takibi tek JSON dosyasına dışa aktarılabilir. Gizli alanlar ve cihaza
@@ -20,8 +9,13 @@
 - **Güvenli kaldırma:** **Uygulamayı Kaldır (Verileri Koru)** paketi/uygulamayı
   kaldırır ama veri ve yedekleri silmez. **Tüm Verileri Sıfırla** yalnız canlı
   veriyi temizler; otomatik yedekleri korur.
+- **Yayın Takibi:** Bildirimler artık yayın takvimi tarihine değil, takip
+  edilen yapımların **bölüm listesine** göre verilir. Takvimdeki geçici veya
+  gece yarısı tarihleri erken bildirim üretmez. Masaüstü bildirimi gönderilmiş
+  ama uygulamada gösterilmemiş bölümler, uygulama açılınca bir kez gösterilir;
+  eksik autostart girdisi de açılışta onarılır.
 
-# Changelog — v1.4.4 (güncel sürüm notları)
+# Changelog — v1.4.4
 
 - **Film ilerlemesi ve maraton:** İzlendi işaretlenen filmlerin ilerleme çubuğu
   anında doluyor ve bu durum yeniden açılışta korunuyor. Maraton listesinde

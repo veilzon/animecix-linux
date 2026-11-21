@@ -50,14 +50,9 @@
     <binary>animecix</binary>
   </provides>
   <releases>
-    <release version="1.4.6" date="2026-11-21">
+    <release version="1.4.5" date="2026-11-21">
       <description>
-        <p>Yayın Takibi bildirimleri artık takvim tarihi yerine bölüm listesine göre verilir; geçici tarihler erken bildirim üretmez. Kaçırılan bildirimler uygulama açılınca bir kez gösterilir ve eksik autostart girdisi kendini onarır.</p>
-      </description>
-    </release>
-    <release version="1.4.5" date="2026-11-20">
-      <description>
-        <p>Veri Yönetimi: ayarlar, izleme verileri ve yayın takibi dışa/içe aktarılabilir; son 5 otomatik yedek geri yüklenebilir. Uygulamayı Kaldır (Verileri Koru) verileri silmez, Tüm Verileri Sıfırla yalnız canlı veriyi temizler.</p>
+        <p>Veri Yönetimi: ayarlar, izleme verileri ve yayın takibi dışa/içe aktarılabilir; son 5 otomatik yedek geri yüklenebilir. Uygulamayı Kaldır (Verileri Koru) verileri silmez, Tüm Verileri Sıfırla yalnız canlı veriyi temizler. Yayın Takibi bildirimleri artık bölüm listesine göre verilir; kaçırılan bildirim uygulama açılınca gösterilir ve eksik autostart onarılır.</p>
       </description>
     </release>
     <release version="1.4.4" date="2026-11-19">
