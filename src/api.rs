@@ -1556,7 +1556,7 @@ impl Client {
             #[cfg(test)]
             covers_wiped_this_boot: false,
         };
-        c.http.set_cf_clearance(&c.load_settings().cf_clearance);
+        c.set_cf_clearance(&c.load_settings().cf_clearance);
         c.remember_cover_quality(&c.load_settings().cover_quality);
         c
     }
