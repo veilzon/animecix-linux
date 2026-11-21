@@ -11,6 +11,9 @@
 #[path = "../calendar_feed.rs"]
 mod calendar_feed;
 #[allow(dead_code)]
+#[path = "../follow_feed.rs"]
+mod follow_feed;
+#[allow(dead_code)]
 #[path = "../follow_store.rs"]
 mod follow_store;
 #[allow(dead_code)]
@@ -24,9 +27,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-const CACHE_TTL: u64 = 3600;
 const INITIAL_DELAY: u64 = 20;
-const BASE: &str = "https://animecix.tv";
 
 static STOP: AtomicBool = AtomicBool::new(false);
 
@@ -131,7 +132,7 @@ fn parse_args() -> Result<Args, String> {
                      --check   kurulumu doğrula\n\
                      --print-autostart  XDG autostart girdisini yazdır\n\
                      --dry-run bildirim göndermeden karar dökümü ver\n\
-                     --fixture DOSYA  ağ yerine yerel takvim JSON'u kullan\n\
+                     --fixture DOSYA  ağ yerine yerel bölüm satırı JSON'u kullan\n\
                      --notify-cmd YOL  test için bildirim komutu\n\
                      --now EPOCH|ISO  test için saati sabitle\n\
                      --interval DK    kontrol aralığını geçici olarak değiştir\n\
@@ -318,8 +319,7 @@ fn run_once(args: &Args, settings: &WatchSettings, now: u64) -> Result<usize, St
         return Err("ledger.json şeması bu sürümden yeni".to_string());
     }
 
-    let mut calendar = load_calendar(args, settings, now)?;
-    let rows = rows_from_calendar(&mut calendar);
+    let rows = load_follow_rows(args, &follows, settings, now)?;
     if rows.is_empty() {
         return Ok(0);
     }
@@ -416,102 +416,30 @@ fn interval_mins(s: &WatchSettings) -> u64 {
     }
 }
 
-fn cache_path() -> PathBuf {
-    let home = std::env::var("HOME").unwrap_or_default();
-    PathBuf::from(home).join(".cache/animecix/api/calendar.json")
-}
-
-fn read_cache(now: u64, ttl: u64) -> Option<Value> {
-    let text = std::fs::read_to_string(cache_path()).ok()?;
-    let (ts, body) = text.split_once('\n')?;
-    let ts: u64 = ts.trim().parse().ok()?;
-    if now.saturating_sub(ts) >= ttl {
-        return None;
-    }
-    serde_json::from_str(body).ok()
-}
-
-fn write_cache(v: &Value) {
-    let text = format!(
-        "{}\n{}",
-        follow_store::now_secs(),
-        serde_json::to_string(v).unwrap_or_default()
-    );
-    let _ = follow_store::write_text_atomic(&cache_path(), &text);
-}
-
-fn load_calendar(args: &Args, settings: &WatchSettings, now: u64) -> Result<Value, String> {
+fn load_follow_rows(
+    args: &Args,
+    follows: &follow_store::FollowsFile,
+    settings: &WatchSettings,
+    now: u64,
+) -> Result<Vec<follow_store::CalendarRow>, String> {
     if let Some(path) = &args.fixture {
         let text = std::fs::read_to_string(path)
             .map_err(|e| format!("fixture okunamadı ({}): {e}", path.display()))?;
-        return serde_json::from_str(&text).map_err(|e| format!("fixture JSON: {e}"));
-    }
-    let stale = read_cache(now, CACHE_TTL);
-    let result = (|| -> Result<Value, String> {
-        let http = http::Http::new(None)?;
-        http.set_cf_clearance(&settings.cf_clearance);
-        let v: Value = http
-            .get(format!("{BASE}/secure/calendar"))
-            .header("Accept", "application/json")
-            .timeout(30)
-            .send()?
-            .error_for_status()?
-            .json()?;
-        Ok(v)
-    })();
-    match result {
-        Ok(v) => {
-            write_cache(&v);
-            Ok(v)
-        }
-        Err(e) => {
-            if let Some(v) = stale {
-                eprintln!("[WATCH] ağ hatası, önbellek kullanılıyor: {e}");
-                Ok(v)
-            } else {
-                Err(format!("takvim alınamadı: {e}"))
-            }
-        }
-    }
-}
-
-fn rows_from_calendar(v: &mut Value) -> Vec<follow_store::CalendarRow> {
-    calendar_feed::dedup_calendar_json(v);
-    let mut rows = Vec::new();
-    let Some(days) = v["data"].as_array() else {
-        return rows;
-    };
-    for day in days {
-        let Some(eps) = day["episodes"].as_array() else {
-            continue;
+        let value: Value = serde_json::from_str(&text).map_err(|e| format!("fixture JSON: {e}"))?;
+        let rows_value = if value.is_array() {
+            value
+        } else {
+            value
+                .get("rows")
+                .cloned()
+                .ok_or_else(|| "fixture içinde rows dizisi yok".to_string())?
         };
-        for e in eps {
-            let title_id = e["title"]["id"]
-                .as_u64()
-                .filter(|id| *id > 0)
-                .or_else(|| e["title_id"].as_u64().filter(|id| *id > 0))
-                .unwrap_or(0);
-            if title_id == 0 {
-                continue;
-            }
-            rows.push(follow_store::CalendarRow {
-                title_id,
-                alt_ids: e["alt_title_ids"]
-                    .as_array()
-                    .map(|a| a.iter().filter_map(Value::as_u64).collect())
-                    .unwrap_or_default(),
-                title_name: e["title"]["name"].as_str().unwrap_or("").to_string(),
-                season: e["season_number"].as_u64().unwrap_or(0),
-                episode: e["episode_number"].as_u64().unwrap_or(0),
-                episode_name: e["name"].as_str().unwrap_or("").to_string(),
-                release_epoch: calendar_feed::iso_to_epoch(
-                    e["release_date"].as_str().unwrap_or(""),
-                )
-                .unwrap_or(0),
-            });
-        }
+        return serde_json::from_value(rows_value)
+            .map_err(|e| format!("fixture bölüm satırları: {e}"));
     }
-    rows
+    let http = http::Http::new(None)?;
+    http.set_cf_clearance(&settings.cf_clearance);
+    follow_feed::fetch_rows(&http, &follows.items, now)
 }
 
 fn notifications_available() -> bool {

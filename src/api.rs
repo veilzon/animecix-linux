@@ -1887,12 +1887,6 @@ impl Client {
         self.calendar_with_ttl(3600)
     }
 
-    /// Takip turu / "Şimdi Kontrol Et" için önbelleği atlayan taze takvim.
-    /// Ağ hatasında `cache_get` son disk önbelleğini döndürür.
-    pub fn calendar_refresh(&self) -> Result<Vec<CalendarDay>, String> {
-        self.calendar_with_ttl(0)
-    }
-
     fn calendar_with_ttl(&self, ttl: u64) -> Result<Vec<CalendarDay>, String> {
         let d = self.cache_get("calendar", ttl, |http| {
             http.get(format!("{BASE}/secure/calendar"))
@@ -2105,6 +2099,38 @@ impl Client {
             return self.movie_episodes(t.id);
         }
         Ok(all)
+    }
+
+    /// Takip edilen yapının **bölüm listesini** takip satırlarına çevirir.
+    /// Takvim tarihi kullanılmaz; API'de görünen bölüm "yayınlanmış"tir.
+    pub(crate) fn follow_episode_rows(
+        &self,
+        follow: &crate::follow_store::FollowedTitle,
+        now: u64,
+    ) -> Result<Vec<crate::follow_store::CalendarRow>, String> {
+        let mut title = Title {
+            id: follow.title_id,
+            name: follow.name.clone(),
+            title_type: follow.title_type.clone(),
+            season_count: follow.season_count.map(|s| s as i64),
+            ..Default::default()
+        };
+        if title.season_count.is_none() {
+            title = self.enrich_title(&title);
+        }
+        let eps = self.episodes(&title)?;
+        Ok(eps
+            .into_iter()
+            .map(|e| crate::follow_store::CalendarRow {
+                title_id: follow.title_id,
+                alt_ids: Vec::new(),
+                title_name: follow.name.clone(),
+                season: e.season,
+                episode: e.episode,
+                episode_name: e.name,
+                release_epoch: now as i64,
+            })
+            .collect())
     }
 
     fn movie_videos(&self, title_id: u64) -> Result<serde_json::Value, String> {

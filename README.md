@@ -30,7 +30,7 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Oynatma geri bildirimi**: Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci ve seek sırasında görsel geri bildirim; otomatik sonraki bölümle birlikte outro'yu atlama
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
-- **Yayın Takibi**: Takvimde ad/alternatif ad/bölüm araması; takip edilen yapımlar için yeni bölüm bildirimi. Uygulama açıkken uygulama içi toast, kapalıyken hafif `animecix-calendar` arka plan takipçisi (sistem bildirimi)
+- **Yayın Takibi**: Takvim yalnızca yayın programını gösterir; bildirim kararı takip edilen yapımların **bölüm listesi** üzerinden verilir. Uygulama açıkken uygulama içi toast, kapalıyken hafif `animecix-calendar` arka plan takipçisi (sistem bildirimi); kaçırılan bildirim uygulama açılınca bir kez gösterilir
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
 - **Discord Rich Presence**: Discord'da izlediğin anime/film ve bölüm bilgisi görünür; varsayılan açık, Ayarlar → Discord'dan kapatılabilir veya socket yolu değiştirilebilir
 - **İndirme yöneticisi**: bölüm ve film indirme, kaldığı yerden devam, toplu indirme; indirilen bölümler listede işaretlenir, sağ tıkla indirilebilir ve normal oynatmada yerel dosyadan öncelikli açılır
@@ -55,8 +55,9 @@ takip edilen yapımlarda düğme onay ikonuna döner.
 
 - Uygulama açık ve pencere aktifken yeni bölüm **uygulama içi toast** ile bildirilir.
 - **Ayarlar → Yayın Takibi → Uygulama Kapalıyken Bildir** açıksa hafif
-  `animecix-calendar` takipçisi oturum açılışında başlar ve yeni bölümleri
-  masaüstü bildirimiyle (`notify-send` veya DBus) haber verir.
+  `animecix-calendar` takipçisi oturum açılışında başlar, takip edilen
+  yapımların bölüm listesini denetler ve yeni bölümleri masaüstü bildirimiyle
+  (`notify-send` veya DBus) haber verir.
 - Bildirim gönderilemezse (ekran kilitli, oturum yok, bildirim servisi kapalı)
   kayıt `pending` kalır ve sonraki kontrollerde tekrar denenir. Aynı bölüm bir
   kez bildirilir; ilk takipte geçmiş bölümler toplu bildirilmez.

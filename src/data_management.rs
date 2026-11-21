@@ -726,6 +726,7 @@ mod tests {
             title_type: None,
             notify,
             added_at: 0,
+            season_count: None,
         }
     }
 

@@ -39,22 +39,15 @@ fn setup(name: &str, watch: bool) -> (PathBuf, PathBuf) {
     (home, data)
 }
 
-fn episode(ep: u64, release: &str) -> String {
+fn episode(ep: u64, _release: &str) -> String {
     format!(
-        r#"{{"id":{},"season_number":1,"episode_number":{},"release_date":"{}","name":"{} . Bölüm","title":{{"id":500,"name":"Test Anime","mal_id":1,"title_type":"anime"}}}}"#,
-        1000 + ep,
-        ep,
-        release,
-        ep
+        r#"{{"title_id":500,"alt_ids":[],"title_name":"Test Anime","season":1,"episode":{ep},"episode_name":"{ep} . Bölüm","release_epoch":{NOW}}}"#
     )
 }
 
-fn fixture(home: &Path, name: &str, episodes: &[String]) -> PathBuf {
+fn fixture(home: &Path, name: &str, rows: &[String]) -> PathBuf {
     let path = home.join(name);
-    let body = format!(
-        r#"{{"data":[{{"date":"2026-11-16T00:00:00.000Z","episodes":[{}]}}]}}"#,
-        episodes.join(",")
-    );
+    let body = format!(r#"{{"rows":[{}]}}"#, rows.join(","));
     std::fs::write(&path, body).unwrap();
     path
 }

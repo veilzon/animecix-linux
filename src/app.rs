@@ -116,7 +116,7 @@ pub enum Msg {
     Search(Result<Vec<Title>, String>),
     News(u32, Result<(Vec<api::NewsItem>, usize, u32), String>),
     Calendar(Result<Vec<api::CalendarDay>, String>),
-    CalendarBackground(Result<Vec<api::CalendarDay>, String>),
+    FollowEpisodes(Result<Vec<crate::follow_store::CalendarRow>, String>),
     Discover(Result<(Vec<Title>, usize, u32), String>),
     Eps(Title, Result<Vec<Episode>, String>),
     Play(Title, Episode, Result<PlaySources, String>),
@@ -238,7 +238,7 @@ pub struct App {
     pub calendar_query: Rc<RefCell<String>>,
     /// GUI penceresi aktifken tutulan flock (daemon çift bildirim yapmasın).
     pub gui_active_lock: Rc<RefCell<Option<crate::follow_store::FileLock>>>,
-    /// Takip için takvimin son zorla denetim zamanı.
+    /// Takip için bölüm listesinin son denetim zamanı.
     pub follow_last_fetch: Rc<Cell<u64>>,
     /// "Şimdi Kontrol Et" sonucu bekleniyor mu?
     pub follow_refresh_pending: Rc<Cell<bool>>,
@@ -3306,6 +3306,7 @@ impl App {
                     let fname = ce.title.name.clone();
                     let fposter = ce.poster.clone().or_else(|| ce.title.poster.clone());
                     let ftype = ce.title.title_type.clone();
+                    let fseasons = ce.title.season_count.map(|s| s.max(0) as u64);
                     let this_f = self.clone_ref();
                     let all_btns = follow_btns.clone();
                     follow_btn.connect_clicked(move |b| {
@@ -3320,6 +3321,7 @@ impl App {
                                 title_type: ftype.clone(),
                                 notify: true,
                                 added_at: now,
+                                season_count: fseasons,
                             },
                         );
                         components::set_follow_state(b, following);
@@ -3676,7 +3678,7 @@ impl App {
                 }
                 Err(e) => self.show_error(&e),
             },
-            Msg::CalendarBackground(res) => {
+            Msg::FollowEpisodes(res) => {
                 let manual = self.follow_refresh_pending.replace(false);
                 let now = crate::follow_store::now_secs();
                 let mut ust = crate::follow_store::load_ui_status();
@@ -3692,16 +3694,12 @@ impl App {
                 }
                 crate::follow_store::save_ui_status(&ust);
                 match res {
-                    Ok(days) => {
-                        *self.calendar.borrow_mut() = Some(days);
+                    Ok(rows) => {
+                        self.process_follow_rows(&rows);
                         if manual {
-                            if self.page_history.borrow().last() == Some(&Page::Calendar) {
-                                self.show_page(&Page::Calendar);
-                            }
-                            self.follow_tick();
                             self.ops.info(
                                 "Takip kontrol edildi",
-                                "",
+                                &format!("{} bölüm listesi", rows.len()),
                                 std::time::Duration::from_secs(2),
                             );
                         }
@@ -3710,7 +3708,7 @@ impl App {
                         if manual {
                             self.show_error(&e);
                         } else {
-                            eprintln!("[WATCH] takvim tazelenemedi: {e}");
+                            eprintln!("[WATCH] bölüm listesi alınamadı: {e}");
                         }
                     }
                 }
@@ -4004,6 +4002,7 @@ impl App {
         let name = title.name.clone();
         let poster = title.poster.clone();
         let title_type = title.title_type.clone();
+        let season_count = title.season_count.map(|s| s.max(0) as u64);
         let this = self.clone_ref();
         b.connect_clicked(move |btn| {
             let now = crate::follow_store::now_secs();
@@ -4015,6 +4014,7 @@ impl App {
                     title_type: title_type.clone(),
                     notify: true,
                     added_at: now,
+                    season_count,
                 });
             components::set_follow_state(btn, following);
             this.ops.info(
@@ -4079,11 +4079,29 @@ impl App {
         });
     }
 
-    /// Takip turu: takvimi tazele, yeni bölümleri deftere işle, pencere
-    /// aktifse uygulama içi bildirim göster. Ağ hatasında sessiz geçer.
+    /// Takip turu: bölüm listelerini tazele, yeni bölümleri deftere işle,
+    /// pencere aktifse uygulama içi bildirim göster. Ağ hatasında sessiz geçer.
     fn follow_tick(&self) {
-        if !self.settings.borrow().calendar_watch {
+        let (watch, autostart) = {
+            let s = self.settings.borrow();
+            (s.calendar_watch, s.calendar_watch_autostart)
+        };
+        if !watch {
             return;
+        }
+        // Eski sürüm/oturumlarda autostart girdisi kaybolmuş olabilir.
+        // Ayar açıksa kendini onar ve arka plan takipçisini çalıştır.
+        if autostart && !crate::flatpak::is_flatpak() {
+            if !crate::follow_store::autostart_installed() {
+                if let Err(e) = crate::desktop::install_follow_autostart() {
+                    eprintln!("[WATCH] autostart kurulamadı: {e}");
+                }
+            }
+            if !crate::follow_store::daemon_running() {
+                if let Err(e) = crate::desktop::spawn_follow_daemon() {
+                    eprintln!("[WATCH] arka plan takipçisi başlatılamadı: {e}");
+                }
+            }
         }
         if self.window.is_active() && self.gui_active_lock.borrow().is_none() {
             *self.gui_active_lock.borrow_mut() = crate::follow_store::try_gui_active_lock();
@@ -4100,56 +4118,96 @@ impl App {
             return;
         }
         let now = crate::follow_store::now_secs();
+        if self.window.is_active() {
+            let unread = crate::follow_store::with_ledger_locked(|l| {
+                crate::follow_store::claim_in_app_unread(l, now, 3)
+            })
+            .unwrap_or_default();
+            if !unread.is_empty() {
+                self.show_follow_toast(&unread);
+                let _ = crate::follow_store::with_ledger_locked(|l| {
+                    crate::follow_store::mark_in_app_seen(l, &unread);
+                });
+            }
+        }
         let interval = self.settings.borrow().calendar_watch_interval.max(15) * 60;
         if now.saturating_sub(self.follow_last_fetch.get()) >= interval {
             self.follow_last_fetch.set(now);
-            self.fetch_calendar_background(false);
-        }
-        let Some(days) = self.calendar.borrow().clone() else {
-            return;
-        };
-        let rows: Vec<crate::follow_store::CalendarRow> = days
-            .iter()
-            .flat_map(|d| {
-                d.episodes.iter().map(|e| crate::follow_store::CalendarRow {
-                    title_id: e.title.id,
-                    alt_ids: e.alt_title_ids.clone(),
-                    title_name: e.title.name.clone(),
-                    season: e.season,
-                    episode: e.episode,
-                    episode_name: e.name.clone(),
-                    release_epoch: crate::calendar_feed::iso_to_epoch(&e.release_date).unwrap_or(0),
-                })
-            })
-            .collect();
-        if rows.is_empty() {
-            return;
-        }
-        let active = self.window.is_active();
-        let claims = crate::follow_store::with_ledger_locked(|l| {
-            crate::follow_store::detect_new(&follows, l, &rows, now);
-            if !active {
-                return Vec::new();
-            }
-            let claims = crate::follow_store::claim_due(l, now, 3);
-            crate::follow_store::mark_sent(l, &claims, now);
-            claims
-        })
-        .unwrap_or_default();
-        if !claims.is_empty() {
-            self.show_follow_toast(&claims);
+            self.fetch_follow_episodes_background(false);
         }
     }
 
-    /// Arka planda taze takvim çeker; sayfa yeniden kurulmaz, hata toast'lanmaz.
-    fn fetch_calendar_background(&self, manual: bool) {
+    /// Takip edilen yapımların bölüm listelerini arka planda çeker.
+    fn fetch_follow_episodes_background(&self, manual: bool) {
         if manual {
             self.follow_refresh_pending.set(true);
         }
+        let follows = crate::follow_store::load_follows();
+        if follows.items.is_empty() {
+            return;
+        }
         self.spawn(move |c| {
-            let res = c.calendar_refresh();
-            move || Msg::CalendarBackground(res)
+            let now = crate::follow_store::now_secs();
+            let mut rows = Vec::new();
+            let mut errors = Vec::new();
+            for follow in follows.items.iter().filter(|f| f.notify) {
+                match c.follow_episode_rows(follow, now) {
+                    Ok(mut list) => rows.append(&mut list),
+                    Err(e) => errors.push(format!("{}: {e}", follow.name)),
+                }
+            }
+            let result = if rows.is_empty() && !errors.is_empty() {
+                Err(errors.join("; "))
+            } else {
+                Ok(rows)
+            };
+            move || Msg::FollowEpisodes(result)
         });
+    }
+
+    /// Bölüm listesinden gelen satırları deftere işler ve uygulama içi
+    /// bildirimi gösterir.
+    fn process_follow_rows(&self, rows: &[crate::follow_store::CalendarRow]) {
+        if rows.is_empty() {
+            return;
+        }
+        let follows = crate::follow_store::load_follows();
+        if !follows.schema_ok || follows.items.is_empty() {
+            return;
+        }
+        let now = crate::follow_store::now_secs();
+        let active = self.window.is_active();
+        let (pending, unread) = crate::follow_store::with_ledger_locked(|l| {
+            crate::follow_store::detect_new(&follows, l, rows, now);
+            let mut pending = Vec::new();
+            if active {
+                pending = crate::follow_store::claim_due(l, now, 3);
+                crate::follow_store::mark_sent(l, &pending, now);
+            }
+            let unread = if active {
+                crate::follow_store::claim_in_app_unread(l, now, 6)
+            } else {
+                Vec::new()
+            };
+            (pending, unread)
+        })
+        .unwrap_or_default();
+        let mut claims = pending;
+        for claim in unread {
+            if !claims.iter().any(|c| {
+                c.title_id == claim.title_id
+                    && c.season == claim.season
+                    && c.episode == claim.episode
+            }) {
+                claims.push(claim);
+            }
+        }
+        if !claims.is_empty() {
+            self.show_follow_toast(&claims);
+            let _ = crate::follow_store::with_ledger_locked(|l| {
+                crate::follow_store::mark_in_app_seen(l, &claims);
+            });
+        }
     }
 
     /// "Şimdi Kontrol Et": sonucu bekleyip defteri işler.
@@ -4171,7 +4229,7 @@ impl App {
             return;
         }
         self.follow_last_fetch.set(crate::follow_store::now_secs());
-        self.fetch_calendar_background(true);
+        self.fetch_follow_episodes_background(true);
     }
 
     fn show_follow_toast(&self, claims: &[crate::follow_store::Claim]) {

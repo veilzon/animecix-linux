@@ -21,6 +21,9 @@ pub const DAILY_LIMIT: u32 = 6;
 pub const PENDING_TTL_SECS: u64 = 7 * 86_400;
 pub const NEW_WINDOW_SECS: i64 = 72 * 3600;
 pub const SENT_RETENTION_SECS: u64 = 30 * 86_400;
+/// Uygulama kapalıyken gönderilen bildirimin uygulama içinde en fazla bu
+/// kadar sonra gösterilmesi.
+pub const IN_APP_WINDOW_SECS: u64 = 72 * 3600;
 
 pub const STATE_PENDING: &str = "pending";
 pub const STATE_SENDING: &str = "sending";
@@ -209,6 +212,9 @@ pub struct FollowedTitle {
     pub notify: bool,
     #[serde(default)]
     pub added_at: u64,
+    /// Bölüm listesi kontrolü için sezon sayısı; eski kayıtlarda boş olabilir.
+    #[serde(default)]
+    pub season_count: Option<u64>,
 }
 
 fn default_true() -> bool {
@@ -280,6 +286,10 @@ pub struct LedgerEntry {
     pub expires_at: u64,
     #[serde(default)]
     pub last_error: String,
+    /// Uygulama içi bildirim gösterildi mi? Masaüstü bildirimi gönderilse
+    /// bile uygulama açılınca kaçırılan bölüm bir kez gösterilir.
+    #[serde(default)]
+    pub in_app_seen: bool,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -326,7 +336,7 @@ impl Default for Ledger {
     }
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct CalendarRow {
     pub title_id: u64,
     pub alt_ids: Vec<u64>,
@@ -700,7 +710,7 @@ pub fn detect_new(
             let released: Vec<&CalendarRow> = season_rows
                 .iter()
                 .copied()
-                .filter(|r| r.release_epoch <= now_i && r.release_epoch > 0)
+                .filter(|r| r.release_epoch > 0 && r.release_epoch <= now_i)
                 .collect();
             if released.is_empty() {
                 // Yalnız gelecek bölümler görüldü: sezonu 0 ile işaretle ki
@@ -741,6 +751,7 @@ pub fn detect_new(
                             next_attempt: now,
                             expires_at: now + PENDING_TTL_SECS,
                             last_error: String::new(),
+                            in_app_seen: false,
                         });
                         queued += 1;
                     }
@@ -833,6 +844,56 @@ pub fn mark_sent(ledger: &mut Ledger, claims: &[Claim], now: u64) {
     ledger.daily.sent = ledger.daily.sent.saturating_add(claims.len() as u32);
 }
 
+/// Masaüstü bildirimi gönderilmiş ama uygulama içinde gösterilmemiş son
+/// bölümleri döndürür. `mark_in_app_seen` çağrılana kadar tekrar döner.
+pub fn claim_in_app_unread(ledger: &mut Ledger, now: u64, limit: usize) -> Vec<Claim> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    'outer: for (tid, st) in ledger.titles.iter_mut() {
+        for e in st.entries.iter_mut() {
+            if out.len() >= limit {
+                break 'outer;
+            }
+            if e.state == STATE_SENT
+                && !e.in_app_seen
+                && e.detected_at > 0
+                && now.saturating_sub(e.detected_at) <= IN_APP_WINDOW_SECS
+            {
+                out.push(Claim {
+                    title_id: tid.parse::<u64>().unwrap_or(0),
+                    title_name: st.name.clone(),
+                    season: e.season,
+                    episode: e.episode,
+                    episode_name: e.episode_name.clone(),
+                });
+            }
+        }
+    }
+    out
+}
+
+/// Uygulama içi bildirimi gösterilen kayıtları okundu işaretler.
+pub fn mark_in_app_seen(ledger: &mut Ledger, claims: &[Claim]) {
+    for c in claims {
+        if let Some(st) = ledger.titles.get_mut(&c.title_id.to_string()) {
+            if let Some(e) = st
+                .entries
+                .iter_mut()
+                .find(|e| e.season == c.season && e.episode == c.episode)
+            {
+                e.in_app_seen = true;
+            }
+        }
+    }
+}
+
+pub fn daemon_running() -> bool {
+    let st = load_daemon_status();
+    st.running && pid_is_watch_daemon(st.pid)
+}
+
 #[allow(dead_code)] // animecix-calendar / testler kullanır.
 pub fn release_claim(ledger: &mut Ledger, claims: &[Claim], now: u64, err: &str) {
     for c in claims {
@@ -916,6 +977,7 @@ mod tests {
             title_type: Some("anime".into()),
             notify: true,
             added_at: 1,
+            season_count: Some(1),
         }
     }
 
@@ -1431,6 +1493,58 @@ mod tests {
         assert_eq!(back.last_check, 456);
         assert_eq!(back.last_success, 400);
         assert_eq!(back.last_error, "ağ hatası");
+    }
+
+    #[test]
+    fn in_app_unread_claims_only_recent_unseen_sent_entries() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let st = ledger.titles.entry("1".into()).or_default();
+        st.name = "Test".into();
+        st.entries.push(LedgerEntry {
+            season: 1,
+            episode: 7,
+            state: STATE_SENT.into(),
+            detected_at: now - 3600,
+            ..Default::default()
+        });
+        st.entries.push(LedgerEntry {
+            season: 1,
+            episode: 6,
+            state: STATE_SENT.into(),
+            detected_at: now - IN_APP_WINDOW_SECS - 3600,
+            ..Default::default()
+        });
+        st.entries.push(LedgerEntry {
+            season: 1,
+            episode: 5,
+            state: STATE_SENT.into(),
+            detected_at: now - 60,
+            in_app_seen: true,
+            ..Default::default()
+        });
+
+        let claims = claim_in_app_unread(&mut ledger, now, 10);
+        assert_eq!(claims.len(), 1);
+        assert_eq!(claims[0].episode, 7);
+        mark_in_app_seen(&mut ledger, &claims);
+        assert!(claim_in_app_unread(&mut ledger, now, 10).is_empty());
+    }
+
+    #[test]
+    fn episode_list_row_is_notified_when_new() {
+        let now = 1_800_000_000u64;
+        let mut ledger = Ledger::default();
+        let st = ledger.titles.entry("1".into()).or_default();
+        st.seen.insert(1, 6);
+        let queued = detect_new(
+            &follows(&[1]),
+            &mut ledger,
+            &[row(1, 1, 7, now as i64)],
+            now,
+        );
+        assert_eq!(queued, 1);
+        assert_eq!(ledger.titles["1"].entries[0].state, STATE_PENDING);
     }
 
     #[test]

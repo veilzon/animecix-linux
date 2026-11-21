@@ -1000,14 +1000,14 @@ impl SettingsView {
 
         let (watch_row, watch_sw) = crate::ui::components::switch_row(
             "Yeni Bölüm Bildirimi",
-            "Takip ettiğin yapımlar için yeni bölüm çıkınca bildirim göster",
+            "Takip ettiğin yapımların bölüm listesini denetler; yeni bölüm çıkınca bildirim gösterir",
             settings.calendar_watch,
         );
         watch_group.add(&watch_row);
 
         let interval_row = adw::ComboRow::new();
         interval_row.set_title("Kontrol Aralığı");
-        interval_row.set_subtitle("Takvim ne sıklıkla denetlensin");
+        interval_row.set_subtitle("Bölüm listeleri ne sıklıkla denetlensin");
         let watch_intervals = &["15 dakika", "30 dakika", "1 saat"];
         let watch_model = gtk::StringList::new(watch_intervals);
         interval_row.set_model(Some(&watch_model));
