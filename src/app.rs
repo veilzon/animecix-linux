@@ -4119,16 +4119,14 @@ impl App {
         }
         let now = crate::follow_store::now_secs();
         if self.window.is_active() {
-            let unread = crate::follow_store::with_ledger_locked(|l| {
-                crate::follow_store::claim_in_app_unread(l, now, 3)
+            let (pending, unread) = crate::follow_store::with_ledger_locked(|l| {
+                let pending = crate::follow_store::claim_due(l, now, 3);
+                crate::follow_store::mark_sent(l, &pending, now);
+                let unread = crate::follow_store::claim_in_app_unread(l, now, 6);
+                (pending, unread)
             })
             .unwrap_or_default();
-            if !unread.is_empty() {
-                self.show_follow_toast(&unread);
-                let _ = crate::follow_store::with_ledger_locked(|l| {
-                    crate::follow_store::mark_in_app_seen(l, &unread);
-                });
-            }
+            self.present_follow_claims(pending, unread);
         }
         let interval = self.settings.borrow().calendar_watch_interval.max(15) * 60;
         if now.saturating_sub(self.follow_last_fetch.get()) >= interval {
@@ -4192,6 +4190,14 @@ impl App {
             (pending, unread)
         })
         .unwrap_or_default();
+        self.present_follow_claims(pending, unread);
+    }
+
+    fn present_follow_claims(
+        &self,
+        pending: Vec<crate::follow_store::Claim>,
+        unread: Vec<crate::follow_store::Claim>,
+    ) {
         let mut claims = pending;
         for claim in unread {
             if !claims.iter().any(|c| {
