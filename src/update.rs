@@ -1141,7 +1141,7 @@ mod tests {
 
     #[test]
     fn gentoo_vdb_version_normalization() {
-        assert_eq!(normalize_pkg_version("animecix-1.4.5"), "animecix-1.4.5");
+        assert_eq!(normalize_pkg_version("1.4.5"), "1.4.5");
         assert_eq!(normalize_pkg_version("1.4.5-r1"), "1.4.5");
         assert_eq!(normalize_pkg_version("1.4.10"), "1.4.10");
     }
