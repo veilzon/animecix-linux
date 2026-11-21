@@ -151,7 +151,7 @@ fn gentoo_package_version() -> Option<String> {
         }
         if best
             .as_deref()
-            .map_or(true, |current| needs_update(current, &version))
+            .is_none_or(|current| needs_update(current, &version))
         {
             best = Some(version);
         }
