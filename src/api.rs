@@ -41,6 +41,9 @@ const CACHE_VERSION: &str = "3";
 
 pub struct Client {
     pub(crate) http: crate::http::Http,
+    /// Kapak/resim istekleri ayrı işçide: API ve bölüm listesi istekleri
+    /// görsel indirmelerinin arkasında beklemesin.
+    img_http: crate::http::Http,
     cache: std::sync::Mutex<HashMap<String, (u64, serde_json::Value)>>,
     /// Kapak kalitesinin bellek kopyası (covers hot-path disk okumasın diye).
     /// save_settings + Client::new ile ayarlarla eşlenir.
@@ -882,6 +885,9 @@ pub struct Settings {
     /// Kullanıcı Ayarlar'a eliyle girer; repoya/harici günlüğe yazılmaz.
     #[serde(default)]
     pub official_skip_secret: String,
+    /// Ana sayfadaki büyük öne çıkan (hero) alan gösterilsin mi?
+    #[serde(default = "default_true")]
+    pub show_home_hero: bool,
     /// Tema kimliği (sabit palet; örn. "koyu", "bordo").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -1416,6 +1422,7 @@ impl Default for Settings {
             play_ask_quality: false,
             auto_next: false,
             auto_skip_outro: false,
+            show_home_hero: true,
             theme: default_theme(),
             cover_quality: default_cover_quality(),
             download_dir: None,
@@ -1503,6 +1510,8 @@ impl Client {
     pub fn new() -> Self {
         let http = crate::http::Http::new(None)
             .unwrap_or_else(|e| panic!("HTTP istemcisi baslatilamadi: {e}"));
+        let img_http = crate::http::Http::new(None)
+            .unwrap_or_else(|e| panic!("Görsel HTTP istemcisi baslatilamadi: {e}"));
 
         let cache_dir = {
             let mut p = dirs_cache_or_home();
@@ -1533,6 +1542,7 @@ impl Client {
 
         let c = Self {
             http,
+            img_http,
             cache: std::sync::Mutex::new(HashMap::new()),
             cache_dir,
             translators: std::sync::Mutex::new(HashMap::new()),
@@ -1553,6 +1563,7 @@ impl Client {
 
     pub fn set_cf_clearance(&self, v: &str) {
         self.http.set_cf_clearance(v);
+        self.img_http.set_cf_clearance(v);
     }
 
     pub fn load_translators(&self) -> Result<(), String> {
@@ -3322,7 +3333,7 @@ impl Client {
 
         let t0 = std::time::Instant::now();
         let out = self
-            .http
+            .img_http
             .get(url)
             .timeout(12)
             .send()

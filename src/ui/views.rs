@@ -621,6 +621,13 @@ impl SettingsView {
             .unwrap_or(0) as u32;
         theme_row.set_selected(current_theme);
         view_group.add(&theme_row);
+
+        let (hero_row, hero_sw) = crate::ui::components::switch_row(
+            "Ana Sayfa Hero",
+            "Büyük öne çıkan alanı gizle; hızlı arama çubuğu kalır",
+            settings.show_home_hero,
+        );
+        view_group.add(&hero_row);
         root.append(&view_group);
 
         let common_group = adw::PreferencesGroup::new();
@@ -1081,6 +1088,7 @@ impl SettingsView {
             let scale_spin_c = scale_spin.clone();
             let nf_r = news_font_row.clone();
             let theme_r = theme_row.clone();
+            let hero_r = hero_sw.clone();
             let fs_r = fs_sw.clone();
             let emb_r = embed_sw.clone();
             let esb_r = embed_skip_sw.clone();
@@ -1131,6 +1139,7 @@ impl SettingsView {
                     .get(theme_r.selected() as usize)
                     .map(|(id, _)| id.to_string())
                     .unwrap_or_else(|| crate::theme::DEFAULT_THEME.to_string());
+                updated.show_home_hero = hero_r.is_active();
                 updated.auto_fullscreen = fs_r.is_active();
                 updated.embedded_player = emb_r.is_active();
                 updated.embedded_skip_button = esb_r.is_active();
@@ -1205,6 +1214,8 @@ impl SettingsView {
         news_font_row.connect_selected_notify(move |_| sa_nf());
         let sa_theme = save_all.clone();
         theme_row.connect_selected_notify(move |_| sa_theme());
+        let sa_hero = save_all.clone();
+        hero_sw.connect_active_notify(move |_| sa_hero());
         let sa4 = save_all.clone();
         fs_sw.connect_active_notify(move |_| sa4());
         let sa_emb = save_all.clone();

@@ -1991,75 +1991,6 @@ impl App {
         Some(root)
     }
 
-    /// Skeleton + arka-plan bölüm ön-kontrolü: hero hemen nabız iskeletle
-    /// belirir; `episodes()` boş dönen aday sessizce düşer (hepsi düşerse
-    /// ham liste gösterilir, hero asla boş kalmaz). Eski görünüm yıkıldıysa
-    /// takas sessizce atlanır.
-    fn build_spotlight_async(&self, parent: &gtk::Box, items: &[Title]) {
-        let h = self.hero_h.get();
-        let skel = gtk::Box::new(gtk::Orientation::Vertical, 6);
-        skel.set_hexpand(true);
-        skel.set_halign(gtk::Align::Fill);
-        let ph = gtk::Box::new(gtk::Orientation::Vertical, 0);
-        ph.add_css_class("hero-skeleton");
-        ph.set_size_request(-1, h);
-        ph.set_hexpand(true);
-        ph.set_halign(gtk::Align::Fill);
-        skel.append(&ph);
-        parent.append(&skel);
-
-        let picks = pick_spotlight(items, 8, spot_seed());
-        if picks.is_empty() {
-            parent.remove(&skel);
-            return;
-        }
-        let raw = picks.clone();
-        let skel_w = skel.downgrade();
-        let client = self.client.clone();
-        let (tx, rx) = std::sync::mpsc::channel::<Vec<Title>>();
-        std::thread::spawn(move || {
-            // Aday başına bir işçi: enrich + episodes, boşu ele.
-            // (Client paylaşımı Arc ile; scope/Sync gerekmez.)
-            let mut handles = Vec::new();
-            for t in picks {
-                let c = client.clone();
-                handles.push(std::thread::spawn(move || {
-                    let enriched = c.enrich_title(&t);
-                    match c.episodes(&enriched) {
-                        Ok(eps) if !eps.is_empty() => Some(t),
-                        _ => None,
-                    }
-                }));
-            }
-            let mut ok: Vec<Title> = Vec::new();
-            for hdl in handles {
-                if let Ok(Some(t)) = hdl.join() {
-                    ok.push(t);
-                }
-            }
-            let final_picks = if ok.is_empty() { raw } else { ok };
-            let _ = tx.send(final_picks);
-        });
-        // Takas UI tarafında: görünüm yıkıldıysa sessizce atlanır.
-        let this = self.clone_ref();
-        glib::idle_add_local(move || match rx.try_recv() {
-            Ok(final_picks) => {
-                if let Some(skel) = skel_w.upgrade() {
-                    if let Some(parent) = skel.parent().and_downcast::<gtk::Box>() {
-                        let prev = skel.prev_sibling();
-                        parent.remove(&skel);
-                        if let Some(view) = this.build_spotlight_picks(&final_picks) {
-                            parent.insert_child_after(&view, prev.as_ref());
-                        }
-                    }
-                }
-                glib::ControlFlow::Break
-            }
-            Err(std::sync::mpsc::TryRecvError::Empty) => glib::ControlFlow::Continue,
-            Err(std::sync::mpsc::TryRecvError::Disconnected) => glib::ControlFlow::Break,
-        });
-    }
-
     /// Devam rafı: son izlenenler (yerel + sunucu birleşik, en yeni önce;
     /// tıklama detaya gider, alt yazı SxxExx rozetidir).
     /// (Lowell137/animecix-linux `continue_card` uyarlaması.)
@@ -2152,6 +2083,7 @@ impl App {
             }
         }
 
+        let show_home_hero = self.settings.borrow().show_home_hero;
         let cats = self.cats.borrow();
 
         if cats.is_empty() {
@@ -2170,17 +2102,26 @@ impl App {
             return scroll;
         }
 
+        // Spotlight hero: ağ beklemeden mevcut ana sayfa verisinden kurulur.
+        // (Bölüm doğrulaması kaldırıldı; tek HTTP işçisi bölüm listesini
+        // kilitliyordu.)
+        let hero_view = if show_home_hero && !cats.is_empty() {
+            let pool = hero_pool(&cats);
+            let picks = pick_spotlight(&pool, 8, spot_seed());
+            self.build_spotlight_picks(&picks)
+        } else {
+            None
+        };
+
         let main_box = gtk::Box::new(gtk::Orientation::Vertical, 18);
-        main_box.set_margin_top(12);
+        // Hero yokken hızlı arama hapı ilk rafın üstüne binmesin.
+        main_box.set_margin_top(if hero_view.is_some() { 12 } else { 56 });
         main_box.set_margin_bottom(18);
         main_box.set_margin_start(12);
         main_box.set_margin_end(12);
 
-        // Spotlight hero: iskelet hemen, doğrulanmış 8'li sonra
-        // (bölümsüz aday arka-planda elenir).
-        if !cats.is_empty() {
-            let pool = hero_pool(&cats);
-            self.build_spotlight_async(&main_box, &pool);
+        if let Some(hero) = hero_view {
+            main_box.append(&hero);
         }
 
         if let Some(cont) = self.build_continue_section() {
@@ -2735,6 +2676,9 @@ impl App {
                 }
                 this_save.apply_ui_scale();
                 crate::theme::apply_theme(&this_save.window, &new_s.theme);
+                if new_s.show_home_hero != old_s.show_home_hero {
+                    this_save.home_dirty.set(true);
+                }
                 if new_s.cover_quality != old_s.cover_quality {
                     // Kalite değişimi restart ister: dialog → bayrak + bellek
                     // temizliği → restart; silme yeni proseste olur (yarış yok).
