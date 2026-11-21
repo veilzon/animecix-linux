@@ -387,12 +387,13 @@
       <div class="install-panel">
         <div class="install-head">
           <h2 id="install-title">Kur. İzle. Devam et.</h2>
-          <p>AppImage, deb veya rpm. Dağıtımını seç, tek komutla başla.</p>
+          <p>AppImage, deb, rpm veya Gentoo overlay. Dağıtımını seç, tek komutla başla.</p>
         </div>
         <div class="tabs" role="tablist" aria-label="Kurulum paketleri">
           <button class="tab" type="button" role="tab" id="tab-appimage" aria-selected="true" aria-controls="panel-appimage" tabindex="0">AppImage</button>
           <button class="tab" type="button" role="tab" id="tab-debian" aria-selected="false" aria-controls="panel-debian" tabindex="-1">Debian / Ubuntu</button>
           <button class="tab" type="button" role="tab" id="tab-fedora" aria-selected="false" aria-controls="panel-fedora" tabindex="-1">Fedora</button>
+          <button class="tab" type="button" role="tab" id="tab-gentoo" aria-selected="false" aria-controls="panel-gentoo" tabindex="-1">Gentoo</button>
         </div>
         <div class="tab-panel" role="tabpanel" id="panel-appimage" aria-labelledby="tab-appimage">
           <div class="install-meta">
@@ -464,6 +465,34 @@ sudo dnf install ./animecix-1.4.5-1.fc40.x86_64.rpm</code></pre>
             <a class="btn btn-primary" href="https://github.com/veilzon/animecix-linux/releases/download/v1.4.5/animecix-1.4.5-1.fc40.x86_64.rpm">
               <span>Doğrudan indir</span>
               <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#download-simple"></use></svg></span>
+            </a>
+          </div>
+        </div>
+        <div class="tab-panel" role="tabpanel" id="panel-gentoo" aria-labelledby="tab-gentoo" hidden>
+          <div class="install-meta">
+            <span class="install-size">Kaynak</span>
+            <span class="install-note">Portage overlay; kaynaktan derlenir.</span>
+          </div>
+          <div class="code-block">
+            <div class="code-head">
+              <span class="code-label">Komut</span>
+              <button class="copy-button" type="button" data-copy data-copied-label="Kopyalandı" data-failed-label="Kopyalanamadı">
+                <svg class="icon" aria-hidden="true"><use href="assets/icons.svg#copy"></use></svg>
+                <span>Kopyala</span>
+              </button>
+            </div>
+            <pre><code>sudo eselect repository add animecix git \
+  https://github.com/veilzon/animecix-gentoo.git
+sudo emaint sync -r animecix
+sudo mkdir -p /etc/portage/package.accept_keywords
+echo 'media-video/animecix ~amd64' | sudo tee \
+  /etc/portage/package.accept_keywords/animecix
+sudo emerge -av media-video/animecix</code></pre>
+          </div>
+          <div class="install-actions">
+            <a class="btn btn-primary" href="https://github.com/veilzon/animecix-gentoo">
+              <span>Overlay deposu</span>
+              <span class="btn-icon"><svg class="icon" aria-hidden="true"><use href="assets/icons.svg#github-logo"></use></svg></span>
             </a>
           </div>
         </div>

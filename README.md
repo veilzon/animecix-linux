@@ -222,6 +222,21 @@ Güncelleme: Uygulama içi denetim pacman deposunu kullanır; terminalden
 Arch paketi `mpv` bağımlılığını kullanır; bu paket gömülü oynatıcı için libmpv'yi de
 sağlar. Arch paket derlemeleri ayrı CI deposunda test edilir.
 
+### Gentoo
+
+Kendi overlay'imizden kaynaktan derlenir:
+
+```bash
+sudo eselect repository add animecix git https://github.com/veilzon/animecix-gentoo.git
+sudo emaint sync -r animecix
+sudo mkdir -p /etc/portage/package.accept_keywords
+echo 'media-video/animecix ~amd64' | sudo tee /etc/portage/package.accept_keywords/animecix
+sudo emerge -av media-video/animecix
+```
+
+Paket `~amd64` olarak işaretlidir. `mpv[libmpv]`, GTK4 ve libadwaita
+bağımlılıkları Portage tarafından kurulur.
+
 ### Sistem gereksinimleri
 
 - **Ortak:** x86_64 Linux (Wayland veya X11) ve internet bağlantısı.
