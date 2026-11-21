@@ -1,4 +1,15 @@
-# Changelog — v1.4.5 (güncel sürüm notları)
+# Changelog — v1.4.6 (güncel sürüm notları)
+
+- **Yayın Takibi:** Bildirimler artık yayın takvimi tarihine değil, takip
+  edilen yapımların **bölüm listesine** göre verilir. Takvimdeki geçici veya
+  gece yarısı tarihleri erken bildirim üretmez.
+- **Kaçırılan bildirim:** Masaüstü bildirimi gönderilmiş ama uygulamada
+  gösterilmemiş bölümler, uygulama açılınca bir kez uygulama içi bildirim
+  olarak gösterilir.
+- **Arka plan takipçisi:** Autostart girdisi eksikse uygulama açılışta kendini
+  onarır ve takipçiyi başlatır.
+
+# Changelog — v1.4.5
 
 - **Yedekleme:** Ayarlar → Veri Yönetimi'nden ayarlar, izleme verileri ve
   yayın takibi tek JSON dosyasına dışa aktarılabilir. Gizli alanlar ve cihaza
