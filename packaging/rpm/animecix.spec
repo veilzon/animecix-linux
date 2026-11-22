@@ -56,6 +56,8 @@ install -Dm755 packaging/post-install-cleanup.sh \
     %{buildroot}%{_datadir}/animecix/post-install-cleanup.sh
 install -Dm755 packaging/post-remove-cleanup.sh \
     %{buildroot}%{_datadir}/animecix/post-remove-cleanup.sh
+install -Dm644 assets/ATTRIBUTION-yggstack.md \
+    %{buildroot}%{_datadir}/animecix/ATTRIBUTION-yggstack.md
 
 mkdir -p %{buildroot}%{_datadir}/applications
 cat > %{buildroot}%{_datadir}/applications/tr.com.animecix.desktop <<'EOF'

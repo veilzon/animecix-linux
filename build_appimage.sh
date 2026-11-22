@@ -221,6 +221,7 @@ if [ -d "assets/hicolor/scalable/actions" ]; then
     cp assets/hicolor/scalable/actions/*.svg "$APPDIR/usr/share/icons/hicolor/scalable/actions/"
     mkdir -p "$APPDIR/usr/share/doc/animecix"
     cp assets/ATTRIBUTION-Adwaita.md "$APPDIR/usr/share/doc/animecix/" 2>/dev/null || true
+    cp assets/ATTRIBUTION-yggstack.md "$APPDIR/usr/share/doc/animecix/" 2>/dev/null || true
     if [ -f "assets/hicolor/index.theme" ]; then
         cp assets/hicolor/index.theme "$APPDIR/usr/share/icons/hicolor/index.theme"
     else

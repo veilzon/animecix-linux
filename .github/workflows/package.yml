@@ -115,6 +115,7 @@ jobs:
           cp -r assets/hicolor girdi/usr/share/animecix/assets/
           cp -r assets/changelog girdi/usr/share/animecix/assets/
           cp assets/ATTRIBUTION-Adwaita.md girdi/usr/share/animecix/ || true
+          cp assets/ATTRIBUTION-yggstack.md girdi/usr/share/animecix/ || true
           echo "$VER" > girdi/VER
           # Paket %post/postinst temizliği: eski sürümlerin bayat kullanıcı
           # kopyasını siler (tek kaynak: packaging/post-install-cleanup.sh).
