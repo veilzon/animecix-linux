@@ -938,6 +938,10 @@ pub fn build(
                         | gtk::gdk::Key::S
                         | gtk::gdk::Key::e
                         | gtk::gdk::Key::E
+                        | gtk::gdk::Key::n
+                        | gtk::gdk::Key::N
+                        | gtk::gdk::Key::p
+                        | gtk::gdk::Key::P
                 )
             {
                 return glib::Propagation::Stop;
@@ -1682,7 +1686,13 @@ fn rebuild_ctx_menu(pop: &gtk::Popover, state: &Rc<RefCell<PlayerState>>) {
             None,
             move || {
                 if let Some(st) = weak.upgrade() {
-                    let cb = st.borrow().host.on_neighbor.clone();
+                    let cb = {
+                        let s = st.borrow();
+                        if s.guest_lock.get() {
+                            return;
+                        }
+                        s.host.on_neighbor.clone()
+                    };
                     cb(-1);
                 }
             },
@@ -1699,7 +1709,13 @@ fn rebuild_ctx_menu(pop: &gtk::Popover, state: &Rc<RefCell<PlayerState>>) {
             None,
             move || {
                 if let Some(st) = weak.upgrade() {
-                    let cb = st.borrow().host.on_neighbor.clone();
+                    let cb = {
+                        let s = st.borrow();
+                        if s.guest_lock.get() {
+                            return;
+                        }
+                        s.host.on_neighbor.clone()
+                    };
                     cb(1);
                 }
             },
@@ -2011,7 +2027,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         updated
     };
     if episodes_updated {
-        let (drawer, eps, season, episode, runtime, is_movie, cb) = {
+        let (drawer, eps, season, episode, runtime, is_movie) = {
             let s = match st.try_borrow() {
                 Ok(s) => s,
                 Err(_) => return,
@@ -2023,9 +2039,19 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.ep.episode,
                 s.title.runtime,
                 s.title.is_movie(),
-                s.host.on_play_episode.clone(),
             )
         };
+        let weak = Rc::downgrade(st);
+        let cb: Rc<dyn Fn(Episode)> = Rc::new(move |ep| {
+            let Some(player) = weak.upgrade() else { return };
+            let Ok(s) = player.try_borrow() else { return };
+            if s.guest_lock.get() {
+                return;
+            }
+            let cb = s.host.on_play_episode.clone();
+            drop(s);
+            cb(ep);
+        });
         episodes::render(&drawer, &eps, season, episode, runtime, is_movie, &cb);
     }
 
