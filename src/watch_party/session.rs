@@ -34,6 +34,8 @@ pub enum Command {
 
 pub enum Event {
     Invite(Invite),
+    /// Bu istemcinin odadaki kimliği (avatar ve kendi mesajları için).
+    Me(PeerInfo),
     Joined {
         room: String,
         host: PeerInfo,
@@ -284,8 +286,11 @@ impl Session {
                 match cmd {
                     Command::Create { name } => match Self::start_host(name.clone()) {
                         Ok(host) => {
-                            let _ = s.events.send(Event::Invite(host.invite.clone()));
+                            let me = host.mesh.me.clone();
+                            let invite = host.invite.clone();
                             state = State::Host(host);
+                            let _ = s.events.send(Event::Me(me));
+                            let _ = s.events.send(Event::Invite(invite));
                         }
                         Err(e) => {
                             let _ = s.events.send(Event::Error(e));
@@ -294,9 +299,11 @@ impl Session {
                     Command::Join { invite, name } => {
                         match Self::start_guest(&invite, name, &s.peer_tx) {
                             Ok((guest, host)) => {
+                                let me = guest.mesh.me.clone();
                                 let peers = guest.peers.clone();
                                 let room = invite.room.clone();
                                 state = State::Guest(guest);
+                                let _ = s.events.send(Event::Me(me));
                                 let _ = s.events.send(Event::Joined { room, host, peers });
                             }
                             Err(e) => {

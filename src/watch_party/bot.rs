@@ -43,6 +43,7 @@ pub fn run_guest(code: &str, seconds: u64) {
                     println!("[BOT] odada {} kişi", peers.len() + 1);
                 }
                 Event::Chat(msg) => println!("[BOT] sohbet {}: {}", msg.name, msg.text),
+                Event::Me(me) => println!("[BOT] kimlik: {} #{}", me.name, me.id),
                 Event::Voice(v) => println!("[BOT] ses {} ({} örnek)", v.id, v.samples.len()),
                 Event::Playback(state) => println!(
                     "[BOT] senkron konum={:.1} duraklatılmış={} nesil={}",
@@ -80,6 +81,7 @@ pub fn run_host(seconds: u64) {
                     println!("[BOT] odada {} kişi", peers.len() + 1);
                 }
                 Event::Chat(msg) => println!("[BOT] sohbet {}: {}", msg.name, msg.text),
+                Event::Me(me) => println!("[BOT] kimlik: {} #{}", me.name, me.id),
                 Event::Voice(v) => println!("[BOT] ses {} ({} örnek)", v.id, v.samples.len()),
                 Event::Error(e) => eprintln!("[BOT] hata: {e}"),
                 Event::Closed => return,

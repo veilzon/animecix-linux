@@ -33,6 +33,12 @@ impl AudioEngine {
         let output_device = host
             .default_output_device()
             .ok_or_else(|| "ses çıkışı bulunamadı".to_string())?;
+        let input_name = input_device
+            .name()
+            .unwrap_or_else(|_| "varsayılan mikrofon".to_string());
+        let output_name = output_device
+            .name()
+            .unwrap_or_else(|_| "varsayılan hoparlör".to_string());
 
         let in_cfg = input_device
             .default_input_config()
@@ -113,6 +119,9 @@ impl AudioEngine {
         output
             .play()
             .map_err(|e| format!("hoparlör başlatılamadı: {e}"))?;
+        eprintln!(
+            "[WATCHPARTY] ses hazır: giriş={input_name} ({in_rate} Hz), çıkış={output_name} ({out_rate} Hz)"
+        );
 
         Ok(Self {
             _input: input,

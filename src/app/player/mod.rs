@@ -121,6 +121,8 @@ struct PlayerState {
     gl_area: gtk::GLArea,
     stage: gtk::Overlay,
     watch_party: Option<watch_party::WatchPartyPlayer>,
+    watch_btn: gtk::Button,
+    watch_dot: gtk::Label,
     guest_lock: Rc<Cell<bool>>,
     lock_widgets: Vec<gtk::Widget>,
     topbar: gtk::Revealer,
@@ -487,6 +489,8 @@ pub fn build(
         gl_area: gl_area.clone(),
         stage: stage.clone(),
         watch_party: None,
+        watch_btn: topbar.watch.clone(),
+        watch_dot: topbar.dot.clone(),
         guest_lock,
         lock_widgets,
         topbar: topbar.revealer.clone(),
@@ -655,8 +659,20 @@ pub fn build(
         let weak = Rc::downgrade(&state);
         topbar.watch.connect_clicked(move |_| {
             let Some(st) = weak.upgrade() else { return };
-            let cb = st.borrow().host.on_watch_party.clone();
-            cb();
+            let (active, cb) = {
+                let s = st.borrow();
+                let active = s.watch_party.as_ref().is_some_and(|wp| wp.is_active());
+                (active, s.host.on_watch_party.clone())
+            };
+            if active {
+                if let Ok(s) = st.try_borrow() {
+                    if let Some(wp) = s.watch_party.as_ref() {
+                        wp.toggle_panel();
+                    }
+                }
+            } else {
+                cb();
+            }
         });
     }
     {

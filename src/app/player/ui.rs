@@ -98,16 +98,90 @@ pub fn player_css() -> String {
         background: rgba(10,10,14,0.92); border-radius: 14px 0 0 14px;
         padding: 10px; border-left: 1px solid alpha(@accent_color, 0.35);
     }
-    .watch-party-badge {
-        background: rgba(10,10,14,0.78); border: 1px solid rgba(255,255,255,0.14);
+    .watch-dot {
+        color: #3ddc97; font-size: 9px;
+        text-shadow: 0 0 6px rgba(61,220,151,0.65);
+    }
+    .watch-dot.unread {
+        color: #ffb454;
+        text-shadow: 0 0 6px rgba(255,180,84,0.65);
+    }
+    .top-nav-btn.watch-party-active { background: alpha(@accent_color, 0.78); }
+    .top-nav-btn.watch-party-active:hover { background: alpha(@accent_color, 0.95); }
+    .wp-panel {
+        background-color: rgba(12,12,18,0.92);
+        background-image: linear-gradient(180deg, alpha(@accent_color, 0.10), transparent 140px);
+        border-left: 1px solid rgba(255,255,255,0.12);
+        border-radius: 18px 0 0 18px;
+        padding: 14px;
+        box-shadow: -16px 0 40px rgba(0,0,0,0.45);
+    }
+    .wp-title { font-weight: 800; font-size: 1.05em; color: #FFFFFF; }
+    .wp-live { color: #3ddc97; font-size: 0.72em; font-weight: 700; }
+    .wp-count { color: rgba(255,255,255,0.55); font-size: 0.78em; }
+    .wp-host-hint { color: rgba(255,255,255,0.55); font-size: 0.78em; }
+    .wp-avatar {
+        min-width: 34px; min-height: 34px;
+        border-radius: 999px; padding: 0;
+        color: #FFFFFF; font-weight: 800; font-size: 0.9em;
+        border: 2px solid rgba(255,255,255,0.12);
+    }
+    .wp-avatar-self { border-color: alpha(@accent_color, 0.95); }
+    .wp-avatar-host { border-color: #E5C07B; }
+    .wp-avatar-0 { background: #E06C75; }
+    .wp-avatar-1 { background: #61AFEF; }
+    .wp-avatar-2 { background: #98C379; }
+    .wp-avatar-3 { background: #E5C07B; }
+    .wp-avatar-4 { background: #C678DD; }
+    .wp-avatar-5 { background: #56B6C2; }
+    .wp-action {
+        background: rgba(255,255,255,0.08); background-image: none;
+        border: 1px solid rgba(255,255,255,0.12); border-radius: 999px;
+        box-shadow: none; padding: 6px 14px;
+        color: #FFFFFF; font-weight: 600;
+    }
+    .wp-action:hover { background: rgba(255,255,255,0.14); }
+    .wp-action-accent {
+        background: alpha(@accent_color, 0.88);
+        border-color: alpha(@accent_color, 0.95);
+    }
+    .wp-action-accent:hover { background: alpha(@accent_color, 1.0); }
+    .wp-action-danger { color: #FF7B72; background: transparent; border-color: transparent; }
+    .wp-action-danger:hover { background: rgba(255,123,114,0.12); }
+    .wp-divider { background: rgba(255,255,255,0.08); min-height: 1px; }
+    .wp-chat-title {
+        color: rgba(255,255,255,0.70); font-size: 0.72em;
+        font-weight: 800; letter-spacing: 0.08em;
+    }
+    .wp-bubble {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.08);
         border-radius: 12px; padding: 7px 10px;
     }
-    .watch-party-chat {
-        background: rgba(10,10,14,0.94); border: 1px solid rgba(255,255,255,0.14);
-        border-radius: 12px; padding: 10px;
+    .wp-bubble-self {
+        background: alpha(@accent_color, 0.20);
+        border-color: alpha(@accent_color, 0.35);
     }
-    .watch-party-chat textview, .watch-party-chat text {
-        background: transparent; color: #FFFFFF;
+    .wp-msg-name { color: rgba(255,255,255,0.58); font-size: 0.72em; font-weight: 700; }
+    .wp-msg-time { color: rgba(255,255,255,0.36); font-size: 0.68em; font-variant-numeric: tabular-nums; }
+    .wp-msg-text { color: #FFFFFF; font-size: 0.92em; }
+    .wp-empty { color: rgba(255,255,255,0.42); font-size: 0.86em; }
+    .wp-entry {
+        background: rgba(255,255,255,0.07); background-image: none;
+        border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+        box-shadow: none; padding: 6px 10px; color: #FFFFFF;
+    }
+    .wp-entry:focus { border-color: alpha(@accent_color, 0.75); }
+    .wp-new-msg {
+        background: alpha(@accent_color, 0.92); background-image: none;
+        border: none; border-radius: 999px; box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        color: #FFFFFF; font-size: 0.78em; font-weight: 700; padding: 4px 12px;
+    }
+    .wp-ptt-pill {
+        background: rgba(10,10,14,0.86);
+        border: 1px solid alpha(@accent_color, 0.55); border-radius: 999px;
+        box-shadow: 0 6px 24px rgba(0,0,0,0.45);
+        color: #FFFFFF; font-weight: 600; padding: 6px 14px;
     }
     .ep-panel-title { font-weight: 800; letter-spacing: 0.08em; color: #FFFFFF; }
     .season-tab { border-radius: 999px; padding: 2px 10px; }
@@ -135,6 +209,7 @@ pub struct TopBar {
     pub revealer: gtk::Revealer,
     pub back: gtk::Button,
     pub watch: gtk::Button,
+    pub dot: gtk::Label,
     pub fullscreen: gtk::Button,
 }
 
@@ -142,9 +217,23 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
     let back = gtk::Button::from_icon_name("go-previous-symbolic");
     back.add_css_class("top-nav-btn");
     back.set_tooltip_text(Some("Geri"));
-    let watch = gtk::Button::from_icon_name("system-users-symbolic");
+    let watch = gtk::Button::new();
     watch.add_css_class("top-nav-btn");
     watch.set_tooltip_text(Some("Birlikte İzle"));
+    let watch_icon = gtk::Image::from_icon_name("system-users-symbolic");
+    let dot = gtk::Label::new(Some("●"));
+    dot.add_css_class("watch-dot");
+    dot.set_halign(gtk::Align::End);
+    dot.set_valign(gtk::Align::Start);
+    dot.set_margin_top(1);
+    dot.set_margin_end(1);
+    dot.set_visible(false);
+    dot.set_can_target(false);
+    let watch_overlay = gtk::Overlay::new();
+    watch_overlay.set_child(Some(&watch_icon));
+    watch_overlay.add_overlay(&dot);
+    watch_overlay.set_clip_overlay(&dot, false);
+    watch.set_child(Some(&watch_overlay));
     let fullscreen = gtk::Button::from_icon_name("view-fullscreen-symbolic");
     fullscreen.add_css_class("top-nav-btn");
     fullscreen.set_tooltip_text(Some("Tam ekran (F)"));
@@ -179,6 +268,7 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
         revealer,
         back,
         watch,
+        dot,
         fullscreen,
     }
 }
