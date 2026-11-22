@@ -5,6 +5,7 @@
 //! kararları bulunur.
 
 pub mod audio;
+pub mod bot;
 pub mod chat;
 pub mod invite;
 pub mod protocol;

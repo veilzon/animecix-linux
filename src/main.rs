@@ -72,6 +72,24 @@ fn main() {
     if raw_args.iter().any(|a| a == "--check-icons") {
         return diagnostics::cmd_check_icons();
     }
+    if let Some(pos) = raw_args.iter().position(|a| a == "--watch-party-host-bot") {
+        let secs = raw_args
+            .get(pos + 1)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60);
+        return watch_party::bot::run_host(secs);
+    }
+    if let Some(pos) = raw_args.iter().position(|a| a == "--watch-party-bot") {
+        let Some(code) = raw_args.get(pos + 1) else {
+            eprintln!("kullanım: animecix --watch-party-bot <davet-kodu> [saniye]");
+            return;
+        };
+        let secs = raw_args
+            .get(pos + 2)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(60);
+        return watch_party::bot::run_guest(code, secs);
+    }
     let mut filtered: Vec<String> = Vec::new();
     let mut it = raw_args.iter();
     if let Some(p) = it.next() {
