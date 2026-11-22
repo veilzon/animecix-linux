@@ -7,7 +7,7 @@ use gtk::glib;
 
 use crate::ui::operation_stack::OperationStack;
 use crate::watch_party::audio::AudioEngine;
-use crate::watch_party::{Event, PlaybackSnapshot, SessionHandle, SyncAction};
+use crate::watch_party::{Event, Invite, PlaybackSnapshot, SessionHandle, SyncAction};
 
 use super::PlayerState;
 
@@ -23,6 +23,7 @@ pub struct WatchPartyPlayer {
     audio: Rc<RefCell<Option<AudioEngine>>>,
     key_ctrl: Option<gtk::EventControllerKey>,
     speed_reset_at: Rc<Cell<Option<Instant>>>,
+    invite: Rc<RefCell<Option<Invite>>>,
     invite_shown: Rc<Cell<bool>>,
     closed: Rc<Cell<bool>>,
     ops: OperationStack,
@@ -52,8 +53,13 @@ impl WatchPartyPlayer {
         let chat_btn = gtk::Button::with_label("Sohbet");
         chat_btn.add_css_class("flat");
         chat_btn.add_css_class("pill");
+        let invite_btn = gtk::Button::with_label("Davet");
+        invite_btn.add_css_class("flat");
+        invite_btn.add_css_class("pill");
+        invite_btn.set_visible(!guest);
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         head.append(&status);
+        head.append(&invite_btn);
         head.append(&chat_btn);
         root.append(&head);
         root.append(&mic);
@@ -98,6 +104,7 @@ impl WatchPartyPlayer {
 
         let ptt = Rc::new(Cell::new(false));
         let speed_reset_at = Rc::new(Cell::new(None));
+        let invite = Rc::new(RefCell::new(None));
         let invite_shown = Rc::new(Cell::new(false));
         let closed = Rc::new(Cell::new(false));
         let audio = Rc::new(RefCell::new(
@@ -153,6 +160,15 @@ impl WatchPartyPlayer {
             });
         }
         {
+            let inv = invite.clone();
+            let window = window.clone();
+            invite_btn.connect_clicked(move |_| {
+                if let Some(invite) = inv.borrow().as_ref() {
+                    crate::ui::watch_party::present_invite(&window, invite);
+                }
+            });
+        }
+        {
             let handle_c = handle.clone();
             let entry_c = chat_entry.clone();
             entry_c.connect_activate(move |e| {
@@ -174,6 +190,7 @@ impl WatchPartyPlayer {
             audio,
             key_ctrl,
             speed_reset_at,
+            invite,
             invite_shown,
             closed,
             ops,
@@ -188,6 +205,7 @@ impl WatchPartyPlayer {
         let status = self.status.clone();
         let chat_buffer = self.chat_buffer.clone();
         let speed_reset_at = self.speed_reset_at.clone();
+        let invite = self.invite.clone();
         let invite_shown = self.invite_shown.clone();
         let closed = self.closed.clone();
         let audio = self.audio.clone();
@@ -222,9 +240,10 @@ impl WatchPartyPlayer {
 
             while let Some(event) = handle.try_recv() {
                 match event {
-                    Event::Invite(invite) => {
+                    Event::Invite(new_invite) => {
+                        *invite.borrow_mut() = Some(new_invite.clone());
                         if !invite_shown.replace(true) {
-                            crate::ui::watch_party::present_invite(&window, &invite);
+                            crate::ui::watch_party::present_invite(&window, &new_invite);
                             status.set_text("Oda hazır · davet kodunu paylaş");
                         }
                     }
