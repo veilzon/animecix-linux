@@ -25,6 +25,7 @@
       <li>Kaldığın yerden devam etme ve sürükle-bırak sıralamalı izleme maratonu</li>
       <li>Anime4K görsel iyileştirme modları</li>
       <li>Discord Rich Presence: izlediğin anime ve bölüm bilgisi Discord'da görünür</li>
+      <li>Birlikte İzle: en fazla 4 kişilik senkron odalar; Yggdrasil üzerinden oda sohbeti ve bas-konuş ses</li>
     </ul>
   </description>
   <launchable type="desktop-id">io.github.veilzon.AnimeciX.desktop</launchable>
