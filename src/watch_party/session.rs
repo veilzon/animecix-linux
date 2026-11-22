@@ -228,6 +228,9 @@ struct GuestState {
     mesh_rx: Receiver<(MeshPeer, Vec<PeerInfo>)>,
     host_id: PeerId,
     peers: Vec<PeerInfo>,
+    ping_seq: u64,
+    ping_sent: Option<(u64, u64)>,
+    last_ping_ms: u64,
     sync: GuestSync,
     chat: ChatLog,
     ptt: bool,
@@ -399,6 +402,19 @@ impl Session {
             }
 
             if let State::Guest(guest) = &mut state {
+                let now = now_ms();
+                if now.saturating_sub(guest.last_ping_ms) >= 5_000 {
+                    guest.last_ping_ms = now;
+                    guest.ping_seq = guest.ping_seq.wrapping_add(1);
+                    guest.ping_sent = Some((guest.ping_seq, now));
+                    guest.mesh.send_to(
+                        guest.host_id,
+                        &Frame::Json(WireMsg::Ping {
+                            nonce: guest.ping_seq,
+                            host_ms: now,
+                        }),
+                    );
+                }
                 let mut changed = false;
                 while let Ok((mesh_peer, extra)) = guest.mesh_rx.try_recv() {
                     let info = mesh_peer.info.clone();
@@ -575,6 +591,9 @@ impl Session {
             mesh_rx,
             host_id: host.id,
             peers: vec![host.clone()],
+            ping_seq: 0,
+            ping_sent: None,
+            last_ping_ms: 0,
             sync: GuestSync::default(),
             chat: ChatLog::default(),
             ptt: false,
@@ -846,6 +865,16 @@ impl Session {
                         host_ms: now_ms(),
                     }),
                 );
+            }
+            Frame::Json(WireMsg::Pong { nonce, host_ms }) => {
+                if let Some((seq, sent)) = guest.ping_sent {
+                    if seq == nonce {
+                        let now = now_ms();
+                        let offset = host_ms as i64 - ((sent + now) / 2) as i64;
+                        guest.sync.set_offset_ms(offset);
+                        guest.ping_sent = None;
+                    }
+                }
             }
             Frame::Json(WireMsg::Bye) => {
                 if peer_id == guest.host_id {

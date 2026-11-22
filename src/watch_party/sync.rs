@@ -75,6 +75,11 @@ pub struct GuestSync {
 }
 
 impl GuestSync {
+    /// Host saati ile yerel saat arasındaki fark (ms).
+    pub fn set_offset_ms(&mut self, offset_ms: i64) {
+        self.offset_ms = offset_ms;
+    }
+
     pub fn on_state(&mut self, state: PlaybackState) -> Option<SyncAction> {
         self.state = Some(state);
         None
@@ -223,6 +228,30 @@ mod tests {
         });
         let action = g.action_for(&snap(10.3, false, "1:1:1"), 1_000);
         assert_eq!(action, SyncAction::SetSpeed(0.97));
+    }
+
+    #[test]
+    fn guest_uses_host_clock_offset() {
+        let mut g = GuestSync::default();
+        g.set_offset_ms(5_000);
+        g.on_state(PlaybackState {
+            generation: 0,
+            position: 10.0,
+            paused: false,
+            rate: 1.0,
+            host_ms: 10_000,
+            episode: "1:1:1".into(),
+        });
+        // host_ms 10.000, offset 5.000 -> yerelde 5.000'de konum 10.
+        assert_eq!(
+            g.action_for(&snap(10.0, false, "1:1:1"), 5_000),
+            SyncAction::None
+        );
+        // 1,5 sn sonra beklenen 11,5; yerel 10 -> 1,5 sn geride.
+        assert_eq!(
+            g.action_for(&snap(10.0, false, "1:1:1"), 6_500),
+            SyncAction::Seek(11.5)
+        );
     }
 
     #[test]

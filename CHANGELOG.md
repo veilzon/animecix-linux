@@ -1,3 +1,14 @@
+# Changelog — yayınlanmamış
+
+- **Birlikte İzle:** Gömülü oynatıcıda en fazla 4 kişilik senkron odalar.
+  Host oynatmayı yönetir; misafirlerde oynat/duraklat, seek ve bölüm
+  değiştirme kilitlenir, oynatıcı host'un konumuna otomatik hizalanır.
+- **Yggdrasil mesh:** `yggstack` yardımcısı paketlerle birlikte gelir; host ve
+  misafirler NAT arkasından doğrudan birbirine bağlanır. Video ağdan geçmez;
+  yalnızca senkron, sohbet ve `V` ile bas-konuş ses taşınır.
+- **Oda sohbeti ve ses:** Oyuncu üst barından açılan sohbet; 16 kHz mono PCM
+  bas-konuş. Hesap veya ödeme gerekmez.
+
 # Changelog — v1.4.5 (güncel sürüm notları)
 
 - **Yedekleme:** Ayarlar → Veri Yönetimi'nden ayarlar, izleme verileri ve
