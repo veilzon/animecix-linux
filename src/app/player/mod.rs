@@ -3,6 +3,7 @@ pub mod menu;
 pub mod notices;
 pub mod source;
 pub mod ui;
+pub mod watch_party;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -37,6 +38,7 @@ pub struct PlayerHost {
     pub on_select_fansub: Rc<dyn Fn(api::FansubInfo)>,
     pub on_neighbor: Rc<dyn Fn(i8)>,
     pub on_download: Rc<dyn Fn(Episode)>,
+    pub on_watch_party: Rc<dyn Fn()>,
     pub on_ready: Rc<dyn Fn()>,
     pub on_terminal: Rc<dyn Fn(crate::app::PlayTerminal, String)>,
 }
@@ -117,6 +119,8 @@ struct PlayerState {
     fansub_id: i64,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
+    stage: gtk::Overlay,
+    watch_party: Option<watch_party::WatchPartyPlayer>,
     topbar: gtk::Revealer,
     shade: gtk::Revealer,
     controls: gtk::Revealer,
@@ -176,6 +180,24 @@ impl EmbeddedPlayer {
         self.state.borrow().gl_area.grab_focus();
     }
 
+    /// Aktif gömülü oynatıcıya birlikte izleme oturumu bağlar.
+    pub fn attach_watch_party(
+        &self,
+        handle: Rc<crate::watch_party::SessionHandle>,
+        ops: OperationStack,
+    ) {
+        let state = self.state.clone();
+        let (stage, window) = {
+            let s = state.borrow();
+            (s.stage.clone(), s.window.clone())
+        };
+        let wp = watch_party::WatchPartyPlayer::attach(state.clone(), handle, &stage, &window, ops);
+        let old = { state.borrow_mut().watch_party.replace(wp) };
+        if let Some(mut old) = old {
+            old.shutdown();
+        }
+    }
+
     /// Oynatmayı durdurur, GL bağlamını mpv'den önce bırakır.
     /// İkinci çağrı no-op.
     pub fn shutdown(&self) {
@@ -216,6 +238,11 @@ impl EmbeddedPlayer {
         s.center.set_reveal_child(true);
         s.shade.set_reveal_child(true);
         s.host.discord.clear();
+        let watch_party = s.watch_party.take();
+        drop(s);
+        if let Some(mut wp) = watch_party {
+            wp.shutdown();
+        }
         eprintln!("[EMBED] oynatıcı kapatıldı");
     }
 }
@@ -435,6 +462,8 @@ pub fn build(
         fansub_id: req.fansub_id,
         window: parent.clone(),
         gl_area: gl_area.clone(),
+        stage: stage.clone(),
+        watch_party: None,
         topbar: topbar.revealer.clone(),
         shade: shade.clone(),
         controls: controls.controls_revealer.clone(),
@@ -594,6 +623,14 @@ pub fn build(
         topbar.back.connect_clicked(move |_| {
             let Some(st) = weak.upgrade() else { return };
             let cb = st.borrow().host.on_back.clone();
+            cb();
+        });
+    }
+    {
+        let weak = Rc::downgrade(&state);
+        topbar.watch.connect_clicked(move |_| {
+            let Some(st) = weak.upgrade() else { return };
+            let cb = st.borrow().host.on_watch_party.clone();
             cb();
         });
     }

@@ -3907,6 +3907,45 @@ impl App {
         }
     }
 
+    pub(crate) fn open_watch_party_dialog(&self) {
+        if self.player.borrow().is_none() {
+            self.ops.info(
+                "Birlikte İzle",
+                "Önce gömülü oynatıcıda bir bölüm aç.",
+                std::time::Duration::from_secs(4),
+            );
+            return;
+        }
+        let name_hint = self.settings.borrow().watch_party_name.clone();
+        let this = self.clone_ref();
+        crate::ui::watch_party::present(&self.window, &name_hint, move |action| {
+            let (name, handle) = match action {
+                crate::ui::watch_party::WatchPartyAction::Create { name } => {
+                    let h = Rc::new(crate::watch_party::SessionHandle::start());
+                    h.create(name.clone());
+                    (name, h)
+                }
+                crate::ui::watch_party::WatchPartyAction::Join { invite, name } => {
+                    let h = Rc::new(crate::watch_party::SessionHandle::start());
+                    h.join(invite, name.clone());
+                    (name, h)
+                }
+            };
+            {
+                let mut settings = this.settings.borrow_mut();
+                settings.watch_party_name = name;
+                let snapshot = settings.clone();
+                drop(settings);
+                this.client.save_settings(&snapshot);
+            }
+            if let Some(player) = this.player.borrow().as_ref() {
+                player.attach_watch_party(handle, this.ops.clone());
+            } else {
+                handle.leave();
+            }
+        });
+    }
+
     pub fn open_episodes(&self, title: Title) {
         self.open_episodes_alt(title, Vec::new());
     }

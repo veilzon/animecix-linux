@@ -98,6 +98,17 @@ pub fn player_css() -> String {
         background: rgba(10,10,14,0.92); border-radius: 14px 0 0 14px;
         padding: 10px; border-left: 1px solid alpha(@accent_color, 0.35);
     }
+    .watch-party-badge {
+        background: rgba(10,10,14,0.78); border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 12px; padding: 7px 10px;
+    }
+    .watch-party-chat {
+        background: rgba(10,10,14,0.94); border: 1px solid rgba(255,255,255,0.14);
+        border-radius: 12px; padding: 10px;
+    }
+    .watch-party-chat textview, .watch-party-chat text {
+        background: transparent; color: #FFFFFF;
+    }
     .ep-panel-title { font-weight: 800; letter-spacing: 0.08em; color: #FFFFFF; }
     .season-tab { border-radius: 999px; padding: 2px 10px; }
     .ep-current { border: 2px solid alpha(@accent_color, 0.9); border-radius: 10px; }
@@ -123,6 +134,7 @@ pub fn install_css(widget: &impl IsA<gtk::Widget>) {
 pub struct TopBar {
     pub revealer: gtk::Revealer,
     pub back: gtk::Button,
+    pub watch: gtk::Button,
     pub fullscreen: gtk::Button,
 }
 
@@ -130,6 +142,9 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
     let back = gtk::Button::from_icon_name("go-previous-symbolic");
     back.add_css_class("top-nav-btn");
     back.set_tooltip_text(Some("Geri"));
+    let watch = gtk::Button::from_icon_name("system-users-symbolic");
+    watch.add_css_class("top-nav-btn");
+    watch.set_tooltip_text(Some("Birlikte İzle"));
     let fullscreen = gtk::Button::from_icon_name("view-fullscreen-symbolic");
     fullscreen.add_css_class("top-nav-btn");
     fullscreen.set_tooltip_text(Some("Tam ekran (F)"));
@@ -144,6 +159,7 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
     let spacer = gtk::Box::new(gtk::Orientation::Horizontal, 0);
     spacer.set_hexpand(true);
     row.append(&spacer);
+    row.append(&watch);
     row.append(&fullscreen);
 
     let handle = gtk::WindowHandle::builder()
@@ -162,6 +178,7 @@ pub fn build_topbar(stage: &gtk::Overlay) -> TopBar {
     TopBar {
         revealer,
         back,
+        watch,
         fullscreen,
     }
 }

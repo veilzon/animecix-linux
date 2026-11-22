@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 python3-pip file aria2 ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev meson ninja-build nasm yasm libass-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libunibreak-dev libdav1d-dev libpulse-dev libegl-dev libgl-dev libxkbcommon-dev
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libasound2-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 python3-pip file aria2 ffmpeg mpv libmpv-dev patchelf xvfb xauth binutils libtool libgl1-mesa-dri libegl-mesa0 libgnutls28-dev nettle-dev libgmp-dev libp11-kit-dev zlib1g-dev libidn2-dev libunistring-dev libtasn1-6-dev libffi-dev meson ninja-build nasm yasm libass-dev libfontconfig1-dev libfreetype-dev libharfbuzz-dev libfribidi-dev libunibreak-dev libdav1d-dev libpulse-dev libegl-dev libgl-dev libxkbcommon-dev
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 

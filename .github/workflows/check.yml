@@ -32,7 +32,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libasound2-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
@@ -115,7 +115,7 @@ jobs:
       - name: Install system dependencies
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libasound2-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git python3 file aria2 ffmpeg mpv libmpv-dev xvfb xauth binutils libgl1-mesa-dri libegl-mesa0 desktop-file-utils
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 

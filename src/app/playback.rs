@@ -756,6 +756,12 @@ impl App {
                 app.download_episode(title_dl.clone(), next);
             }
         });
+        let app_watch = app_weak.clone();
+        let on_watch_party: Rc<dyn Fn()> = Rc::new(move || {
+            if let Some(app) = app_watch.upgrade() {
+                app.open_watch_party_dialog();
+            }
+        });
 
         let host = crate::app::player::PlayerHost {
             client: self.client.clone(),
@@ -767,6 +773,7 @@ impl App {
             on_select_fansub,
             on_neighbor,
             on_download,
+            on_watch_party,
             on_ready,
             on_terminal,
         };

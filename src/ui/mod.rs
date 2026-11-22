@@ -11,4 +11,5 @@ pub mod row_menu;
 pub mod shortcuts;
 pub mod stats_view;
 pub mod views;
+pub mod watch_party;
 pub mod welcome;

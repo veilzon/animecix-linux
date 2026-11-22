@@ -10,6 +10,7 @@ BuildRequires:  cargo
 BuildRequires:  rust
 BuildRequires:  gtk4-devel
 BuildRequires:  libadwaita-devel
+BuildRequires:  alsa-lib-devel
 BuildRequires:  pkgconf-pkg-config
 BuildRequires:  cmake
 BuildRequires:  gcc-c++
@@ -22,6 +23,7 @@ BuildRequires:  git
 
 Requires:       mpv
 Requires:       mpv-libs
+Requires:       alsa-lib
 Requires:       libglvnd-gles
 Requires:       gtk4
 Requires:       libadwaita

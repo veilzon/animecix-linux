@@ -27,6 +27,7 @@ base64 = "0.22"
 libloading = "0.8"
 aes = "0.8"
 ctr = "0.9"
+cpal = "0.15"
 
 [[bin]]
 name = "animecix-calendar"

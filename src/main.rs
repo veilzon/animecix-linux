@@ -32,6 +32,7 @@ mod stats;
 mod theme;
 mod ui;
 mod update;
+mod watch_party;
 
 use adw::prelude::*;
 

@@ -56,7 +56,7 @@ jobs:
       - name: Sistem bağımlılıkları
         run: |
           apt-get update
-          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git file
+          apt-get install -y --no-install-recommends libgtk-4-dev libadwaita-1-dev libasound2-dev pkg-config build-essential cmake libclang-dev curl ca-certificates git file
           rm -rf /var/lib/apt/lists/*
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 

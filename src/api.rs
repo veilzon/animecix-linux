@@ -888,6 +888,9 @@ pub struct Settings {
     /// Ana sayfadaki büyük öne çıkan (hero) alan gösterilsin mi?
     #[serde(default = "default_true")]
     pub show_home_hero: bool,
+    /// Birlikte izleme odalarında görünen ad (boşsa "Ben").
+    #[serde(default)]
+    pub watch_party_name: String,
     /// Tema kimliği (sabit palet; örn. "koyu", "bordo").
     #[serde(default = "default_theme")]
     pub theme: String,
@@ -1423,6 +1426,7 @@ impl Default for Settings {
             auto_next: false,
             auto_skip_outro: false,
             show_home_hero: true,
+            watch_party_name: String::new(),
             theme: default_theme(),
             cover_quality: default_cover_quality(),
             download_dir: None,
