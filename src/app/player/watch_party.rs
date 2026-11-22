@@ -57,10 +57,14 @@ impl WatchPartyPlayer {
         invite_btn.add_css_class("flat");
         invite_btn.add_css_class("pill");
         invite_btn.set_visible(!guest);
+        let leave_btn = gtk::Button::with_label("Ayrıl");
+        leave_btn.add_css_class("flat");
+        leave_btn.add_css_class("pill");
         let head = gtk::Box::new(gtk::Orientation::Horizontal, 6);
         head.append(&status);
         head.append(&invite_btn);
         head.append(&chat_btn);
+        head.append(&leave_btn);
         root.append(&head);
         root.append(&mic);
         if guest {
@@ -169,6 +173,10 @@ impl WatchPartyPlayer {
             });
         }
         {
+            let handle_leave = handle.clone();
+            leave_btn.connect_clicked(move |_| handle_leave.leave());
+        }
+        {
             let handle_c = handle.clone();
             let entry_c = chat_entry.clone();
             entry_c.connect_activate(move |e| {
@@ -202,6 +210,7 @@ impl WatchPartyPlayer {
     fn start_tick(&self, window: adw::ApplicationWindow) {
         let weak = self.weak.clone();
         let handle = self.handle.clone();
+        let root = self.root.clone();
         let status = self.status.clone();
         let chat_buffer = self.chat_buffer.clone();
         let speed_reset_at = self.speed_reset_at.clone();
@@ -299,6 +308,10 @@ impl WatchPartyPlayer {
                     }
                     Event::Closed => {
                         status.set_text("Oda kapandı");
+                        root.set_visible(false);
+                        if let Some(audio) = audio.borrow_mut().take() {
+                            audio.set_ptt(false);
+                        }
                         if let Ok(s) = st.try_borrow() {
                             super::set_player_guest_lock(&s, false);
                         }
