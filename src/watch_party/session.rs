@@ -1,5 +1,6 @@
+use std::collections::VecDeque;
 use std::io;
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::time::Duration;
 
@@ -7,20 +8,28 @@ use super::chat::{ChatLog, ChatMessage};
 use super::invite::{now_ms, Invite};
 use super::protocol::{Frame, VoiceFrame, WireMsg};
 use super::sync::{GuestSync, HostSync};
-use super::transport::ygg::YggHelper;
+use super::transport::ygg::{connect_with_retry, YggHelper};
 use super::transport::{advertised_addr, bind_listener, connect, PeerLink};
 use super::types::{
     PeerId, PeerInfo, PlaybackSnapshot, PlaybackState, Role, SyncAction, MAX_PEERS,
 };
 
 pub enum Command {
-    Create { name: String },
-    Join { invite: Invite, name: String },
+    Create {
+        name: String,
+    },
+    Join {
+        invite: Invite,
+        name: String,
+    },
     Snapshot(PlaybackSnapshot),
     Chat(String),
     Ptt(bool),
     Voice(Vec<i16>),
     Leave,
+    /// Testlerde doğrudan mesh bağlantı sayısını okumak için.
+    #[cfg(test)]
+    MeshCount(Sender<usize>),
 }
 
 pub enum Event {
@@ -90,6 +99,13 @@ impl SessionHandle {
     pub fn try_recv(&self) -> Option<Event> {
         self.rx.try_recv().ok()
     }
+
+    #[cfg(test)]
+    fn mesh_links(&self) -> usize {
+        let (tx, rx) = mpsc::channel();
+        let _ = self.tx.send(Command::MeshCount(tx));
+        rx.recv_timeout(Duration::from_secs(2)).unwrap_or(0)
+    }
 }
 
 impl Drop for SessionHandle {
@@ -98,17 +114,107 @@ impl Drop for SessionHandle {
     }
 }
 
-struct HostPeer {
+struct MeshPeer {
     info: PeerInfo,
     link: PeerLink,
+}
+
+/// Aynı mesajın mesh üzerinde birden çok yoldan gelmesini engeller.
+struct Seen<T> {
+    items: VecDeque<T>,
+}
+
+impl<T> Default for Seen<T> {
+    fn default() -> Self {
+        Self {
+            items: VecDeque::new(),
+        }
+    }
+}
+
+impl<T: PartialEq> Seen<T> {
+    /// İlk kez görülen anahtar için `true` döner.
+    fn fresh(&mut self, key: T) -> bool {
+        if self.items.iter().any(|k| *k == key) {
+            return false;
+        }
+        self.items.push_back(key);
+        if self.items.len() > 256 {
+            self.items.pop_front();
+        }
+        true
+    }
+}
+
+/// Bir odadaki tüm doğrudan bağlantılar. Host'ta yalnızca misafirler,
+/// misafirde host ve diğer misafirler bulunur.
+struct Mesh {
+    me: PeerInfo,
+    room: String,
+    links: Vec<MeshPeer>,
+    seen_chat: Seen<(PeerId, u64, u64)>,
+    seen_voice: Seen<(PeerId, u32)>,
+    seen_playback: Seen<(u64, u64)>,
+}
+
+impl Mesh {
+    fn new(me: PeerInfo, room: String) -> Self {
+        Self {
+            me,
+            room,
+            links: Vec::new(),
+            seen_chat: Seen::default(),
+            seen_voice: Seen::default(),
+            seen_playback: Seen::default(),
+        }
+    }
+
+    fn send_all(&self, frame: &Frame) {
+        for p in &self.links {
+            let _ = p.link.send(frame);
+        }
+    }
+
+    fn send_except(&self, skip: PeerId, frame: &Frame) {
+        for p in &self.links {
+            if p.info.id != skip {
+                let _ = p.link.send(frame);
+            }
+        }
+    }
+
+    fn send_to(&self, id: PeerId, frame: &Frame) {
+        if let Some(p) = self.links.iter().find(|p| p.info.id == id) {
+            let _ = p.link.send(frame);
+        }
+    }
+
+    fn has(&self, id: PeerId) -> bool {
+        self.links.iter().any(|p| p.info.id == id)
+    }
+
+    fn add(&mut self, info: PeerInfo, link: PeerLink) {
+        if !self.has(info.id) {
+            self.links.push(MeshPeer { info, link });
+        }
+    }
+
+    fn remove(&mut self, id: PeerId) -> Option<MeshPeer> {
+        let index = self.links.iter().position(|p| p.info.id == id)?;
+        Some(self.links.remove(index))
+    }
+
+    fn peers(&self) -> Vec<PeerInfo> {
+        self.links.iter().map(|p| p.info.clone()).collect()
+    }
 }
 
 struct HostState {
     listener: TcpListener,
     invite: Invite,
     _ygg: Option<YggHelper>,
-    host: PeerInfo,
-    peers: Vec<HostPeer>,
+    mesh: Mesh,
+    next_id: PeerId,
     sync: HostSync,
     chat: ChatLog,
     ptt: bool,
@@ -116,8 +222,11 @@ struct HostState {
 }
 
 struct GuestState {
-    link: PeerLink,
+    listener: TcpListener,
     _ygg: Option<YggHelper>,
+    mesh: Mesh,
+    mesh_rx: Receiver<(MeshPeer, Vec<PeerInfo>)>,
+    host_id: PeerId,
     peers: Vec<PeerInfo>,
     sync: GuestSync,
     chat: ChatLog,
@@ -131,19 +240,39 @@ enum State {
     Guest(GuestState),
 }
 
+/// Kabul edilen bir TCP bağlantısı; el sıkışma ayrı iş parçacığında
+/// okunur, oturum döngüsü yalnızca hazır bağlantıyı işler.
+enum Incoming {
+    HostHello {
+        peer: PeerInfo,
+        room: String,
+        stream: TcpStream,
+    },
+    MeshHello {
+        peer: PeerInfo,
+        room: String,
+        stream: TcpStream,
+    },
+}
+
 struct Session {
     events: Sender<Event>,
     peer_rx: Receiver<(PeerId, Frame)>,
     peer_tx: Sender<(PeerId, Frame)>,
+    accept_rx: Receiver<Incoming>,
+    accept_tx: Sender<Incoming>,
 }
 
 impl Session {
     fn run(commands: Receiver<Command>, events: Sender<Event>) {
         let (peer_tx, peer_rx) = mpsc::channel();
+        let (accept_tx, accept_rx) = mpsc::channel();
         let s = Self {
             events,
             peer_rx,
             peer_tx,
+            accept_rx,
+            accept_tx,
         };
         let mut state = State::Idle;
         loop {
@@ -175,10 +304,11 @@ impl Session {
                     Command::Snapshot(snapshot) => match &mut state {
                         State::Host(host) => {
                             if let Some(playback) = host.sync.on_snapshot(&snapshot, now_ms()) {
-                                Self::host_broadcast(
-                                    host,
-                                    &Frame::Json(WireMsg::Playback(playback.clone())),
-                                );
+                                host.mesh
+                                    .seen_playback
+                                    .fresh((playback.generation, playback.host_ms));
+                                host.mesh
+                                    .send_all(&Frame::Json(WireMsg::Playback(playback.clone())));
                                 let _ = s.events.send(Event::Playback(playback));
                             }
                         }
@@ -192,32 +322,29 @@ impl Session {
                     },
                     Command::Chat(text) => match &mut state {
                         State::Host(host) => {
-                            let msg = ChatMessage {
-                                id: host.host.id,
-                                name: host.host.name.clone(),
-                                text,
-                                ts: now_ms(),
-                            };
-                            host.chat.push(msg.clone());
-                            Self::host_broadcast(
-                                host,
-                                &Frame::Json(WireMsg::Chat {
-                                    id: msg.id,
-                                    name: msg.name.clone(),
-                                    text: msg.text.clone(),
-                                    ts: msg.ts,
-                                }),
-                            );
-                            let _ = s.events.send(Event::Chat(msg));
+                            if let Some(msg) =
+                                chat_message(host.mesh.me.id, host.mesh.me.name.clone(), text)
+                            {
+                                host.mesh
+                                    .seen_chat
+                                    .fresh((msg.id, msg.ts, text_hash(&msg.text)));
+                                host.chat.push(msg.clone());
+                                host.mesh.send_all(&chat_frame(&msg));
+                                let _ = s.events.send(Event::Chat(msg));
+                            }
                         }
                         State::Guest(guest) => {
-                            let msg = WireMsg::Chat {
-                                id: 0,
-                                name: String::new(),
-                                text,
-                                ts: now_ms(),
-                            };
-                            let _ = guest.link.send(&Frame::Json(msg));
+                            if let Some(msg) =
+                                chat_message(guest.mesh.me.id, guest.mesh.me.name.clone(), text)
+                            {
+                                guest
+                                    .mesh
+                                    .seen_chat
+                                    .fresh((msg.id, msg.ts, text_hash(&msg.text)));
+                                guest.chat.push(msg.clone());
+                                guest.mesh.send_all(&chat_frame(&msg));
+                                let _ = s.events.send(Event::Chat(msg));
+                            }
                         }
                         State::Idle => {}
                     },
@@ -229,46 +356,80 @@ impl Session {
                     Command::Voice(samples) => match &mut state {
                         State::Host(host) => {
                             if host.ptt && !samples.is_empty() {
-                                let frame = VoiceFrame {
-                                    id: host.host.id,
-                                    seq: host.voice_seq,
-                                    samples,
-                                };
+                                let id = host.mesh.me.id;
+                                let seq = host.voice_seq;
                                 host.voice_seq = host.voice_seq.wrapping_add(1);
-                                Self::host_broadcast(host, &Frame::Voice(frame));
+                                host.mesh.seen_voice.fresh((id, seq));
+                                host.mesh
+                                    .send_all(&Frame::Voice(VoiceFrame { id, seq, samples }));
                             }
                         }
                         State::Guest(guest) => {
                             if guest.ptt && !samples.is_empty() {
-                                let frame = VoiceFrame {
-                                    id: 0,
-                                    seq: guest.voice_seq,
-                                    samples,
-                                };
+                                let id = guest.mesh.me.id;
+                                let seq = guest.voice_seq;
                                 guest.voice_seq = guest.voice_seq.wrapping_add(1);
-                                let _ = guest.link.send(&Frame::Voice(frame));
+                                guest.mesh.seen_voice.fresh((id, seq));
+                                guest
+                                    .mesh
+                                    .send_all(&Frame::Voice(VoiceFrame { id, seq, samples }));
                             }
                         }
                         State::Idle => {}
                     },
                     Command::Leave => leave = true,
+                    #[cfg(test)]
+                    Command::MeshCount(tx) => {
+                        let count = match &state {
+                            State::Host(host) => host.mesh.links.len(),
+                            State::Guest(guest) => guest.mesh.links.len(),
+                            State::Idle => 0,
+                        };
+                        let _ = tx.send(count);
+                    }
                 }
             }
 
             while let Ok((peer_id, frame)) = s.peer_rx.try_recv() {
                 match &mut state {
                     State::Host(host) => Self::host_on_frame(&s.events, host, peer_id, frame),
-                    State::Guest(guest) => Self::guest_on_frame(&s.events, guest, frame),
+                    State::Guest(guest) => Self::guest_on_frame(&s.events, guest, peer_id, frame),
                     State::Idle => {}
+                }
+            }
+
+            if let State::Guest(guest) = &mut state {
+                let mut changed = false;
+                while let Ok((mesh_peer, extra)) = guest.mesh_rx.try_recv() {
+                    let info = mesh_peer.info.clone();
+                    if !guest.mesh.has(info.id) {
+                        guest.mesh.add(info, mesh_peer.link);
+                    }
+                    for peer in extra {
+                        changed |= add_presence(guest, peer);
+                    }
+                }
+                if changed {
+                    let _ = s.events.send(Event::Peers(guest.peers.clone()));
+                }
+            }
+
+            while let Ok(incoming) = s.accept_rx.try_recv() {
+                match (&mut state, incoming) {
+                    (State::Host(host), Incoming::HostHello { peer, room, stream }) => {
+                        Self::host_add_guest(&s.events, host, peer, room, stream, &s.peer_tx);
+                    }
+                    (State::Guest(guest), Incoming::MeshHello { peer, room, stream }) => {
+                        Self::guest_add_neighbor(&s.events, guest, peer, room, stream, &s.peer_tx);
+                    }
+                    _ => {}
                 }
             }
 
             if leave {
                 match &mut state {
-                    State::Host(host) => Self::host_broadcast(host, &Frame::Json(WireMsg::Bye)),
-                    State::Guest(guest) => {
-                        let _ = guest.link.send(&Frame::Json(WireMsg::Bye));
-                    }
+                    State::Host(host) => host.mesh.send_all(&Frame::Json(WireMsg::Bye)),
+                    State::Guest(guest) => guest.mesh.send_all(&Frame::Json(WireMsg::Bye)),
                     State::Idle => {}
                 }
                 // TCP/Yggdrasil tamponunun Bye'yi taşımasına izin ver; ardından
@@ -278,10 +439,18 @@ impl Session {
                 return;
             }
 
-            if let State::Host(host) = &mut state {
-                if let Err(e) = Self::host_accept(&s.events, host, &s.peer_tx) {
-                    eprintln!("[WATCHPARTY] accept: {e}");
+            match &mut state {
+                State::Host(host) => {
+                    if let Err(e) = pump_accepts(&host.listener, true, &s.accept_tx) {
+                        eprintln!("[WATCHPARTY] accept: {e}");
+                    }
                 }
+                State::Guest(guest) => {
+                    if let Err(e) = pump_accepts(&guest.listener, false, &s.accept_tx) {
+                        eprintln!("[WATCHPARTY] mesh accept: {e}");
+                    }
+                }
+                State::Idle => {}
             }
             std::thread::sleep(Duration::from_millis(20));
         }
@@ -293,7 +462,7 @@ impl Session {
             .set_nonblocking(true)
             .map_err(|e| format!("oda dinleyicisi: {e}"))?;
         let local_port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
-        let ygg = match YggHelper::start_host(local_port) {
+        let ygg = match YggHelper::start(local_port) {
             Ok(y) => Some(y),
             Err(e) => {
                 eprintln!("[WATCHPARTY] Yggdrasil başlatılamadı, doğrudan TCP: {e}");
@@ -302,27 +471,27 @@ impl Session {
         };
         let addr = ygg
             .as_ref()
-            .map(|y| y.host_addr())
+            .map(|y| y.mesh_addr())
             .unwrap_or_else(|| advertised_addr(&listener));
-        let host = PeerInfo {
+        let me = PeerInfo {
             id: 1,
             name,
             role: Role::Host,
             addr: addr.clone(),
         };
-        let invite = Invite::new(addr, host.name.clone())?;
-        let state = HostState {
+        let invite = Invite::new(addr, me.name.clone())?;
+        let mesh = Mesh::new(me, invite.room.clone());
+        Ok(HostState {
             listener,
-            invite: invite.clone(),
+            invite,
             _ygg: ygg,
-            host: host.clone(),
-            peers: Vec::new(),
+            mesh,
+            next_id: 2,
             sync: HostSync::default(),
             chat: ChatLog::default(),
             ptt: false,
             voice_seq: 0,
-        };
-        Ok(state)
+        })
     }
 
     fn start_guest(
@@ -333,28 +502,44 @@ impl Session {
         if invite.is_expired(now_ms()) {
             return Err("davet kodunun süresi dolmuş".into());
         }
-        let (mut stream, ygg) = if invite.host_addr.starts_with('[') {
-            let y = YggHelper::start_guest()?;
-            let s = y
-                .connect(&invite.host_addr)
-                .map_err(|e| format!("odaya bağlanılamadı: {e}"))?;
-            (s, Some(y))
+        // Misafir de dinler: diğer misafirler doğrudan bağlanabilsin.
+        let listener = bind_listener().map_err(|e| format!("oda açılamadı: {e}"))?;
+        listener
+            .set_nonblocking(true)
+            .map_err(|e| format!("oda dinleyicisi: {e}"))?;
+        let local_port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
+        let ygg = match YggHelper::start(local_port) {
+            Ok(y) => Some(y),
+            Err(e) => {
+                eprintln!("[WATCHPARTY] Yggdrasil başlatılamadı, doğrudan TCP: {e}");
+                None
+            }
+        };
+        let mesh_addr = ygg
+            .as_ref()
+            .map(|y| y.mesh_addr())
+            .unwrap_or_else(|| advertised_addr(&listener));
+        let placeholder = PeerInfo {
+            id: 0,
+            name,
+            role: Role::Guest,
+            addr: mesh_addr,
+        };
+
+        let mut stream = if invite.host_addr.starts_with('[') {
+            let y = ygg
+                .as_ref()
+                .ok_or_else(|| "Yggdrasil yardımcısı gerekli".to_string())?;
+            y.connect(&invite.host_addr)
+                .map_err(|e| format!("odaya bağlanılamadı: {e}"))?
         } else {
-            (
-                connect(&invite.host_addr).map_err(|e| format!("odaya bağlanılamadı: {e}"))?,
-                None,
-            )
+            connect(&invite.host_addr).map_err(|e| format!("odaya bağlanılamadı: {e}"))?
         };
         stream
-            .set_read_timeout(Some(Duration::from_secs(3)))
+            .set_read_timeout(Some(Duration::from_secs(10)))
             .map_err(|e| e.to_string())?;
         let hello = WireMsg::Hello {
-            peer: PeerInfo {
-                id: 0,
-                name,
-                role: Role::Guest,
-                addr: String::new(),
-            },
+            peer: placeholder.clone(),
             room: invite.room.clone(),
         };
         super::protocol::write_frame(&mut stream, &Frame::Json(hello))
@@ -367,6 +552,7 @@ impl Session {
             room,
             host,
             peers,
+            you,
             state,
         }) = welcome
         else {
@@ -377,53 +563,100 @@ impl Session {
         }
         let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
         let link = PeerLink::new(stream).map_err(|e| e.to_string())?;
-        PeerLink::reader(0, reader_stream, peer_tx.clone());
+        PeerLink::reader(host.id, reader_stream, peer_tx.clone());
+
+        let mut mesh = Mesh::new(you.clone(), invite.room.clone());
+        mesh.add(host.clone(), link);
+        let (mesh_tx, mesh_rx) = mpsc::channel();
         let mut guest = GuestState {
-            link,
+            listener,
             _ygg: ygg,
-            peers,
+            mesh,
+            mesh_rx,
+            host_id: host.id,
+            peers: vec![host.clone()],
             sync: GuestSync::default(),
             chat: ChatLog::default(),
             ptt: false,
             voice_seq: 0,
         };
+        for peer in peers {
+            add_presence(&mut guest, peer);
+        }
         if let Some(state) = state {
             guest.sync.on_state(state);
         }
+
+        // Yeni katılan misafir, kendinden önce gelen herkesle doğrudan
+        // mesh bağlantısı kurar. Host bağlantısı zaten var; diğerleri
+        // arka planda kurulur ki odaya giriş gecikmesin.
+        let socks_port = guest._ygg.as_ref().map(|y| y.socks_port());
+        let targets: Vec<PeerInfo> = guest
+            .peers
+            .iter()
+            .filter(|p| p.id != host.id && p.id != guest.mesh.me.id)
+            .cloned()
+            .collect();
+        for target in targets {
+            let tx = mesh_tx.clone();
+            let me = guest.mesh.me.clone();
+            let room = guest.mesh.room.clone();
+            let peer_tx = peer_tx.clone();
+            let spawned = std::thread::Builder::new()
+                .name("watch-party-mesh".into())
+                .spawn(
+                    move || match dial_mesh(&me, &room, &target, socks_port, &peer_tx) {
+                        Ok(result) => {
+                            let _ = tx.send(result);
+                        }
+                        Err(e) => eprintln!(
+                            "[WATCHPARTY] {} ile doğrudan bağlantı kurulamadı: {e}",
+                            target.name
+                        ),
+                    },
+                );
+            if let Err(e) = spawned {
+                eprintln!("[WATCHPARTY] mesh iş parçacığı: {e}");
+            }
+        }
+        drop(mesh_tx);
         Ok((guest, host))
     }
 
-    fn host_accept(
+    fn host_add_guest(
         events: &Sender<Event>,
         host: &mut HostState,
+        peer: PeerInfo,
+        room: String,
+        mut stream: TcpStream,
         peer_tx: &Sender<(PeerId, Frame)>,
-    ) -> io::Result<()> {
-        let (mut stream, _addr) = match host.listener.accept() {
-            Ok(v) => v,
-            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
-            Err(e) => return Err(e),
-        };
-        if host.peers.len() + 1 >= MAX_PEERS {
+    ) {
+        if room != host.mesh.room || host.mesh.links.len() + 1 >= MAX_PEERS {
+            eprintln!(
+                "[WATCHPARTY] oda reddedildi (oda={} kişi={})",
+                room == host.mesh.room,
+                host.mesh.links.len() + 1
+            );
             let _ = super::protocol::write_frame(&mut stream, &Frame::Json(WireMsg::Bye));
-            return Ok(());
+            return;
         }
-        stream.set_read_timeout(Some(Duration::from_secs(2)))?;
-        let hello = super::protocol::read_frame(&mut stream)?;
-        let Some(Frame::Json(WireMsg::Hello { peer, room })) = hello else {
-            return Ok(());
-        };
-        if room != host.invite.room {
-            let _ = super::protocol::write_frame(&mut stream, &Frame::Json(WireMsg::Bye));
-            return Ok(());
+        // Aynı dinleme adresinden yeniden bağlanan istemci (ör. kopan
+        // bağlantıyı yenileyen) eski bağlantıyı değiştirir.
+        if !peer.addr.is_empty() {
+            if let Some(old) = host
+                .mesh
+                .links
+                .iter()
+                .find(|p| p.info.addr == peer.addr)
+                .map(|p| p.info.id)
+            {
+                host.mesh.remove(old);
+                host.mesh
+                    .send_all(&Frame::Json(WireMsg::PeerLeft { id: old }));
+            }
         }
-        stream.set_read_timeout(None)?;
-        let id = host
-            .peers
-            .iter()
-            .map(|p| p.info.id)
-            .max()
-            .unwrap_or(host.host.id)
-            .saturating_add(1);
+        let id = host.next_id;
+        host.next_id = host.next_id.saturating_add(1);
         let info = PeerInfo {
             id,
             name: peer.name,
@@ -431,121 +664,196 @@ impl Session {
             addr: peer.addr,
         };
         let welcome = WireMsg::Welcome {
-            room: host.invite.room.clone(),
-            host: host.host.clone(),
-            peers: host.peers.iter().map(|p| p.info.clone()).collect(),
+            room: host.mesh.room.clone(),
+            host: host.mesh.me.clone(),
+            peers: host.mesh.peers(),
+            you: info.clone(),
             state: host.sync.state().cloned(),
         };
-        super::protocol::write_frame(&mut stream, &Frame::Json(welcome))?;
-        let reader_stream = stream.try_clone()?;
-        let link = PeerLink::new(stream)?;
-        PeerLink::reader(id, reader_stream, peer_tx.clone());
-        host.peers.push(HostPeer {
-            info: info.clone(),
-            link,
-        });
-        Self::host_broadcast_except(host, id, &Frame::Json(WireMsg::PeerJoined(info.clone())));
-        let peers = host.peers.iter().map(|p| p.info.clone()).collect();
-        let _ = events.send(Event::Peers(peers));
-        Ok(())
-    }
-
-    fn host_broadcast(host: &HostState, frame: &Frame) {
-        for p in &host.peers {
-            let _ = p.link.send(frame);
+        if let Err(e) = super::protocol::write_frame(&mut stream, &Frame::Json(welcome)) {
+            eprintln!("[WATCHPARTY] welcome yazılamadı: {e}");
+            return;
         }
+        let Ok(reader_stream) = stream.try_clone() else {
+            return;
+        };
+        let Ok(link) = PeerLink::new(stream) else {
+            return;
+        };
+        PeerLink::reader(id, reader_stream, peer_tx.clone());
+        host.mesh.add(info.clone(), link);
+        host.mesh
+            .send_except(id, &Frame::Json(WireMsg::PeerJoined(info)));
+        let _ = events.send(Event::Peers(host.mesh.peers()));
     }
 
-    fn host_broadcast_except(host: &HostState, skip: PeerId, frame: &Frame) {
-        for p in &host.peers {
-            if p.info.id != skip {
-                let _ = p.link.send(frame);
-            }
+    fn guest_add_neighbor(
+        events: &Sender<Event>,
+        guest: &mut GuestState,
+        peer: PeerInfo,
+        room: String,
+        mut stream: TcpStream,
+        peer_tx: &Sender<(PeerId, Frame)>,
+    ) {
+        if room != guest.mesh.room
+            || peer.id == guest.mesh.me.id
+            || peer.id == guest.host_id
+            || guest.mesh.has(peer.id)
+            || guest.mesh.links.len() + 1 >= MAX_PEERS
+        {
+            let _ = super::protocol::write_frame(&mut stream, &Frame::Json(WireMsg::Bye));
+            return;
+        }
+        let welcome = WireMsg::MeshWelcome {
+            room: guest.mesh.room.clone(),
+            peers: guest.peers.clone(),
+        };
+        if let Err(e) = super::protocol::write_frame(&mut stream, &Frame::Json(welcome)) {
+            eprintln!("[WATCHPARTY] welcome yazılamadı: {e}");
+            return;
+        }
+        let Ok(reader_stream) = stream.try_clone() else {
+            return;
+        };
+        let Ok(link) = PeerLink::new(stream) else {
+            return;
+        };
+        PeerLink::reader(peer.id, reader_stream, peer_tx.clone());
+        guest.mesh.add(peer.clone(), link);
+        let added = add_presence(guest, peer.clone());
+        guest
+            .mesh
+            .send_except(peer.id, &Frame::Json(WireMsg::PeerJoined(peer)));
+        if added {
+            let _ = events.send(Event::Peers(guest.peers.clone()));
         }
     }
 
     fn host_on_frame(events: &Sender<Event>, host: &mut HostState, peer_id: PeerId, frame: Frame) {
-        let Some(sender) = host.peers.iter().find(|p| p.info.id == peer_id) else {
+        let Some(sender) = host
+            .mesh
+            .links
+            .iter()
+            .find(|p| p.info.id == peer_id)
+            .map(|p| p.info.clone())
+        else {
             return;
         };
         match frame {
             Frame::Json(WireMsg::Chat { id, name, text, ts }) => {
+                let author = if id == 0 { peer_id } else { id };
+                if !host.mesh.seen_chat.fresh((author, ts, text_hash(&text))) {
+                    return;
+                }
                 let msg = ChatMessage {
-                    id,
-                    name: if name.is_empty() {
-                        sender.info.name.clone()
-                    } else {
-                        name
-                    },
+                    id: author,
+                    name: if name.is_empty() { sender.name } else { name },
                     text,
                     ts,
                 };
                 host.chat.push(msg.clone());
-                Self::host_broadcast(
-                    host,
-                    &Frame::Json(WireMsg::Chat {
-                        id: msg.id,
-                        name: msg.name.clone(),
-                        text: msg.text.clone(),
-                        ts: msg.ts,
-                    }),
-                );
+                host.mesh.send_except(peer_id, &chat_frame(&msg));
                 let _ = events.send(Event::Chat(msg));
             }
             Frame::Voice(v) => {
-                Self::host_broadcast_except(host, peer_id, &Frame::Voice(v.clone()));
+                if !host.mesh.seen_voice.fresh((v.id, v.seq)) {
+                    return;
+                }
+                host.mesh.send_except(peer_id, &Frame::Voice(v.clone()));
                 let _ = events.send(Event::Voice(v));
             }
             Frame::Json(WireMsg::Ping { nonce, .. }) => {
-                if let Some(p) = host.peers.iter().find(|p| p.info.id == peer_id) {
-                    let _ = p.link.send(&Frame::Json(WireMsg::Pong {
+                host.mesh.send_to(
+                    peer_id,
+                    &Frame::Json(WireMsg::Pong {
                         nonce,
                         host_ms: now_ms(),
-                    }));
-                }
+                    }),
+                );
             }
             Frame::Json(WireMsg::Bye) => {
-                host.peers.retain(|p| p.info.id != peer_id);
-                Self::host_broadcast(host, &Frame::Json(WireMsg::PeerLeft { id: peer_id }));
-                let peers = host.peers.iter().map(|p| p.info.clone()).collect();
-                let _ = events.send(Event::Peers(peers));
+                if host.mesh.remove(peer_id).is_some() {
+                    host.mesh
+                        .send_all(&Frame::Json(WireMsg::PeerLeft { id: peer_id }));
+                    let _ = events.send(Event::Peers(host.mesh.peers()));
+                }
             }
             _ => {}
         }
     }
 
-    fn guest_on_frame(events: &Sender<Event>, guest: &mut GuestState, frame: Frame) {
+    fn guest_on_frame(
+        events: &Sender<Event>,
+        guest: &mut GuestState,
+        peer_id: PeerId,
+        frame: Frame,
+    ) {
         match frame {
             Frame::Json(WireMsg::Playback(state)) => {
+                if !guest
+                    .mesh
+                    .seen_playback
+                    .fresh((state.generation, state.host_ms))
+                {
+                    return;
+                }
                 guest.sync.on_state(state.clone());
                 let _ = events.send(Event::Playback(state));
             }
             Frame::Json(WireMsg::Chat { id, name, text, ts }) => {
-                let msg = ChatMessage { id, name, text, ts };
+                let author = if id == 0 { peer_id } else { id };
+                if !guest.mesh.seen_chat.fresh((author, ts, text_hash(&text))) {
+                    return;
+                }
+                let fallback = guest
+                    .mesh
+                    .links
+                    .iter()
+                    .find(|p| p.info.id == peer_id)
+                    .map(|p| p.info.name.clone())
+                    .unwrap_or_default();
+                let msg = ChatMessage {
+                    id: author,
+                    name: if name.is_empty() { fallback } else { name },
+                    text,
+                    ts,
+                };
                 guest.chat.push(msg.clone());
                 let _ = events.send(Event::Chat(msg));
             }
             Frame::Voice(v) => {
+                if !guest.mesh.seen_voice.fresh((v.id, v.seq)) {
+                    return;
+                }
                 let _ = events.send(Event::Voice(v));
             }
             Frame::Json(WireMsg::PeerJoined(info)) => {
-                if !guest.peers.iter().any(|p| p.id == info.id) {
-                    guest.peers.push(info);
+                if add_presence(guest, info) {
+                    let _ = events.send(Event::Peers(guest.peers.clone()));
                 }
-                let _ = events.send(Event::Peers(guest.peers.clone()));
             }
             Frame::Json(WireMsg::PeerLeft { id }) => {
-                guest.peers.retain(|p| p.id != id);
-                let _ = events.send(Event::Peers(guest.peers.clone()));
+                guest.mesh.remove(id);
+                if remove_presence(guest, id) {
+                    let _ = events.send(Event::Peers(guest.peers.clone()));
+                }
             }
             Frame::Json(WireMsg::Ping { nonce, .. }) => {
-                let _ = guest.link.send(&Frame::Json(WireMsg::Pong {
-                    nonce,
-                    host_ms: now_ms(),
-                }));
+                guest.mesh.send_to(
+                    peer_id,
+                    &Frame::Json(WireMsg::Pong {
+                        nonce,
+                        host_ms: now_ms(),
+                    }),
+                );
             }
             Frame::Json(WireMsg::Bye) => {
-                let _ = events.send(Event::Closed);
+                if peer_id == guest.host_id {
+                    let _ = events.send(Event::Closed);
+                } else {
+                    // Doğrudan komşu düştü; oda üyeliği host'un PeerLeft'iyle belirlenir.
+                    guest.mesh.remove(peer_id);
+                }
             }
             _ => {}
         }
@@ -558,6 +866,145 @@ impl Drop for Session {
     }
 }
 
+/// Dinleyicideki hazır bağlantıları toplar; ilk çerçeveyi ayrı iş
+/// parçacığında okur ki oturum döngüsü bloklanmasın.
+fn pump_accepts(listener: &TcpListener, host: bool, tx: &Sender<Incoming>) -> io::Result<()> {
+    loop {
+        let (stream, _) = match listener.accept() {
+            Ok(v) => v,
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => return Ok(()),
+            Err(e) => return Err(e),
+        };
+        let tx = tx.clone();
+        std::thread::Builder::new()
+            .name("watch-party-hello".into())
+            .spawn(move || {
+                let mut stream = stream;
+                if stream
+                    .set_read_timeout(Some(Duration::from_secs(30)))
+                    .is_err()
+                {
+                    return;
+                }
+                let frame = match super::protocol::read_frame(&mut stream) {
+                    Ok(Some(frame)) => frame,
+                    Ok(None) => return,
+                    Err(_) => return,
+                };
+                let Frame::Json(msg) = frame else {
+                    return;
+                };
+                if stream.set_read_timeout(None).is_err() {
+                    return;
+                }
+                let incoming = match (host, msg) {
+                    (true, WireMsg::Hello { peer, room }) => {
+                        Incoming::HostHello { peer, room, stream }
+                    }
+                    (false, WireMsg::MeshHello { peer, room }) => {
+                        Incoming::MeshHello { peer, room, stream }
+                    }
+                    _ => return,
+                };
+                let _ = tx.send(incoming);
+            })
+            .ok();
+    }
+}
+
+fn text_hash(text: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    text.hash(&mut hasher);
+    hasher.finish()
+}
+
+fn chat_message(id: PeerId, name: String, text: String) -> Option<ChatMessage> {
+    let text: String = text.trim().chars().take(500).collect();
+    if text.is_empty() {
+        return None;
+    }
+    Some(ChatMessage {
+        id,
+        name,
+        text,
+        ts: now_ms(),
+    })
+}
+
+fn chat_frame(msg: &ChatMessage) -> Frame {
+    Frame::Json(WireMsg::Chat {
+        id: msg.id,
+        name: msg.name.clone(),
+        text: msg.text.clone(),
+        ts: msg.ts,
+    })
+}
+
+fn add_presence(guest: &mut GuestState, info: PeerInfo) -> bool {
+    if info.id == 0 || info.id == guest.mesh.me.id {
+        return false;
+    }
+    if guest.peers.iter().any(|p| p.id == info.id) {
+        return false;
+    }
+    guest.peers.push(info);
+    true
+}
+
+fn remove_presence(guest: &mut GuestState, id: PeerId) -> bool {
+    let before = guest.peers.len();
+    guest.peers.retain(|p| p.id != id);
+    guest.peers.len() != before
+}
+
+fn dial_mesh(
+    me: &PeerInfo,
+    room: &str,
+    target: &PeerInfo,
+    socks_port: Option<u16>,
+    peer_tx: &Sender<(PeerId, Frame)>,
+) -> Result<(MeshPeer, Vec<PeerInfo>), String> {
+    if target.addr.is_empty() {
+        return Err("adres yok".into());
+    }
+    let mut stream = if target.addr.starts_with('[') {
+        let port = socks_port.ok_or_else(|| "Yggdrasil yardımcısı gerekli".to_string())?;
+        connect_with_retry(port, &target.addr).map_err(|e| format!("bağlanılamadı: {e}"))?
+    } else {
+        connect(&target.addr).map_err(|e| format!("bağlanılamadı: {e}"))?
+    };
+    stream
+        .set_read_timeout(Some(Duration::from_secs(10)))
+        .map_err(|e| e.to_string())?;
+    let hello = WireMsg::MeshHello {
+        peer: me.clone(),
+        room: room.to_string(),
+    };
+    super::protocol::write_frame(&mut stream, &Frame::Json(hello))
+        .map_err(|e| format!("mesh merhaba: {e}"))?;
+    let welcome = super::protocol::read_frame(&mut stream)
+        .map_err(|e| format!("mesh yanıtı: {e}"))?
+        .ok_or_else(|| "mesh bağlantısı kapandı".to_string())?;
+    stream.set_read_timeout(None).map_err(|e| e.to_string())?;
+    let Frame::Json(WireMsg::MeshWelcome { room: got, peers }) = welcome else {
+        return Err("mesh yanıtı geçersiz".into());
+    };
+    if got != room {
+        return Err("mesh oda kimliği uyuşmuyor".into());
+    }
+    let reader_stream = stream.try_clone().map_err(|e| e.to_string())?;
+    let link = PeerLink::new(stream).map_err(|e| e.to_string())?;
+    PeerLink::reader(target.id, reader_stream, peer_tx.clone());
+    Ok((
+        MeshPeer {
+            info: target.clone(),
+            link,
+        },
+        peers,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -566,15 +1013,50 @@ mod tests {
     where
         F: FnMut(&Event) -> bool,
     {
-        for _ in 0..1200 {
+        for _ in 0..12000 {
             while let Some(event) = handle.try_recv() {
                 if pred(&event) {
                     return event;
+                }
+                if let Event::Error(e) = &event {
+                    panic!("hata: {e}");
                 }
             }
             std::thread::sleep(Duration::from_millis(10));
         }
         panic!("olay gelmedi: {label}");
+    }
+
+    fn wait_peers_at_most(handle: &SessionHandle, max: usize) -> Vec<PeerInfo> {
+        let Event::Peers(peers) = wait(
+            handle,
+            |e| matches!(e, Event::Peers(p) if p.len() <= max),
+            &format!("en fazla {max} kişi"),
+        ) else {
+            unreachable!()
+        };
+        peers
+    }
+
+    fn wait_mesh_links(handle: &SessionHandle, count: usize) {
+        for _ in 0..300 {
+            if handle.mesh_links() == count {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(200));
+        }
+        panic!("mesh bağlantısı kurulmadı: {count}");
+    }
+
+    fn wait_peers(handle: &SessionHandle, count: usize) -> Vec<PeerInfo> {
+        let Event::Peers(peers) = wait(
+            handle,
+            |e| matches!(e, Event::Peers(p) if p.len() == count),
+            &format!("{count} kişi"),
+        ) else {
+            unreachable!()
+        };
+        peers
     }
 
     fn snap(pos: f64) -> PlaybackSnapshot {
@@ -609,13 +1091,13 @@ mod tests {
             unreachable!()
         };
         assert_eq!(host_info.name, "host");
-        assert!(peers.is_empty());
-
-        let Event::Peers(peers) = wait(&host, |e| matches!(e, Event::Peers(_)), "peers") else {
-            unreachable!()
-        };
+        // Misafirin listesi host dahil diğer üyeleri taşır.
         assert_eq!(peers.len(), 1);
+
+        let peers = wait_peers(&host, 1);
         assert_eq!(peers[0].name, "guest");
+        assert_eq!(host.mesh_links(), 1);
+        assert_eq!(guest.mesh_links(), 1);
     }
 
     #[test]
@@ -628,7 +1110,7 @@ mod tests {
         let guest = SessionHandle::start();
         guest.join(invite, "guest");
         let _ = wait(&guest, |e| matches!(e, Event::Joined { .. }), "joined");
-        let _ = wait(&host, |e| matches!(e, Event::Peers(_)), "peers");
+        let _ = wait_peers(&host, 1);
 
         host.snapshot(snap(10.0));
         let Event::Playback(state) = wait(&guest, |e| matches!(e, Event::Playback(_)), "playback")
@@ -650,6 +1132,7 @@ mod tests {
             unreachable!()
         };
         assert_eq!(msg.text, "selam");
+        assert_eq!(msg.name, "guest");
         let Event::Chat(msg) = wait(&guest, |e| matches!(e, Event::Chat(_)), "guest chat") else {
             unreachable!()
         };
@@ -665,5 +1148,74 @@ mod tests {
         host.leave();
         let _ = wait(&host, |e| matches!(e, Event::Closed), "host closed");
         let _ = wait(&guest, |e| matches!(e, Event::Closed), "guest closed");
+    }
+
+    #[test]
+    fn four_peers_form_mesh_and_share_media() {
+        let host = SessionHandle::start();
+        host.create("host");
+        let Event::Invite(invite) = wait(&host, |e| matches!(e, Event::Invite(_)), "invite") else {
+            unreachable!()
+        };
+        let mut guests = Vec::new();
+        for i in 0..3 {
+            let guest = SessionHandle::start();
+            guest.join(invite.clone(), format!("guest{i}"));
+            let Event::Joined { peers, .. } =
+                wait(&guest, |e| matches!(e, Event::Joined { .. }), "joined")
+            else {
+                unreachable!()
+            };
+            assert_eq!(peers.len(), i + 1);
+            guests.push(guest);
+            let _ = wait_peers(&host, i + 1);
+        }
+        wait_mesh_links(&host, 3);
+        for guest in &guests {
+            wait_mesh_links(guest, 3);
+        }
+
+        guests[0].chat("mesh");
+        let _ = wait(
+            &host,
+            |e| matches!(e, Event::Chat(m) if m.text == "mesh"),
+            "host mesh chat",
+        );
+        for guest in &guests {
+            let _ = wait(
+                guest,
+                |e| matches!(e, Event::Chat(m) if m.text == "mesh"),
+                "guest mesh chat",
+            );
+        }
+
+        guests[0].ptt(true);
+        let _ = guests[0]
+            .command_sender()
+            .send(Command::Voice(vec![7, 8, 9]));
+        let Event::Voice(v) = wait(&host, |e| matches!(e, Event::Voice(_)), "host mesh voice")
+        else {
+            unreachable!()
+        };
+        assert_eq!(v.samples, vec![7, 8, 9]);
+        for guest in guests.iter().skip(1) {
+            let _ = wait(guest, |e| matches!(e, Event::Voice(_)), "guest mesh voice");
+        }
+
+        host.snapshot(snap(33.0));
+        for guest in &guests {
+            let Event::Playback(state) =
+                wait(guest, |e| matches!(e, Event::Playback(_)), "mesh playback")
+            else {
+                unreachable!()
+            };
+            assert_eq!(state.position, 33.0);
+        }
+
+        guests[2].leave();
+        for handle in std::iter::once(&host).chain(guests.iter().take(2)) {
+            let peers = wait_peers_at_most(handle, 2);
+            assert_eq!(peers.len(), 2);
+        }
     }
 }

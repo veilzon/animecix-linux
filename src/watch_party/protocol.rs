@@ -19,7 +19,18 @@ pub enum WireMsg {
         room: String,
         host: PeerInfo,
         peers: Vec<PeerInfo>,
+        /// Host'un bu istemciye atadığı kimlik.
+        you: PeerInfo,
         state: Option<PlaybackState>,
+    },
+    /// Mesh komşulari arasında doğrudan bağlantı el sıkışması.
+    MeshHello {
+        peer: PeerInfo,
+        room: String,
+    },
+    MeshWelcome {
+        room: String,
+        peers: Vec<PeerInfo>,
     },
     PeerJoined(PeerInfo),
     PeerLeft {

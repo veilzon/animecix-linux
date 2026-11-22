@@ -21,36 +21,25 @@ pub struct YggHelper {
 }
 
 impl YggHelper {
-    pub fn start_host(local_port: u16) -> Result<Self, String> {
-        Self::start(local_port)
+    /// Dinlenecek yerel TCP portuyla yardımcıyı başlatır. `0` ise
+    /// yalnızca dışa bağlantı (SOCKS5) kurulur.
+    pub fn start(local_port: u16) -> Result<Self, String> {
+        Self::start_inner(local_port)
     }
 
-    pub fn start_guest() -> Result<Self, String> {
-        Self::start(0)
-    }
-
-    pub fn host_addr(&self) -> String {
+    pub fn mesh_addr(&self) -> String {
         format!("[{}]:{}", self.mesh_addr, self.ygg_port)
     }
 
     pub fn connect(&self, addr: &str) -> io::Result<TcpStream> {
-        let mut last = None;
-        for _ in 0..60 {
-            match socks5_connect(self.socks_port, addr) {
-                Ok(s) => {
-                    let _ = s.set_read_timeout(None);
-                    return Ok(s);
-                }
-                Err(e) => {
-                    last = Some(e);
-                    std::thread::sleep(Duration::from_millis(200));
-                }
-            }
-        }
-        Err(last.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "ygg bağlantısı")))
+        connect_with_retry(self.socks_port, addr)
     }
 
-    fn start(local_port: u16) -> Result<Self, String> {
+    pub fn socks_port(&self) -> u16 {
+        self.socks_port
+    }
+
+    fn start_inner(local_port: u16) -> Result<Self, String> {
         let bin = helper_path()?;
         let socks_port = free_port()?;
         let ygg_port = if local_port > 0 {
@@ -143,6 +132,25 @@ impl Drop for YggHelper {
         let _ = self.child.wait();
         let _ = fs::remove_dir_all(&self.dir);
     }
+}
+
+/// SOCKS5 üzerinden tekrar denemeli bağlantı; mesh dişlisi ayrı iş
+/// parçacıklarında kullanabilsin diye port ile çağrılabilir.
+pub fn connect_with_retry(socks_port: u16, addr: &str) -> io::Result<TcpStream> {
+    let mut last = None;
+    for _ in 0..300 {
+        match socks5_connect(socks_port, addr) {
+            Ok(s) => {
+                let _ = s.set_read_timeout(None);
+                return Ok(s);
+            }
+            Err(e) => {
+                last = Some(e);
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+    }
+    Err(last.unwrap_or_else(|| io::Error::new(io::ErrorKind::TimedOut, "ygg bağlantısı")))
 }
 
 fn helper_path() -> Result<PathBuf, String> {

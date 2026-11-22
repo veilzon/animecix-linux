@@ -29,6 +29,7 @@ Sürüm notları için [CHANGELOG.md](CHANGELOG.md).
 - **Hızlı arama**: ana sayfadaki öne çıkan alanın üstündeki arama çubuğu Enter ile sonuç penceresi açar; bölüm ekranında hızlı bölüm arama
 - **Oynatıcı**: Gömülü libmpv oynatıcı (varsayılan, Lowell benzeri kontroller, şarkı kartları) veya Ayarlar'dan harici mpv; otomatik tam ekran, resmi intro/outro atlama (`s`/`e`), çalan şarkı bilgisi ve Shift+M ile tarayıcıda açma, `n`/`p` ile önceki/sonraki bölüm (otomatik geçiş ayarı da var), kaynak/fansub seçici ve kalite ölçümü; indirilmiş bölümlerde de intro/outro atlama çalışır
 - **Oynatma geri bildirimi**: Önbellek doluluk çubuğu, oynatma butonunda yükleme dönengeci ve seek sırasında görsel geri bildirim; otomatik sonraki bölümle birlikte outro'yu atlama
+- **Birlikte İzle**: Gömülü oynatıcıda en fazla 4 kişilik senkron oda; host oynatmayı yönetir, misafir oynatma kontrolleri kilitlenir. Yggdrasil (`yggstack`) üzerinden NAT arkasından bağlantı, oda sohbeti ve `V` ile bas-konuş ses; hesap gerekmez
 - **Takip**: Favoriler, sürükle-bırak sıralamalı Maraton, izleme Geçmişi, kaldığın yerden devam; izlendi işaretlenen bölümün ilerleme çubuğu anında dolar
 - **Yayın Takibi**: Takvim yalnızca yayın programını gösterir; bildirim kararı takip edilen yapımların **bölüm listesi** üzerinden verilir. Uygulama açıkken uygulama içi toast, kapalıyken hafif `animecix-calendar` arka plan takipçisi (sistem bildirimi); kaçırılan bildirim uygulama açılınca bir kez gösterilir
 - **İstatistikler**: anime/bölüm/süre özeti, en çok izlenenler, sezon dağılımı ve son 8 haftanın izleme ritmi; filmler bölüm sayılmaz, ayrı film sayısı gösterilir
@@ -70,6 +71,26 @@ takip edilen yapımlarda düğme onay ikonuna döner.
 Takip verisi `~/.local/share/animecix/follow/` altında (`follows.json`,
 `ledger.json`) tutulur. Masaüstü otomatik başlatma girdisi yalnız sen
 açtığında yazılır: `~/.config/autostart/tr.com.animecix.calendar.desktop`.
+
+---
+
+## Birlikte İzle
+
+Gömülü oynatıcıdaki **Birlikte İzle** düğmesiyle en fazla 4 kişilik oda
+kurulur. Oda kodu 10 dakika geçerlidir; kodu yalnızca davet ettiğin kişilere
+gönder. Katılmak için hesap açmak gerekmez.
+
+- **Host otoritesi**: Oynat/duraklat, seek ve bölüm geçişlerini host yönetir.
+  Misafirlerde oynatma kontrolleri kilitlidir; oynatıcı host'un konumuna
+  otomatik hizalanır. Host buffer veya seek için beklemez; yavaş misafir
+  güncel konuma atlar.
+- **Mesh**: Yggdrasil (`yggstack`) üzerinden host ve misafirler birbirine
+  doğrudan bağlanır. Video akışı ağdan geçmez; yalnızca senkron, sohbet ve
+  bas-konuş ses taşınır. `yggstack` paketlerin içinde gelir; yardımcı
+  çalışmazsa aynı yerel ağda doğrudan TCP kullanılır.
+- **Sohbet**: Oyuncu üst barındaki **Sohbet** düğmesi oda sohbetini açar.
+- **Ses**: `V` tuşunu basılı tutarak konuş. Ses 16 kHz mono PCM olarak
+  iletilir; yankı engelleme yoktur, kulaklık önerilir.
 
 ---
 
