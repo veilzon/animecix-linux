@@ -125,6 +125,11 @@ where
         let action = action_cb.clone();
         join_btn.connect_clicked(move |_| match Invite::decode(&invite_c.text()) {
             Ok(invite) => {
+                if invite.is_expired(crate::watch_party::invite::now_ms()) {
+                    error_c.set_text("Davet kodunun süresi dolmuş");
+                    error_c.set_visible(true);
+                    return;
+                }
                 let name = default_name(&name_c.text());
                 win_c.close();
                 action(WatchPartyAction::Join { invite, name });
