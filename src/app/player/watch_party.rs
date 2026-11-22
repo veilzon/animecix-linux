@@ -211,6 +211,7 @@ impl WatchPartyPlayer {
         let weak = self.weak.clone();
         let handle = self.handle.clone();
         let root = self.root.clone();
+        let chat_revealer = self.chat_revealer.clone();
         let status = self.status.clone();
         let chat_buffer = self.chat_buffer.clone();
         let speed_reset_at = self.speed_reset_at.clone();
@@ -309,6 +310,7 @@ impl WatchPartyPlayer {
                     Event::Closed => {
                         status.set_text("Oda kapandı");
                         root.set_visible(false);
+                        chat_revealer.set_reveal_child(false);
                         if let Some(audio) = audio.borrow_mut().take() {
                             audio.set_ptt(false);
                         }
