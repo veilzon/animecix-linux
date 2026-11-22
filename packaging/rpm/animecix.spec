@@ -5,6 +5,11 @@ Summary:        Türkçe anime, dizi ve film izleme istemcisi
 License:        MIT
 URL:            https://github.com/veilzon/animecix-linux
 Source0:        https://github.com/veilzon/animecix-linux/archive/refs/tags/v%{version}.tar.gz
+%ifarch aarch64
+Source1:        https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-arm64
+%else
+Source1:        https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-amd64
+%endif
 
 BuildRequires:  cargo
 BuildRequires:  rust
@@ -43,6 +48,7 @@ cargo build --release --locked
 %install
 install -Dm755 target/release/animecix %{buildroot}%{_bindir}/animecix
 install -Dm755 target/release/animecix-calendar %{buildroot}%{_bindir}/animecix-calendar
+install -Dm755 %{SOURCE1} %{buildroot}%{_bindir}/yggstack
 
 mkdir -p %{buildroot}%{_datadir}/animecix/assets
 cp -r assets/* %{buildroot}%{_datadir}/animecix/assets/
@@ -82,6 +88,7 @@ fi
 %files
 %{_bindir}/animecix
 %{_bindir}/animecix-calendar
+%{_bindir}/yggstack
 %{_datadir}/applications/tr.com.animecix.desktop
 %{_datadir}/icons/hicolor/*/apps/tr.com.animecix.png
 %{_datadir}/animecix

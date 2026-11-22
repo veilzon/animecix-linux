@@ -127,6 +127,22 @@ modules:
         url: https://github.com/aria2/aria2/releases/download/release-1.37.0/aria2-1.37.0.tar.xz
         sha256: 60a420ad7085eb616cb6e2bdf0a7206d68ff3d37fb5a956dc44242eb2f79b66b
 
+  - name: yggstack
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 yggstack /app/bin/yggstack
+    sources:
+      - type: file
+        url: https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-amd64
+        sha256: 533cca213caa459de362a500108c6697000c3b971fa1bc905d3c8ac3d42ff48a
+        dest-filename: yggstack
+        only-arches: [x86_64]
+      - type: file
+        url: https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-arm64
+        sha256: f9e629c3d36d3c2a8e306cd922ba09ea007e87dda09ca265877aa0110b0d57d1
+        dest-filename: yggstack
+        only-arches: [aarch64]
+
   - name: animecix
     buildsystem: simple
     build-options:

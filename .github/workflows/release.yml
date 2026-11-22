@@ -78,6 +78,9 @@ jobs:
       - name: Build minimal libmpv
         run: bash packaging/build-minimal-libmpv.sh
 
+      - name: Fetch yggstack helper
+        run: bash packaging/fetch-yggstack.sh
+
       - name: Build AppImage (minimal aria2, no version bump)
         run: MINIMAL_LIBMPV_DIR=target/minimal-libmpv GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
 
@@ -101,6 +104,8 @@ jobs:
           test -e "$APPDIR/usr/lib/libmpv.so.2"
           ! ldd "$APPDIR/usr/lib/libmpv.so.2" | grep 'not found'
           test -x "$APPDIR/usr/bin/animecix-calendar"
+          test -x "$APPDIR/usr/bin/yggstack"
+          "$APPDIR/usr/bin/yggstack" --version
           ! ldd "$APPDIR/usr/bin/animecix-calendar" | grep -Eq 'libgtk|libadwaita'
           "$APPDIR/usr/bin/animecix-calendar" --check
           xvfb-run -a "$APPDIR/usr/bin/animecix" --check-libmpv

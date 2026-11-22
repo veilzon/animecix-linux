@@ -4,6 +4,8 @@ use std::sync::mpsc::Sender;
 use std::sync::Mutex;
 use std::thread::JoinHandle;
 
+pub mod ygg;
+
 use super::protocol::{read_frame, write_frame, Frame};
 use super::types::PeerId;
 
@@ -37,9 +39,11 @@ impl PeerLink {
                 let mut stream = stream;
                 while let Ok(Some(frame)) = read_frame(&mut stream) {
                     if tx.send((id, frame)).is_err() {
-                        break;
+                        return;
                     }
                 }
+                // EOF/okuma hatası: koordinatöre bağlantının koptuğunu bildir.
+                let _ = tx.send((id, Frame::Json(super::protocol::WireMsg::Bye)));
             })
             .expect("watch-party reader thread")
     }

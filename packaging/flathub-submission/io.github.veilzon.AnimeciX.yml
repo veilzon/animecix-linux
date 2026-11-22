@@ -72,6 +72,22 @@ modules:
         tag: v0.36.0
         commit: f4210f84906c3b00a65fba198c8127b6757b9350
 
+  - name: yggstack
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 yggstack /app/bin/yggstack
+    sources:
+      - type: file
+        url: https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-amd64
+        sha256: 533cca213caa459de362a500108c6697000c3b971fa1bc905d3c8ac3d42ff48a
+        dest-filename: yggstack
+        only-arches: [x86_64]
+      - type: file
+        url: https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-arm64
+        sha256: f9e629c3d36d3c2a8e306cd922ba09ea007e87dda09ca265877aa0110b0d57d1
+        dest-filename: yggstack
+        only-arches: [aarch64]
+
   - name: animecix
     buildsystem: simple
     build-options:

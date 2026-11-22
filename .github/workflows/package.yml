@@ -77,6 +77,9 @@ jobs:
       - name: Derle
         run: cargo build --release --locked
 
+      - name: Yggdrasil yardımcısını indir
+        run: bash packaging/fetch-yggstack.sh
+
       - name: glibc taban kontrolü (<= 2.36)
         run: |
           for bin in animecix animecix-calendar; do
@@ -91,7 +94,8 @@ jobs:
           mkdir -p girdi/usr/bin girdi/usr/share/applications
           cp target/release/animecix girdi/usr/bin/
           cp target/release/animecix-calendar girdi/usr/bin/
-          chmod +x girdi/usr/bin/animecix girdi/usr/bin/animecix-calendar
+          cp target/release/yggstack girdi/usr/bin/
+          chmod +x girdi/usr/bin/animecix girdi/usr/bin/animecix-calendar girdi/usr/bin/yggstack
           cat > girdi/usr/share/applications/tr.com.animecix.desktop <<EOF
           [Desktop Entry]
           Type=Application
@@ -148,13 +152,13 @@ jobs:
           mkdir -p "$P/DEBIAN"
           cp -r girdi/usr "$P/"
           # upload-artifact çalıştırma iznini düşürür; pakette +x şart.
-          chmod +x "$P/usr/bin/animecix" "$P/usr/bin/animecix-calendar"
+          chmod +x "$P/usr/bin/animecix" "$P/usr/bin/animecix-calendar" "$P/usr/bin/yggstack"
           cat > "$P/DEBIAN/control" <<EOF
           Package: animecix
           Version: $VER
           Architecture: amd64
           Maintainer: veilzon
-          Depends: mpv, libmpv2, libgtk-4-1, libadwaita-1-0, aria2
+          Depends: mpv, libmpv2, libgtk-4-1, libadwaita-1-0, aria2, libasound2
           Section: video
           Priority: optional
           Description: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
@@ -180,6 +184,8 @@ jobs:
           animecix-calendar --print-autostart > /tmp/animecix-calendar.desktop
           desktop-file-validate /tmp/animecix-calendar.desktop
           test -x /usr/bin/animecix-calendar
+          test -x /usr/bin/yggstack
+          yggstack --version
           if ldd /usr/bin/animecix-calendar | grep -Eq 'libgtk|libadwaita'; then echo "animecix-calendar GTK'a bağlı"; exit 1; fi
           xvfb-run -a animecix --check-icons
           xvfb-run -a animecix --check-libmpv
@@ -227,7 +233,7 @@ jobs:
           mkdir -p "$PWD/rpmbuild"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
           mkdir -p iskele
           cp -r girdi/usr iskele/
-          chmod +x iskele/usr/bin/animecix iskele/usr/bin/animecix-calendar
+          chmod +x iskele/usr/bin/animecix iskele/usr/bin/animecix-calendar iskele/usr/bin/yggstack
           find iskele -type f | sort
           cat > "$PWD/rpmbuild/SPECS/animecix.spec" <<EOF
           Name: animecix
@@ -235,13 +241,14 @@ jobs:
           Release: 1%{?dist}
           Summary: Anime, dizi ve film izleme istemcisi (GTK4, gömülü libmpv)
           License: MIT
-          Requires: mpv, mpv-libs, libglvnd-gles, gtk4, libadwaita, aria2
+          Requires: mpv, mpv-libs, libglvnd-gles, gtk4, libadwaita, aria2, alsa-lib
           %define debug_package %{nil}
           %description
           Uygulama içi libmpv oynatıcı ve sistem GTK ile çalışan ince paket.
           %files
           /usr/bin/animecix
           /usr/bin/animecix-calendar
+          /usr/bin/yggstack
           /usr/share/applications/tr.com.animecix.desktop
           /usr/share/icons/hicolor/*/apps/tr.com.animecix.png
           /usr/share/animecix
@@ -269,6 +276,8 @@ jobs:
           animecix-calendar --print-autostart > /tmp/animecix-calendar.desktop
           desktop-file-validate /tmp/animecix-calendar.desktop
           test -x /usr/bin/animecix-calendar
+          test -x /usr/bin/yggstack
+          yggstack --version
           if ldd /usr/bin/animecix-calendar | grep -Eq 'libgtk|libadwaita'; then echo "animecix-calendar GTK'a bağlı"; exit 1; fi
           xvfb-run -a animecix --check-icons
           xvfb-run -a animecix --check-libmpv

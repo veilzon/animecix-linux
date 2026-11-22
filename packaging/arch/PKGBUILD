@@ -8,8 +8,10 @@ url="https://github.com/veilzon/animecix-linux"
 license=('MIT')
 depends=('gtk4' 'libadwaita' 'mpv' 'aria2' 'alsa-lib')
 makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz")
-sha256sums=('c26c82c0ce432c82c737c24d7cdb8dfe134237627a4e277344265161836d8914')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz"
+        "yggstack-linux-amd64-0.0.5::https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-amd64")
+sha256sums=('c26c82c0ce432c82c737c24d7cdb8dfe134237627a4e277344265161836d8914'
+            '533cca213caa459de362a500108c6697000c3b971fa1bc905d3c8ac3d42ff48a')
 options=('!lto' '!debug')
 install=animecix.install
 
@@ -23,6 +25,7 @@ package() {
   cd "animecix-linux-$pkgver"
   install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix" "$pkgdir/usr/bin/animecix"
   install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix-calendar" "$pkgdir/usr/bin/animecix-calendar"
+  install -Dm755 "$srcdir/yggstack-linux-amd64-0.0.5" "$pkgdir/usr/bin/yggstack"
   install -Dm644 packaging/flatpak/io.github.veilzon.AnimeciX.metainfo.xml \
     "$pkgdir/usr/share/metainfo/io.github.veilzon.AnimeciX.metainfo.xml"
 

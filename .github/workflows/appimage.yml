@@ -56,6 +56,9 @@ jobs:
       - name: Build minimal libmpv
         run: bash packaging/build-minimal-libmpv.sh
 
+      - name: Fetch yggstack helper
+        run: bash packaging/fetch-yggstack.sh
+
       - name: Build AppImage (minimal aria2)
         run: MINIMAL_LIBMPV_DIR=target/minimal-libmpv GITHUB_TOKEN= VERSION_BUMP=none GITHUB_REPO=veilzon/animecix-linux ANIMECIX_MINIMAL_ARIA2=1 bash build_appimage.sh
 
@@ -66,6 +69,8 @@ jobs:
           export APPDIR="$PWD/squashfs-root"
           test -e "$APPDIR/usr/lib/libmpv.so.2"
           test -e "$APPDIR/usr/share/animecix/assets/changelog/ekrangoruntusu.mp4"
+          test -x "$APPDIR/usr/bin/yggstack"
+          "$APPDIR/usr/bin/yggstack" --version
           for bad in libicudata libtesseract libflite liblpcnetfreedv librav1e libSvtAv1Enc; do
             ! ls "$APPDIR/usr/lib/$bad"* >/dev/null 2>&1
           done

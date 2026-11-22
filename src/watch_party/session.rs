@@ -7,6 +7,7 @@ use super::chat::{ChatLog, ChatMessage};
 use super::invite::{now_ms, Invite};
 use super::protocol::{Frame, VoiceFrame, WireMsg};
 use super::sync::{GuestSync, HostSync};
+use super::transport::ygg::YggHelper;
 use super::transport::{advertised_addr, bind_listener, connect, PeerLink};
 use super::types::{
     PeerId, PeerInfo, PlaybackSnapshot, PlaybackState, Role, SyncAction, MAX_PEERS,
@@ -105,6 +106,7 @@ struct HostPeer {
 struct HostState {
     listener: TcpListener,
     invite: Invite,
+    _ygg: Option<YggHelper>,
     host: PeerInfo,
     peers: Vec<HostPeer>,
     sync: HostSync,
@@ -115,6 +117,7 @@ struct HostState {
 
 struct GuestState {
     link: PeerLink,
+    _ygg: Option<YggHelper>,
     peers: Vec<PeerInfo>,
     sync: GuestSync,
     chat: ChatLog,
@@ -268,6 +271,9 @@ impl Session {
                     }
                     State::Idle => {}
                 }
+                // TCP/Yggdrasil tamponunun Bye'yi taşımasına izin ver; ardından
+                // yardımcı süreç kapanacak.
+                std::thread::sleep(Duration::from_millis(120));
                 let _ = s.events.send(Event::Closed);
                 return;
             }
@@ -286,7 +292,18 @@ impl Session {
         listener
             .set_nonblocking(true)
             .map_err(|e| format!("oda dinleyicisi: {e}"))?;
-        let addr = advertised_addr(&listener);
+        let local_port = listener.local_addr().map(|a| a.port()).unwrap_or(0);
+        let ygg = match YggHelper::start_host(local_port) {
+            Ok(y) => Some(y),
+            Err(e) => {
+                eprintln!("[WATCHPARTY] Yggdrasil başlatılamadı, doğrudan TCP: {e}");
+                None
+            }
+        };
+        let addr = ygg
+            .as_ref()
+            .map(|y| y.host_addr())
+            .unwrap_or_else(|| advertised_addr(&listener));
         let host = PeerInfo {
             id: 1,
             name,
@@ -297,6 +314,7 @@ impl Session {
         let state = HostState {
             listener,
             invite: invite.clone(),
+            _ygg: ygg,
             host: host.clone(),
             peers: Vec::new(),
             sync: HostSync::default(),
@@ -315,8 +333,18 @@ impl Session {
         if invite.is_expired(now_ms()) {
             return Err("davet kodunun süresi dolmuş".into());
         }
-        let mut stream =
-            connect(&invite.host_addr).map_err(|e| format!("odaya bağlanılamadı: {e}"))?;
+        let (mut stream, ygg) = if invite.host_addr.starts_with('[') {
+            let y = YggHelper::start_guest()?;
+            let s = y
+                .connect(&invite.host_addr)
+                .map_err(|e| format!("odaya bağlanılamadı: {e}"))?;
+            (s, Some(y))
+        } else {
+            (
+                connect(&invite.host_addr).map_err(|e| format!("odaya bağlanılamadı: {e}"))?,
+                None,
+            )
+        };
         stream
             .set_read_timeout(Some(Duration::from_secs(3)))
             .map_err(|e| e.to_string())?;
@@ -352,6 +380,7 @@ impl Session {
         PeerLink::reader(0, reader_stream, peer_tx.clone());
         let mut guest = GuestState {
             link,
+            _ygg: ygg,
             peers,
             sync: GuestSync::default(),
             chat: ChatLog::default(),
@@ -537,7 +566,7 @@ mod tests {
     where
         F: FnMut(&Event) -> bool,
     {
-        for _ in 0..200 {
+        for _ in 0..1200 {
             while let Some(event) = handle.try_recv() {
                 if pred(&event) {
                     return event;

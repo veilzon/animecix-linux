@@ -129,6 +129,10 @@ mkdir -p "$APPDIR/usr/share/animecix/assets"
 # 4. Binary ve ikon/asset'leri kopyala
 cp target/release/animecix "$APPDIR/usr/bin/animecix"
 cp target/release/animecix-calendar "$APPDIR/usr/bin/animecix-calendar"
+if [ -f target/release/yggstack ]; then
+    cp target/release/yggstack "$APPDIR/usr/bin/yggstack"
+    chmod +x "$APPDIR/usr/bin/yggstack"
+fi
 if [ -d "assets" ]; then
     cp -r assets/* "$APPDIR/usr/share/animecix/assets/"
 fi
