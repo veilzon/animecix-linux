@@ -51,8 +51,20 @@ EOF
 
   install -Dm644 assets/ATTRIBUTION-Adwaita.md \
     "$pkgdir/usr/share/animecix/ATTRIBUTION-Adwaita.md"
-  install -Dm644 assets/ATTRIBUTION-yggstack.md \
-    "$pkgdir/usr/share/animecix/ATTRIBUTION-yggstack.md"
+  if [[ -f assets/ATTRIBUTION-yggstack.md ]]; then
+    install -Dm644 assets/ATTRIBUTION-yggstack.md \
+      "$pkgdir/usr/share/animecix/ATTRIBUTION-yggstack.md"
+  else
+    install -d "$pkgdir/usr/share/animecix"
+    cat > "$pkgdir/usr/share/animecix/ATTRIBUTION-yggstack.md" <<'EOF'
+# yggstack (yggstack-ng)
+
+- Proje: https://github.com/DrewCyber/yggstack-ng
+- Sürüm: v0.0.5
+- Kaynak kodu: https://github.com/DrewCyber/yggstack-ng/tree/v0.0.5
+- Lisans: MPL-2.0 - https://mozilla.org/MPL/2.0/
+EOF
+  fi
   mkdir -p "$pkgdir/usr/share/animecix/assets"
   cp -r assets/upscale "$pkgdir/usr/share/animecix/assets/"
   cp -r assets/hicolor "$pkgdir/usr/share/animecix/assets/"

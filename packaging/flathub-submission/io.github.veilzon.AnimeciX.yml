@@ -106,7 +106,7 @@ modules:
       - mkdir -p /app/share/animecix/assets
       - cp -r assets/upscale /app/share/animecix/assets/
       - cp -r assets/changelog /app/share/animecix/assets/
-      - install -Dm644 assets/ATTRIBUTION-yggstack.md /app/share/animecix/ATTRIBUTION-yggstack.md
+      - if [ -f assets/ATTRIBUTION-yggstack.md ]; then install -Dm644 assets/ATTRIBUTION-yggstack.md /app/share/animecix/ATTRIBUTION-yggstack.md; fi
       - chmod -R a-w /app/share/animecix/assets/upscale /app/share/animecix/assets/changelog
     sources:
       - type: git

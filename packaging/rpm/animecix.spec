@@ -56,8 +56,20 @@ install -Dm755 packaging/post-install-cleanup.sh \
     %{buildroot}%{_datadir}/animecix/post-install-cleanup.sh
 install -Dm755 packaging/post-remove-cleanup.sh \
     %{buildroot}%{_datadir}/animecix/post-remove-cleanup.sh
-install -Dm644 assets/ATTRIBUTION-yggstack.md \
-    %{buildroot}%{_datadir}/animecix/ATTRIBUTION-yggstack.md
+if [ -f assets/ATTRIBUTION-yggstack.md ]; then
+    install -Dm644 assets/ATTRIBUTION-yggstack.md \
+        %{buildroot}%{_datadir}/animecix/ATTRIBUTION-yggstack.md
+else
+    mkdir -p %{buildroot}%{_datadir}/animecix
+    cat > %{buildroot}%{_datadir}/animecix/ATTRIBUTION-yggstack.md <<'EOF'
+# yggstack (yggstack-ng)
+
+- Proje: https://github.com/DrewCyber/yggstack-ng
+- Sürüm: v0.0.5
+- Kaynak kodu: https://github.com/DrewCyber/yggstack-ng/tree/v0.0.5
+- Lisans: MPL-2.0 - https://mozilla.org/MPL/2.0/
+EOF
+fi
 
 mkdir -p %{buildroot}%{_datadir}/applications
 cat > %{buildroot}%{_datadir}/applications/tr.com.animecix.desktop <<'EOF'
