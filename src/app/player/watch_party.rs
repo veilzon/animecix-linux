@@ -35,6 +35,7 @@ impl WatchPartyPlayer {
         stage: &gtk::Overlay,
         window: &adw::ApplicationWindow,
         ops: OperationStack,
+        guest: bool,
     ) -> Self {
         let root = gtk::Box::new(gtk::Orientation::Vertical, 6);
         root.add_css_class("watch-party-badge");
@@ -56,6 +57,13 @@ impl WatchPartyPlayer {
         head.append(&chat_btn);
         root.append(&head);
         root.append(&mic);
+        if guest {
+            let host_hint = gtk::Label::new(Some("Oynatmayı host yönetiyor"));
+            host_hint.add_css_class("player-text");
+            host_hint.add_css_class("dim-label");
+            host_hint.set_xalign(1.0);
+            root.append(&host_hint);
+        }
         stage.add_overlay(&root);
 
         let chat_revealer = gtk::Revealer::new();
@@ -272,6 +280,9 @@ impl WatchPartyPlayer {
                     }
                     Event::Closed => {
                         status.set_text("Oda kapandı");
+                        if let Ok(s) = st.try_borrow() {
+                            super::set_player_guest_lock(&s, false);
+                        }
                         closed.set(true);
                         return glib::ControlFlow::Break;
                     }
@@ -295,6 +306,11 @@ impl WatchPartyPlayer {
     pub fn shutdown(&mut self) {
         self.closed.set(true);
         self.handle.leave();
+        if let Some(st) = self.weak.upgrade() {
+            if let Ok(s) = st.try_borrow() {
+                super::set_player_guest_lock(&s, false);
+            }
+        }
         if let Some(audio) = self.audio.borrow_mut().take() {
             audio.set_ptt(false);
         }

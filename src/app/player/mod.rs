@@ -121,6 +121,8 @@ struct PlayerState {
     gl_area: gtk::GLArea,
     stage: gtk::Overlay,
     watch_party: Option<watch_party::WatchPartyPlayer>,
+    guest_lock: Rc<Cell<bool>>,
+    lock_widgets: Vec<gtk::Widget>,
     topbar: gtk::Revealer,
     shade: gtk::Revealer,
     controls: gtk::Revealer,
@@ -185,16 +187,28 @@ impl EmbeddedPlayer {
         &self,
         handle: Rc<crate::watch_party::SessionHandle>,
         ops: OperationStack,
+        guest: bool,
     ) {
         let state = self.state.clone();
         let (stage, window) = {
             let s = state.borrow();
             (s.stage.clone(), s.window.clone())
         };
-        let wp = watch_party::WatchPartyPlayer::attach(state.clone(), handle, &stage, &window, ops);
+        let wp = watch_party::WatchPartyPlayer::attach(
+            state.clone(),
+            handle,
+            &stage,
+            &window,
+            ops,
+            guest,
+        );
         let old = { state.borrow_mut().watch_party.replace(wp) };
         if let Some(mut old) = old {
             old.shutdown();
+        }
+        {
+            let s = state.borrow();
+            set_player_guest_lock(&s, guest);
         }
     }
 
@@ -408,6 +422,15 @@ pub fn build(
     let click_pending = Rc::new(Cell::new(false));
     let seeking = Rc::new(Cell::new(false));
     let vol_changing = Rc::new(Cell::new(false));
+    let guest_lock = Rc::new(Cell::new(false));
+    let lock_widgets: Vec<gtk::Widget> = vec![
+        controls.play_btn.clone().upcast(),
+        controls.back10_btn.clone().upcast(),
+        controls.fwd10_btn.clone().upcast(),
+        controls.seek.clone().upcast(),
+        controls.speed_btn.clone().upcast(),
+        skip_pill.clone().upcast(),
+    ];
     let progress_key = format!("{}:{}:{}", req.title.id, req.ep.season, req.ep.episode);
     let host_progress = host.progress.clone();
     let ctx_pop = gtk::Popover::new();
@@ -464,6 +487,8 @@ pub fn build(
         gl_area: gl_area.clone(),
         stage: stage.clone(),
         watch_party: None,
+        guest_lock,
+        lock_widgets,
         topbar: topbar.revealer.clone(),
         shade: shade.clone(),
         controls: controls.controls_revealer.clone(),
@@ -825,8 +850,12 @@ pub fn build(
                         })
                         .unwrap_or(false);
                     if go {
-                        if let Some(p) = st2.borrow().player.as_ref() {
-                            p.toggle_pause();
+                        if let Ok(s) = st2.try_borrow() {
+                            if !s.guest_lock.get() {
+                                if let Some(p) = s.player.as_ref() {
+                                    p.toggle_pause();
+                                }
+                            }
                         }
                     }
                 });
@@ -897,6 +926,21 @@ pub fn build(
                 if focus.is::<gtk::Text>() {
                     return glib::Propagation::Proceed;
                 }
+            }
+            // Misafirde oynatma kararları host'a aittir; bu tuşları yut.
+            if st.borrow().guest_lock.get()
+                && matches!(
+                    keyval,
+                    gtk::gdk::Key::space
+                        | gtk::gdk::Key::Left
+                        | gtk::gdk::Key::Right
+                        | gtk::gdk::Key::s
+                        | gtk::gdk::Key::S
+                        | gtk::gdk::Key::e
+                        | gtk::gdk::Key::E
+                )
+            {
+                return glib::Propagation::Stop;
             }
             let is_pop_open = {
                 let s = st.borrow();
@@ -1393,6 +1437,9 @@ fn mark_skip_done(s: &mut PlayerState, kind: SkipKind) {
 fn do_skip(state: &Rc<RefCell<PlayerState>>) {
     let target = {
         let Ok(s) = state.try_borrow() else { return };
+        if s.guest_lock.get() {
+            return;
+        }
         let Some(plan) = s.plan.as_ref() else { return };
         let Some(p) = s.player.as_ref() else { return };
         notices::skip_target(&plan.times, p.pos(), s.op_done, s.ed_done)
@@ -1414,6 +1461,9 @@ fn do_skip(state: &Rc<RefCell<PlayerState>>) {
 fn skip_to(state: &Rc<RefCell<PlayerState>>, kind: SkipKind) {
     let target = {
         let Ok(s) = state.try_borrow() else { return };
+        if s.guest_lock.get() {
+            return;
+        }
         let Some(plan) = s.plan.as_ref() else {
             return;
         };
@@ -1568,8 +1618,10 @@ fn rebuild_ctx_menu(pop: &gtk::Popover, state: &Rc<RefCell<PlayerState>>) {
             move || {
                 if let Some(st) = weak.upgrade() {
                     if let Ok(s) = st.try_borrow() {
-                        if let Some(p) = s.player.as_ref() {
-                            p.toggle_pause();
+                        if !s.guest_lock.get() {
+                            if let Some(p) = s.player.as_ref() {
+                                p.toggle_pause();
+                            }
                         }
                     }
                 }
@@ -2065,7 +2117,9 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
             s.terminal_sent = false;
             s.status.set_visible(false);
             if let Some(p) = s.player.as_ref() {
-                p.set_pause(false);
+                if !s.guest_lock.get() {
+                    p.set_pause(false);
+                }
             }
             if s.inhibit_cookie.is_none() {
                 if let Some(app) = s.window.application() {
@@ -2081,7 +2135,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 }
             }
             if let Some(resume) = s.resume.take() {
-                if resume >= 1.0 {
+                if resume >= 1.0 && !s.guest_lock.get() {
                     if let Some(p) = s.player.as_ref() {
                         p.seek_abs(resume);
                     }
@@ -2187,7 +2241,11 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 s.terminal_sent = true;
                 finished_now = true;
                 s.host.discord.clear();
-                if s.auto_next_enabled && !s.auto_next_fired && !s.title.is_movie() {
+                if s.auto_next_enabled
+                    && !s.auto_next_fired
+                    && !s.guest_lock.get()
+                    && !s.title.is_movie()
+                {
                     s.auto_next_fired = true;
                     auto_next_now = true;
                 }
@@ -2239,6 +2297,7 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
                 && s.auto_next_enabled
                 && s.auto_skip_outro
                 && !s.auto_next_fired
+                && !s.guest_lock.get()
                 && !s.title.is_movie()
             {
                 skip_outro_now = true;
@@ -2432,8 +2491,20 @@ fn show_chrome_locked(s: &mut PlayerState) {
     s.gl_area.set_cursor_from_name(None);
     s.topbar.set_reveal_child(true);
     s.controls.set_reveal_child(true);
-    s.center.set_reveal_child(true);
+    s.center.set_reveal_child(!s.guest_lock.get());
     s.shade.set_reveal_child(true);
+}
+
+/// Misafir oturumunda host dışındaki oynatma kontrollerini kilitler.
+fn set_player_guest_lock(s: &PlayerState, guest: bool) {
+    s.guest_lock.set(guest);
+    for w in &s.lock_widgets {
+        w.set_sensitive(!guest);
+    }
+    s.center.set_reveal_child(!guest && !s.chrome_hidden);
+    if guest {
+        s.skip_pill_rev.set_reveal_child(false);
+    }
 }
 
 fn hide_chrome_locked(s: &mut PlayerState) {

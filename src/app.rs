@@ -3919,16 +3919,16 @@ impl App {
         let name_hint = self.settings.borrow().watch_party_name.clone();
         let this = self.clone_ref();
         crate::ui::watch_party::present(&self.window, &name_hint, move |action| {
-            let (name, handle) = match action {
+            let (name, handle, guest) = match action {
                 crate::ui::watch_party::WatchPartyAction::Create { name } => {
                     let h = Rc::new(crate::watch_party::SessionHandle::start());
                     h.create(name.clone());
-                    (name, h)
+                    (name, h, false)
                 }
                 crate::ui::watch_party::WatchPartyAction::Join { invite, name } => {
                     let h = Rc::new(crate::watch_party::SessionHandle::start());
                     h.join(invite, name.clone());
-                    (name, h)
+                    (name, h, true)
                 }
             };
             {
@@ -3939,7 +3939,7 @@ impl App {
                 this.client.save_settings(&snapshot);
             }
             if let Some(player) = this.player.borrow().as_ref() {
-                player.attach_watch_party(handle, this.ops.clone());
+                player.attach_watch_party(handle, this.ops.clone(), guest);
             } else {
                 handle.leave();
             }
