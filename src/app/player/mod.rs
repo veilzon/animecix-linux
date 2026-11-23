@@ -123,7 +123,6 @@ struct PlayerState {
     watch_btn: gtk::Button,
     watch_dot: gtk::Label,
     room: Rc<RefCell<crate::app::room::RoomService>>,
-    room_speed_reset_at: Option<Instant>,
     guest_lock: Rc<Cell<bool>>,
     lock_widgets: Vec<gtk::Widget>,
     topbar: gtk::Revealer,
@@ -485,7 +484,6 @@ pub fn build(
         watch_btn: topbar.watch.clone(),
         watch_dot: topbar.dot.clone(),
         room: room.clone(),
-        room_speed_reset_at: None,
         guest_lock,
         lock_widgets,
         topbar: topbar.revealer.clone(),
@@ -1970,7 +1968,7 @@ fn seek_feedback_pending(s: &mut PlayerState, pos: f64) -> bool {
 }
 
 fn apply_room_sync(st: &Rc<RefCell<PlayerState>>, action: SyncAction) {
-    let Ok(mut s) = st.try_borrow_mut() else {
+    let Ok(s) = st.try_borrow() else {
         return;
     };
     let Some(player) = s.player.as_ref() else {
@@ -1980,10 +1978,6 @@ fn apply_room_sync(st: &Rc<RefCell<PlayerState>>, action: SyncAction) {
         SyncAction::Pause => player.set_pause(true),
         SyncAction::Play => player.set_pause(false),
         SyncAction::Seek(pos) => player.seek_abs(pos.max(0.0)),
-        SyncAction::SetSpeed(rate) => {
-            player.set_speed(rate);
-            s.room_speed_reset_at = Some(Instant::now() + Duration::from_secs(2));
-        }
         SyncAction::None => {}
     }
 }
@@ -2474,17 +2468,6 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         }
         (ready_now, finished_now, auto_next_now)
     };
-
-    if let Ok(mut s) = st.try_borrow_mut() {
-        if let Some(at) = s.room_speed_reset_at {
-            if Instant::now() >= at {
-                if let Some(p) = s.player.as_ref() {
-                    p.set_speed(1.0);
-                }
-                s.room_speed_reset_at = None;
-            }
-        }
-    }
 
     if advance_now {
         advance_source(st);

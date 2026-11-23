@@ -66,8 +66,6 @@ pub enum SyncAction {
     Pause,
     Play,
     Seek(f64),
-    /// Kısa süreli hız düzeltmesi; adaptör birkaç saniye sonra 1.0'a döndürür.
-    SetSpeed(f64),
 }
 
 /// Host'un o an ne yaptığı. Oda paneli ve misafir yönlendirmesi için.
