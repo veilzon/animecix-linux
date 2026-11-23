@@ -7,7 +7,7 @@ use std::rc::Rc;
 
 use crate::watch_party::audio::AudioEngine;
 use crate::watch_party::chat::ChatLog;
-use crate::watch_party::types::{PeerInfo, Role, RoomContent, SyncAction};
+use crate::watch_party::types::{ContentKind, PeerInfo, Role, RoomContent, SyncAction};
 use crate::watch_party::{Event, Invite, PlaybackSnapshot, SessionHandle};
 
 #[derive(Default)]
@@ -32,6 +32,7 @@ pub struct RoomService {
 
 impl RoomService {
     pub fn create(&mut self, name: &str) {
+        eprintln!("[WATCHPARTY] oda kuruluyor: {name}");
         self.leave();
         let handle = Rc::new(SessionHandle::start());
         handle.create(name);
@@ -43,6 +44,7 @@ impl RoomService {
     }
 
     pub fn join(&mut self, invite: Invite, name: &str) {
+        eprintln!("[WATCHPARTY] odaya katılınıyor: {name}");
         self.leave();
         let handle = Rc::new(SessionHandle::start());
         handle.join(invite, name);
@@ -127,6 +129,11 @@ impl RoomService {
                 }
                 Event::Peers(peers) => {
                     self.peers = peers.clone();
+                    if self.is_host() && self.content.kind != ContentKind::Idle {
+                        if let Some(handle) = self.handle.as_ref() {
+                            handle.content(self.content.clone());
+                        }
+                    }
                 }
                 Event::Invite(invite) => {
                     self.invite = Some(invite.clone());
@@ -237,20 +244,20 @@ mod tests {
     use crate::watch_party::types::{PlaybackSnapshot, RoomContent};
     use std::time::{Duration, Instant};
 
-    fn wait<F>(room: &mut RoomService, mut pred: F, label: &str) -> Event
+    fn pump_until<F>(host: &mut RoomService, guest: &mut RoomService, mut pred: F, label: &str)
     where
-        F: FnMut(&Event) -> bool,
+        F: FnMut(&RoomService, &RoomService) -> bool,
     {
         let deadline = Instant::now() + Duration::from_secs(20);
         while Instant::now() < deadline {
-            for event in room.poll() {
-                if pred(&event) {
-                    return event;
-                }
+            let _ = host.poll();
+            let _ = guest.poll();
+            if pred(host, guest) {
+                return;
             }
             std::thread::sleep(Duration::from_millis(10));
         }
-        panic!("olay gelmedi: {label}");
+        panic!("durum gelmedi: {label}");
     }
 
     fn wait_invite(room: &mut RoomService) -> Invite {
@@ -281,31 +288,87 @@ mod tests {
         let mut host = RoomService::default();
         host.create("host");
         let invite = wait_invite(&mut host);
+        host.chat("geçmiş mesaj");
+        host.publish_content(RoomContent::browsing("Ana Sayfa"));
         let mut guest = RoomService::default();
+
+        // Host'un sohbeti işlenene kadar bekle.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while host.chat.len() == 0 && Instant::now() < deadline {
+            let _ = host.poll();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(host.chat.len(), 1);
+
         guest.join(invite, "guest");
-        let _ = wait(&mut guest, |e| matches!(e, Event::Joined { .. }), "joined");
-        let _ = wait(&mut host, |e| matches!(e, Event::Peers(_)), "peers");
-        assert!(host.is_active() && host.is_host());
-        assert!(guest.is_active() && guest.is_guest());
+        pump_until(
+            &mut host,
+            &mut guest,
+            |h, g| g.is_active() && g.host.is_some() && h.peers.len() == 1,
+            "katılım",
+        );
+        assert!(host.is_host());
+        assert!(guest.is_guest());
+
+        // Yeni misafir, katılmadan önceki sohbeti ve host içerik durumunu alır.
+        pump_until(
+            &mut host,
+            &mut guest,
+            |_, g| {
+                g.chat.len() == 1
+                    && g.content.kind == ContentKind::Browsing
+                    && g.content.title_name == "Ana Sayfa"
+            },
+            "geçmiş ve içerik",
+        );
 
         host.publish_content(RoomContent::watching(7, "Test", "tv", 1, 2, "Bölüm 2"));
-        let Event::Content(content) =
-            wait(&mut guest, |e| matches!(e, Event::Content(_)), "content")
-        else {
-            unreachable!()
-        };
-        assert_eq!(content.title_id, Some(7));
-        assert_eq!(content.season, Some(1));
-        assert_eq!(content.episode, Some(2));
+        pump_until(
+            &mut host,
+            &mut guest,
+            |_, g| {
+                g.content.kind == ContentKind::Watching
+                    && g.content.title_id == Some(7)
+                    && g.content.season == Some(1)
+                    && g.content.episode == Some(2)
+            },
+            "içerik güncellemesi",
+        );
 
         guest.chat("selam");
-        let _ = wait(&mut host, |e| matches!(e, Event::Chat(_)), "chat");
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while host.chat.len() < 2 && Instant::now() < deadline {
+            let _ = host.poll();
+            let _ = guest.poll();
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(host.chat.messages().last().unwrap().text, "selam");
 
         host.snapshot(snap(10.0, "7:1:2"));
-        let _ = wait(&mut guest, |e| matches!(e, Event::Playback(_)), "playback");
+        // GuestSync'in host playback'ini işlemesini bekle.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut saw_playback = false;
+        while !saw_playback && Instant::now() < deadline {
+            for event in guest.poll() {
+                if matches!(event, Event::Playback(_)) {
+                    saw_playback = true;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(saw_playback);
+
         guest.snapshot(snap(0.0, "7:1:2"));
-        let _ = wait(&mut guest, |e| matches!(e, Event::Sync(_)), "sync");
-        assert!(guest.take_sync().is_some());
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut action = None;
+        while action.is_none() && Instant::now() < deadline {
+            let _ = guest.poll();
+            action = guest.take_sync();
+            if action.is_none() {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+        }
+        assert!(action.is_some());
 
         host.leave();
         guest.leave();

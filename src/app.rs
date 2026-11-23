@@ -4056,6 +4056,7 @@ impl App {
     }
 
     pub(crate) fn leave_room(&self) {
+        eprintln!("[WATCHPARTY] odadan ayrılıyor");
         self.room_leaving.set(true);
         self.room.borrow_mut().leave();
         self.room_panel.set_active(false, false);
@@ -4081,6 +4082,7 @@ impl App {
         if self.room.borrow().ptt_active() {
             return;
         }
+        eprintln!("[WATCHPARTY] PTT basıldı");
         if !self.room.borrow().mic_ok() {
             self.room_panel.set_ptt(false, false);
             return;
@@ -4096,6 +4098,9 @@ impl App {
     }
 
     fn stop_room_ptt(&self) {
+        if self.room.borrow().ptt_active() {
+            eprintln!("[WATCHPARTY] PTT bırakıldı");
+        }
         let _ = self.room.borrow_mut().set_ptt(false);
         self.room_panel.set_ptt(false, self.room.borrow().mic_ok());
     }

@@ -714,6 +714,21 @@ impl Session {
             eprintln!("[WATCHPARTY] welcome yazılamadı: {e}");
             return;
         }
+        let history: Vec<ChatMessage> = host
+            .chat
+            .messages()
+            .iter()
+            .rev()
+            .take(50)
+            .rev()
+            .cloned()
+            .collect();
+        if !history.is_empty() {
+            let _ = super::protocol::write_frame(
+                &mut stream,
+                &Frame::Json(WireMsg::ChatHistory(history)),
+            );
+        }
         let Ok(reader_stream) = stream.try_clone() else {
             return;
         };
@@ -831,6 +846,12 @@ impl Session {
         match frame {
             Frame::Json(WireMsg::Content(content)) => {
                 let _ = events.send(Event::Content(content));
+            }
+            Frame::Json(WireMsg::ChatHistory(history)) => {
+                for msg in history {
+                    guest.chat.push(msg.clone());
+                    let _ = events.send(Event::Chat(msg));
+                }
             }
             Frame::Json(WireMsg::Playback(state)) => {
                 if !guest
@@ -1151,6 +1172,25 @@ mod tests {
         assert_eq!(peers[0].name, "guest");
         assert_eq!(host.mesh_links(), 1);
         assert_eq!(guest.mesh_links(), 1);
+    }
+
+    #[test]
+    fn new_guest_receives_chat_history() {
+        let host = SessionHandle::start();
+        host.create("host");
+        let Event::Invite(invite) = wait(&host, |e| matches!(e, Event::Invite(_)), "invite") else {
+            unreachable!()
+        };
+        host.chat("geçmiş mesaj");
+        let _ = wait(&host, |e| matches!(e, Event::Chat(_)), "host chat");
+
+        let guest = SessionHandle::start();
+        guest.join(invite, "guest");
+        let _ = wait(&guest, |e| matches!(e, Event::Joined { .. }), "joined");
+        let Event::Chat(msg) = wait(&guest, |e| matches!(e, Event::Chat(_)), "history") else {
+            unreachable!()
+        };
+        assert_eq!(msg.text, "geçmiş mesaj");
     }
 
     #[test]

@@ -2,6 +2,7 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
 
+use super::chat::ChatMessage;
 use super::types::{PeerId, PeerInfo, PlaybackState, RoomContent};
 
 pub const MAX_FRAME: usize = 64 * 1024;
@@ -39,6 +40,8 @@ pub enum WireMsg {
     Playback(PlaybackState),
     /// Host'un o anki sayfa/başlık/bölüm durumu (oynatma değil).
     Content(RoomContent),
+    /// Yeni misafire son sohbet mesajları.
+    ChatHistory(Vec<ChatMessage>),
     Ready {
         id: PeerId,
         ready: bool,
