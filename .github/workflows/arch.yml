@@ -1,0 +1,49 @@
+name: Arch paketi (test)
+
+# Yalnızca elle tetiklenir. Birlikte İzle test derlemesini Arch'ın
+# sistem libmpv/Mesa/ALSA yığınına karşı derler ve test release'ine ekler.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  arch:
+    runs-on: ubuntu-24.04
+    container:
+      image: archlinux:latest
+      options: --user root
+    timeout-minutes: 90
+    steps:
+      - name: Bağımlılıklar
+        run: |
+          pacman -Syu --noconfirm
+          pacman -S --noconfirm --needed \
+            base-devel git rust cargo cmake clang perl nasm zlib pkgconf \
+            gtk4 libadwaita mpv alsa-lib aria2 github-cli
+          useradd -m builder
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: makepkg
+        run: |
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          cd packaging/arch
+          sudo -u builder makepkg --noconfirm --cleanbuild
+          ls -lh ./*.pkg.tar.zst
+
+      - name: Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: animecix-arch
+          path: packaging/arch/*.pkg.tar.zst
+
+      - name: Test release'e ekle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload watchparty-test-20261123 \
+            packaging/arch/*.pkg.tar.zst \
+            -R "$GITHUB_REPOSITORY" --clobber

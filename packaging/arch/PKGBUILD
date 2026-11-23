@@ -1,28 +1,30 @@
 # Maintainer: veilzon <veilzon@users.noreply.github.com>
 pkgname=animecix
 pkgver=1.4.5
-pkgrel=1
+pkgrel=2
+_commit=3b0c8b9daf92270a57676b51b4038bce0f2575e0
 pkgdesc="Türkçe anime izleme uygulaması (GTK4/libadwaita + mpv)"
 arch=('x86_64')
 url="https://github.com/veilzon/animecix-linux"
 license=('MIT')
 depends=('gtk4' 'libadwaita' 'mpv' 'aria2' 'alsa-lib')
 makedepends=('rust' 'cargo' 'git' 'cmake' 'clang' 'perl' 'nasm' 'zlib' 'pkgconf')
-source=("$pkgname-$pkgver.tar.gz::https://github.com/veilzon/animecix-linux/archive/refs/tags/v$pkgver.tar.gz"
+# Birlikte İzle test derlemesi: uygulama seviyesinde oda + içerik senkronu.
+source=("$pkgname-$pkgver.tar.gz::https://codeload.github.com/veilzon/animecix-linux/tar.gz/$_commit"
         "yggstack-linux-amd64-0.0.5::https://github.com/DrewCyber/yggstack-ng/releases/download/v0.0.5/yggstack-linux-amd64")
-sha256sums=('c26c82c0ce432c82c737c24d7cdb8dfe134237627a4e277344265161836d8914'
+sha256sums=('189d86e671072ffc293ea4beed1dbc8a86fa67f72447f14071ad962a5b12ae32'
             '533cca213caa459de362a500108c6697000c3b971fa1bc905d3c8ac3d42ff48a')
 options=('!lto' '!debug')
 install=animecix.install
 
 build() {
-  cd "animecix-linux-$pkgver"
+  cd "animecix-linux-$_commit"
   export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$srcdir/target}"
   cargo build --release --locked
 }
 
 package() {
-  cd "animecix-linux-$pkgver"
+  cd "animecix-linux-$_commit"
   install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix" "$pkgdir/usr/bin/animecix"
   install -Dm755 "${CARGO_TARGET_DIR:-$srcdir/target}/release/animecix-calendar" "$pkgdir/usr/bin/animecix-calendar"
   install -Dm755 "$srcdir/yggstack-linux-amd64-0.0.5" "$pkgdir/usr/bin/yggstack"
