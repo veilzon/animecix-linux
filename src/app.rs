@@ -11,10 +11,12 @@ use crate::ui::components;
 use crate::ui::episodes_view;
 use crate::ui::operation_stack::{OperationStack, OperationState};
 use crate::ui::views;
+use crate::watch_party::types::{ContentKind, RoomContent};
 
 mod pages;
 mod playback;
 pub(crate) mod player;
+pub(crate) mod room;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Page {
@@ -178,6 +180,13 @@ pub(crate) fn episode_bar_display(watched: bool, pos: f64, dur: f64) -> (f64, Op
     }
 }
 
+#[derive(Clone)]
+pub struct RoomSidebar {
+    pub btn: gtk::Button,
+    pub lbl: gtk::Label,
+    pub badge: gtk::Label,
+}
+
 pub struct App {
     pub window: adw::ApplicationWindow,
     pub stack: gtk::Stack,
@@ -203,6 +212,11 @@ pub struct App {
     pub current_mpv_pid: Arc<std::sync::atomic::AtomicU64>,
     /// Aktif gömülü oynatıcı (varsa).
     pub player: Rc<RefCell<Option<crate::app::player::EmbeddedPlayer>>>,
+    /// Uygulama seviyesindeki birlikte izleme odası.
+    pub room: Rc<RefCell<room::RoomService>>,
+    pub room_panel: crate::ui::room_panel::RoomPanel,
+    pub room_side: Rc<RefCell<Option<RoomSidebar>>>,
+    pub room_leaving: Rc<Cell<bool>>,
     /// Gömülü oynatıcı kullanılamıyorsa kullanıcıyı bir kez uyar.
     pub embed_warned: Rc<Cell<bool>>,
     /// Kanonik App Rc'sine zayıf referans; callback döngüsünü kırar.
@@ -622,6 +636,7 @@ impl App {
         let root_overlay = gtk::Overlay::new();
         root_overlay.set_child(Some(&body));
         root_overlay.add_overlay(ops.widget());
+        let room_panel = crate::ui::room_panel::RoomPanel::build(&root_overlay);
 
         let window = adw::ApplicationWindow::builder()
             .application(app)
@@ -630,6 +645,7 @@ impl App {
             .default_height(800)
             .content(&root_overlay)
             .build();
+        crate::ui::room_panel::install(&window);
         let initial_page = if welcome_seen {
             Page::Home
         } else {
@@ -679,6 +695,10 @@ impl App {
             play_gen: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             current_mpv_pid: Arc::new(std::sync::atomic::AtomicU64::new(0)),
             player: Rc::new(RefCell::new(None)),
+            room: Rc::new(RefCell::new(room::RoomService::default())),
+            room_panel,
+            room_side: Rc::new(RefCell::new(None)),
+            room_leaving: Rc::new(Cell::new(false)),
             embed_warned: Rc::new(Cell::new(false)),
             self_weak: Rc::new(RefCell::new(None)),
             header_bar: header.clone(),
@@ -779,6 +799,40 @@ impl App {
             for (p, icon, name) in pages {
                 add_row(p, icon, name);
             }
+            // Birlikte İzle: sayfa değil; sağdaki oda panelini açar.
+            let room_btn = gtk::Button::new();
+            room_btn.add_css_class("flat");
+            room_btn.add_css_class("side-row");
+            room_btn.set_tooltip_text(Some("Birlikte İzle"));
+            room_btn.set_halign(gtk::Align::Fill);
+            let room_inner = gtk::Box::new(gtk::Orientation::Horizontal, 10);
+            room_inner.set_margin_top(6);
+            room_inner.set_margin_bottom(6);
+            room_inner.set_margin_start(10);
+            room_inner.set_margin_end(10);
+            let room_img = gtk::Image::from_icon_name("system-users-symbolic");
+            room_img.set_valign(gtk::Align::Center);
+            room_inner.append(&room_img);
+            let room_lbl = gtk::Label::new(Some("Birlikte İzle"));
+            room_lbl.set_xalign(0.0);
+            room_lbl.set_hexpand(true);
+            room_inner.append(&room_lbl);
+            let room_badge = gtk::Label::new(Some("●"));
+            room_badge.add_css_class("room-badge");
+            room_badge.set_visible(false);
+            room_badge.set_can_target(false);
+            room_inner.append(&room_badge);
+            room_btn.set_child(Some(&room_inner));
+            {
+                let inst = app_inst.clone_ref();
+                room_btn.connect_clicked(move |_| inst.toggle_room_panel());
+            }
+            app_inst.sidebar_box.append(&room_btn);
+            *app_inst.room_side.borrow_mut() = Some(RoomSidebar {
+                btn: room_btn,
+                lbl: room_lbl,
+                badge: room_badge,
+            });
             let spacer = gtk::Box::new(gtk::Orientation::Vertical, 0);
             spacer.set_vexpand(true);
             spacer.set_hexpand(false);
@@ -860,6 +914,7 @@ impl App {
         app_inst.chain_signals();
         app_inst.apply_ui_scale();
         crate::theme::apply_theme(&app_inst.window, &app_inst.settings.borrow().theme);
+        app_inst.wire_room_ui();
         {
             // İndirme pompası: kuyruk olaylarını arayüze taşır.
             let pump = app_inst.clone_ref();
@@ -988,6 +1043,10 @@ impl App {
             play_gen: self.play_gen.clone(),
             current_mpv_pid: self.current_mpv_pid.clone(),
             player: self.player.clone(),
+            room: self.room.clone(),
+            room_panel: self.room_panel.clone(),
+            room_side: self.room_side.clone(),
+            room_leaving: self.room_leaving.clone(),
             embed_warned: self.embed_warned.clone(),
             self_weak: self.self_weak.clone(),
             header_bar: self.header_bar.clone(),
@@ -1247,6 +1306,39 @@ impl App {
                     inner.set_margin_top(6);
                     inner.set_margin_bottom(6);
                 }
+            }
+        }
+        if let Some(side) = self.room_side.borrow().as_ref() {
+            side.lbl.set_visible(!collapsed);
+            let inner = side.btn.child().and_downcast::<gtk::Box>();
+            if let Some(img) = inner
+                .as_ref()
+                .and_then(|b| b.first_child())
+                .and_then(|w| w.downcast::<gtk::Image>().ok())
+            {
+                img.set_pixel_size(if collapsed { 18 } else { -1 });
+                img.set_halign(if collapsed {
+                    gtk::Align::Center
+                } else {
+                    gtk::Align::Fill
+                });
+            }
+            if let Some(inner) = inner {
+                if collapsed {
+                    side.btn.add_css_class("side-dock");
+                    inner.set_spacing(0);
+                    inner.set_halign(gtk::Align::Center);
+                    inner.set_margin_start(0);
+                    inner.set_margin_end(0);
+                } else {
+                    side.btn.remove_css_class("side-dock");
+                    inner.set_spacing(10);
+                    inner.set_halign(gtk::Align::Fill);
+                    inner.set_margin_start(10);
+                    inner.set_margin_end(10);
+                }
+                inner.set_margin_top(6);
+                inner.set_margin_bottom(6);
             }
         }
         crate::layout::refresh(self);
@@ -1622,6 +1714,7 @@ impl App {
                 Self::focus_visible_scroll(&visible);
             }
         });
+        self.publish_room_content(page);
         crate::memory::trim_after_navigation(&self.covers);
     }
 
@@ -3908,27 +4001,17 @@ impl App {
     }
 
     pub(crate) fn open_watch_party_dialog(&self) {
-        if self.player.borrow().is_none() {
-            self.ops.info(
-                "Birlikte İzle",
-                "Önce gömülü oynatıcıda bir bölüm aç.",
-                std::time::Duration::from_secs(4),
-            );
-            return;
-        }
         let name_hint = self.settings.borrow().watch_party_name.clone();
         let this = self.clone_ref();
         crate::ui::watch_party::present(&self.window, &name_hint, move |action| {
-            let (name, handle, guest) = match action {
+            let (name, guest) = match action {
                 crate::ui::watch_party::WatchPartyAction::Create { name } => {
-                    let h = Rc::new(crate::watch_party::SessionHandle::start());
-                    h.create(name.clone());
-                    (name, h, false)
+                    this.room.borrow_mut().create(&name);
+                    (name, false)
                 }
                 crate::ui::watch_party::WatchPartyAction::Join { invite, name } => {
-                    let h = Rc::new(crate::watch_party::SessionHandle::start());
-                    h.join(invite, name.clone());
-                    (name, h, true)
+                    this.room.borrow_mut().join(invite, &name);
+                    (name, true)
                 }
             };
             {
@@ -3938,12 +4021,426 @@ impl App {
                 drop(settings);
                 this.client.save_settings(&snapshot);
             }
-            if let Some(player) = this.player.borrow().as_ref() {
-                player.attach_watch_party(handle, this.ops.clone(), guest);
-            } else {
-                handle.leave();
-            }
+            this.room_panel.set_active(true, guest);
+            this.room_panel.open();
+            this.refresh_room_ui();
+            let page = this
+                .page_history
+                .borrow()
+                .last()
+                .cloned()
+                .unwrap_or(Page::Home);
+            this.publish_room_content(&page);
+            this.sync_room_player();
+            this.refresh_room_sidebar();
         });
+    }
+
+    /// Oda panelini açar/kapatır; oda yoksa lobiyi gösterir.
+    pub(crate) fn toggle_room_panel(&self) {
+        let active = self.room.borrow().is_active();
+        if active {
+            let opening = !self.room_panel.is_open();
+            self.room_panel.toggle();
+            if opening {
+                self.room.borrow_mut().unread = false;
+                self.refresh_room_ui();
+            }
+            self.refresh_room_sidebar();
+            self.sync_room_player();
+        } else {
+            self.room_panel.set_active(false, false);
+            self.room_panel.toggle();
+            self.refresh_room_sidebar();
+        }
+    }
+
+    pub(crate) fn leave_room(&self) {
+        self.room_leaving.set(true);
+        self.room.borrow_mut().leave();
+        self.room_panel.set_active(false, false);
+        self.room_panel.open();
+        self.sync_room_player();
+        self.refresh_room_sidebar();
+        self.ops.info(
+            "Birlikte İzle",
+            "Odadan ayrıldın",
+            std::time::Duration::from_secs(3),
+        );
+    }
+
+    fn room_chat(&self, text: &str) {
+        self.room.borrow_mut().chat(text);
+        if self.room_panel.is_open() {
+            self.room.borrow_mut().unread = false;
+            self.refresh_room_sidebar();
+        }
+    }
+
+    fn start_room_ptt(&self) {
+        if self.room.borrow().ptt_active() {
+            return;
+        }
+        if !self.room.borrow().mic_ok() {
+            self.room_panel.set_ptt(false, false);
+            return;
+        }
+        match self.room.borrow_mut().set_ptt(true) {
+            Ok(()) => self.room_panel.set_ptt(true, true),
+            Err(e) => {
+                self.room_panel.set_ptt(false, false);
+                self.ops
+                    .error("Birlikte İzle", &e, std::time::Duration::from_secs(4));
+            }
+        }
+    }
+
+    fn stop_room_ptt(&self) {
+        let _ = self.room.borrow_mut().set_ptt(false);
+        self.room_panel.set_ptt(false, self.room.borrow().mic_ok());
+    }
+
+    fn wire_room_ui(&self) {
+        let Some(weak) = self.self_weak.borrow().clone() else {
+            return;
+        };
+        {
+            let w = weak.clone();
+            self.room_panel.create_btn.connect_clicked(move |_| {
+                if let Some(app) = w.upgrade() {
+                    app.open_watch_party_dialog();
+                }
+            });
+        }
+        {
+            let w = weak.clone();
+            self.room_panel.leave_btn.connect_clicked(move |_| {
+                if let Some(app) = w.upgrade() {
+                    app.leave_room();
+                }
+            });
+        }
+        {
+            let w = weak.clone();
+            self.room_panel.invite_btn.connect_clicked(move |_| {
+                let Some(app) = w.upgrade() else { return };
+                let invite = app.room.borrow().invite.clone();
+                if let Some(invite) = invite {
+                    crate::ui::watch_party::present_invite(&app.window, &invite);
+                }
+            });
+        }
+        {
+            let w = weak.clone();
+            self.room_panel.join_btn.connect_clicked(move |_| {
+                if let Some(app) = w.upgrade() {
+                    app.follow_host_content();
+                }
+            });
+        }
+        {
+            let w = weak.clone();
+            self.room_panel.chat_entry.connect_activate(move |entry| {
+                let Some(app) = w.upgrade() else { return };
+                let text = entry.text().trim().to_string();
+                if !text.is_empty() {
+                    app.room_chat(&text);
+                    entry.set_text("");
+                }
+            });
+        }
+
+        let ctrl = gtk::EventControllerKey::new();
+        ctrl.set_propagation_phase(gtk::PropagationPhase::Capture);
+        {
+            let w = weak.clone();
+            ctrl.connect_key_pressed(move |_, key, _, mods| {
+                let Some(app) = w.upgrade() else {
+                    return glib::Propagation::Proceed;
+                };
+                if key != gtk::gdk::Key::v {
+                    return glib::Propagation::Proceed;
+                }
+                let blocked = gtk::gdk::ModifierType::CONTROL_MASK
+                    | gtk::gdk::ModifierType::ALT_MASK
+                    | gtk::gdk::ModifierType::SUPER_MASK
+                    | gtk::gdk::ModifierType::HYPER_MASK
+                    | gtk::gdk::ModifierType::META_MASK;
+                if mods.intersects(blocked) || !app.room.borrow().is_active() {
+                    return glib::Propagation::Proceed;
+                }
+                let player_page =
+                    matches!(app.page_history.borrow().last(), Some(Page::Player { .. }));
+                if !player_page && !app.room_panel.is_open() {
+                    return glib::Propagation::Proceed;
+                }
+                if let Some(focus) = gtk::prelude::RootExt::focus(&app.window) {
+                    if focus.is::<gtk::Text>() || focus.is::<gtk::Entry>() {
+                        return glib::Propagation::Proceed;
+                    }
+                }
+                app.start_room_ptt();
+                glib::Propagation::Stop
+            });
+        }
+        {
+            let w = weak.clone();
+            ctrl.connect_key_released(move |_, key, _, _| {
+                if let Some(app) = w.upgrade() {
+                    if key == gtk::gdk::Key::v {
+                        app.stop_room_ptt();
+                    }
+                }
+            });
+        }
+        self.window.add_controller(ctrl);
+        self.start_room_pump();
+    }
+
+    fn start_room_pump(&self) {
+        let Some(weak) = self.self_weak.borrow().clone() else {
+            return;
+        };
+        glib::timeout_add_local(std::time::Duration::from_millis(100), move || {
+            if let Some(app) = weak.upgrade() {
+                app.pump_room();
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+
+    fn pump_room(&self) {
+        let events = { self.room.borrow_mut().poll() };
+        let mut refresh_panel = false;
+        for event in events {
+            match event {
+                crate::watch_party::Event::Me(_)
+                | crate::watch_party::Event::Joined { .. }
+                | crate::watch_party::Event::Peers(_) => {
+                    refresh_panel = true;
+                }
+                crate::watch_party::Event::Invite(invite) => {
+                    let show = {
+                        let mut room = self.room.borrow_mut();
+                        if room.invite_shown {
+                            false
+                        } else {
+                            room.invite_shown = true;
+                            true
+                        }
+                    };
+                    if show {
+                        crate::ui::watch_party::present_invite(&self.window, &invite);
+                    }
+                    refresh_panel = true;
+                }
+                crate::watch_party::Event::Chat(msg) => {
+                    self.room_panel.append_chat(&msg);
+                    if self.room_panel.is_open() {
+                        self.room.borrow_mut().unread = false;
+                    }
+                    self.refresh_room_sidebar();
+                }
+                crate::watch_party::Event::Content(content) => {
+                    if self.room.borrow().is_guest()
+                        && content.kind == ContentKind::Watching
+                        && !self.content_is_current(&content)
+                    {
+                        let same_title = matches!(
+                            self.page_history.borrow().last(),
+                            Some(Page::Player { title, .. })
+                                if content.title_id == Some(title.id)
+                        );
+                        if same_title {
+                            self.follow_host_content();
+                        } else {
+                            self.ops.info(
+                                "Birlikte İzle",
+                                &format!("Host {} izliyor · oda panelinden katıl", content.label()),
+                                std::time::Duration::from_secs(5),
+                            );
+                        }
+                    }
+                    refresh_panel = true;
+                }
+                crate::watch_party::Event::Error(e) => {
+                    self.room_leaving.set(false);
+                    self.ops
+                        .error("Birlikte İzle", &e, std::time::Duration::from_secs(6));
+                    refresh_panel = true;
+                }
+                crate::watch_party::Event::Closed => {
+                    let was_leaving = self.room_leaving.replace(false);
+                    if !was_leaving {
+                        self.ops.info(
+                            "Birlikte İzle",
+                            "Oda kapandı",
+                            std::time::Duration::from_secs(3),
+                        );
+                    }
+                    refresh_panel = true;
+                }
+                _ => {}
+            }
+        }
+        if refresh_panel {
+            self.refresh_room_ui();
+        }
+        self.sync_room_player();
+        self.refresh_room_sidebar();
+        if let Some(e) = self.room.borrow_mut().mic_error.take() {
+            self.ops.error(
+                "Birlikte İzle",
+                &format!("Mikrofon/ses açılamadı: {e}"),
+                std::time::Duration::from_secs(6),
+            );
+        }
+    }
+
+    fn refresh_room_ui(&self) {
+        let (active, guest, me, peers, status, content, invite, ptt, mic) = {
+            let r = self.room.borrow();
+            (
+                r.is_active(),
+                r.is_guest(),
+                r.me.clone(),
+                r.peers.clone(),
+                r.status.clone(),
+                r.content.clone(),
+                r.invite.is_some(),
+                r.ptt_active(),
+                r.mic_ok(),
+            )
+        };
+        self.room_panel.set_active(active, guest);
+        self.room_panel.set_people(me.as_ref(), &peers);
+        self.room_panel.set_status(&status);
+        let can_join = active && guest && !self.content_is_current(&content);
+        self.room_panel.set_content(&content, can_join);
+        self.room_panel
+            .set_invite_visible(active && !guest && invite);
+        self.room_panel.set_ptt(ptt, mic);
+        self.refresh_room_sidebar();
+    }
+
+    fn refresh_room_sidebar(&self) {
+        let (active, count, unread) = {
+            let r = self.room.borrow();
+            (r.is_active(), r.count(), r.unread)
+        };
+        if let Some(side) = self.room_side.borrow().as_ref() {
+            side.badge.set_visible(active);
+            side.badge.remove_css_class("unread");
+            if unread {
+                side.badge.add_css_class("unread");
+            }
+            if active {
+                side.btn.add_css_class("room-active");
+            } else {
+                side.btn.remove_css_class("room-active");
+            }
+            side.btn.set_tooltip_text(Some(&if active {
+                format!("Birlikte İzle · {count} kişi")
+            } else {
+                "Birlikte İzle".to_string()
+            }));
+        }
+    }
+
+    fn sync_room_player(&self) {
+        let (active, guest, count, unread) = {
+            let r = self.room.borrow();
+            (r.is_active(), r.is_guest(), r.count(), r.unread)
+        };
+        if let Some(player) = self.player.borrow().as_ref() {
+            player.set_room_guest(active && guest);
+            player.set_room_indicator(active, count, unread);
+        }
+    }
+
+    fn content_is_current(&self, content: &RoomContent) -> bool {
+        match self.page_history.borrow().last() {
+            Some(Page::Player { title, ep }) => {
+                content.kind == ContentKind::Watching
+                    && content.title_id == Some(title.id)
+                    && content.season == Some(ep.season)
+                    && content.episode == Some(ep.episode)
+            }
+            _ => false,
+        }
+    }
+
+    fn publish_room_content(&self, page: &Page) {
+        if !self.room.borrow().is_host() {
+            return;
+        }
+        let content = match page {
+            Page::Welcome => RoomContent::browsing("Karşılama"),
+            Page::Home => RoomContent::browsing("Ana Sayfa"),
+            Page::Kesfet => RoomContent::browsing("Keşfet"),
+            Page::Favs => RoomContent::browsing("Favoriler"),
+            Page::Marathon => RoomContent::browsing("Maraton"),
+            Page::History => RoomContent::browsing("Geçmiş"),
+            Page::Stats => RoomContent::browsing("İstatistikler"),
+            Page::Calendar => RoomContent::browsing("Takvim"),
+            Page::News => RoomContent::browsing("Haberler"),
+            Page::Downloads => RoomContent::browsing("İndirilenler"),
+            Page::Settings => RoomContent::browsing("Ayarlar"),
+            Page::Search => RoomContent::browsing("Arama"),
+            Page::Account => RoomContent::browsing("Hesap"),
+            Page::Shortcuts => RoomContent::browsing("Kısayollar"),
+            Page::Episodes { title, .. } => RoomContent::choosing_episode(
+                title.id,
+                title.name.clone(),
+                title.title_type.clone().unwrap_or_default(),
+            ),
+            Page::Movie { title, .. } => RoomContent::choosing_title(
+                title.id,
+                title.name.clone(),
+                title.title_type.clone().unwrap_or_default(),
+            ),
+            Page::Player { title, ep } => RoomContent::watching(
+                title.id,
+                title.name.clone(),
+                title.title_type.clone().unwrap_or_default(),
+                ep.season,
+                ep.episode,
+                ep.name.clone(),
+            ),
+        };
+        self.room.borrow_mut().publish_content(content.clone());
+        self.room_panel.set_content(&content, false);
+        self.refresh_room_sidebar();
+    }
+
+    pub(crate) fn follow_host_content(&self) {
+        let content = self.room.borrow().content.clone();
+        if content.kind != ContentKind::Watching {
+            return;
+        }
+        let (Some(title_id), Some(season), Some(episode)) =
+            (content.title_id, content.season, content.episode)
+        else {
+            return;
+        };
+        let title = Title {
+            id: title_id,
+            name: content.title_name.clone(),
+            title_type: if content.title_type.is_empty() {
+                None
+            } else {
+                Some(content.title_type.clone())
+            },
+            ..Default::default()
+        };
+        let ep = Episode {
+            season,
+            episode,
+            name: content.episode_name.clone(),
+        };
+        self.play(&title, &ep);
+        self.sync_room_player();
+        self.refresh_room_ui();
     }
 
     pub fn open_episodes(&self, title: Title) {

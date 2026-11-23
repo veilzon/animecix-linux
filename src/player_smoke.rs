@@ -82,6 +82,9 @@ pub fn run(path: &str) {
             on_neighbor: Rc::new(|_| {}),
             on_download: Rc::new(|_| {}),
             on_watch_party: Rc::new(|| {}),
+            room: Rc::new(std::cell::RefCell::new(
+                crate::app::room::RoomService::default(),
+            )),
             on_ready: Rc::new(|| eprintln!("PLAYER_SMOKE_READY")),
             on_terminal: Rc::new(|state, msg| eprintln!("PLAYER_SMOKE_TERMINAL: {state:?} {msg}")),
         };

@@ -3,7 +3,6 @@ pub mod menu;
 pub mod notices;
 pub mod source;
 pub mod ui;
-pub mod watch_party;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -22,6 +21,7 @@ use crate::embed_mpv::player::{options_from_cli, MpvApi, MpvEmbed};
 use crate::embed_mpv::render::RenderContext;
 use crate::skip::SkipPlan;
 use crate::ui::operation_stack::OperationStack;
+use crate::watch_party::types::{PlaybackSnapshot, SyncAction};
 
 use self::episodes::EpisodeDrawer;
 use self::notices::SkipKind;
@@ -39,6 +39,7 @@ pub struct PlayerHost {
     pub on_neighbor: Rc<dyn Fn(i8)>,
     pub on_download: Rc<dyn Fn(Episode)>,
     pub on_watch_party: Rc<dyn Fn()>,
+    pub room: Rc<RefCell<crate::app::room::RoomService>>,
     pub on_ready: Rc<dyn Fn()>,
     pub on_terminal: Rc<dyn Fn(crate::app::PlayTerminal, String)>,
 }
@@ -119,10 +120,10 @@ struct PlayerState {
     fansub_id: i64,
     window: adw::ApplicationWindow,
     gl_area: gtk::GLArea,
-    stage: gtk::Overlay,
-    watch_party: Option<watch_party::WatchPartyPlayer>,
     watch_btn: gtk::Button,
     watch_dot: gtk::Label,
+    room: Rc<RefCell<crate::app::room::RoomService>>,
+    room_speed_reset_at: Option<Instant>,
     guest_lock: Rc<Cell<bool>>,
     lock_widgets: Vec<gtk::Widget>,
     topbar: gtk::Revealer,
@@ -184,33 +185,30 @@ impl EmbeddedPlayer {
         self.state.borrow().gl_area.grab_focus();
     }
 
-    /// Aktif gömülü oynatıcıya birlikte izleme oturumu bağlar.
-    pub fn attach_watch_party(
-        &self,
-        handle: Rc<crate::watch_party::SessionHandle>,
-        ops: OperationStack,
-        guest: bool,
-    ) {
-        let state = self.state.clone();
-        let (stage, window) = {
-            let s = state.borrow();
-            (s.stage.clone(), s.window.clone())
-        };
-        let wp = watch_party::WatchPartyPlayer::attach(
-            state.clone(),
-            handle,
-            &stage,
-            &window,
-            ops,
-            guest,
-        );
-        let old = { state.borrow_mut().watch_party.replace(wp) };
-        if let Some(mut old) = old {
-            old.shutdown();
-        }
-        {
-            let s = state.borrow();
-            set_player_guest_lock(&s, guest);
+    /// Oda misafiri ise oynatma kontrollerini kilitler.
+    pub fn set_room_guest(&self, guest: bool) {
+        let s = self.state.borrow();
+        set_player_guest_lock(&s, guest);
+    }
+
+    /// Oda durumunu oyuncu üst barındaki kişiler ikonuna yansıtır.
+    pub fn set_room_indicator(&self, active: bool, count: usize, unread: bool) {
+        let s = self.state.borrow();
+        if active {
+            s.watch_dot.set_visible(true);
+            if unread {
+                s.watch_dot.add_css_class("unread");
+            } else {
+                s.watch_dot.remove_css_class("unread");
+            }
+            s.watch_btn.add_css_class("watch-party-active");
+            s.watch_btn
+                .set_tooltip_text(Some(&format!("Birlikte İzle · {count} kişi")));
+        } else {
+            s.watch_dot.set_visible(false);
+            s.watch_dot.remove_css_class("unread");
+            s.watch_btn.remove_css_class("watch-party-active");
+            s.watch_btn.set_tooltip_text(Some("Birlikte İzle"));
         }
     }
 
@@ -254,11 +252,7 @@ impl EmbeddedPlayer {
         s.center.set_reveal_child(true);
         s.shade.set_reveal_child(true);
         s.host.discord.clear();
-        let watch_party = s.watch_party.take();
         drop(s);
-        if let Some(mut wp) = watch_party {
-            wp.shutdown();
-        }
         eprintln!("[EMBED] oynatıcı kapatıldı");
     }
 }
@@ -420,6 +414,7 @@ pub fn build(
         None
     };
 
+    let room = host.room.clone();
     let alive = Arc::new(AtomicBool::new(true));
     let click_pending = Rc::new(Cell::new(false));
     let seeking = Rc::new(Cell::new(false));
@@ -487,10 +482,10 @@ pub fn build(
         fansub_id: req.fansub_id,
         window: parent.clone(),
         gl_area: gl_area.clone(),
-        stage: stage.clone(),
-        watch_party: None,
         watch_btn: topbar.watch.clone(),
         watch_dot: topbar.dot.clone(),
+        room: room.clone(),
+        room_speed_reset_at: None,
         guest_lock,
         lock_widgets,
         topbar: topbar.revealer.clone(),
@@ -659,20 +654,8 @@ pub fn build(
         let weak = Rc::downgrade(&state);
         topbar.watch.connect_clicked(move |_| {
             let Some(st) = weak.upgrade() else { return };
-            let (active, cb) = {
-                let s = st.borrow();
-                let active = s.watch_party.as_ref().is_some_and(|wp| wp.is_active());
-                (active, s.host.on_watch_party.clone())
-            };
-            if active {
-                if let Ok(s) = st.try_borrow() {
-                    if let Some(wp) = s.watch_party.as_ref() {
-                        wp.toggle_panel();
-                    }
-                }
-            } else {
-                cb();
-            }
+            let cb = st.borrow().host.on_watch_party.clone();
+            cb();
         });
     }
     {
@@ -1986,6 +1969,25 @@ fn seek_feedback_pending(s: &mut PlayerState, pos: f64) -> bool {
     }
 }
 
+fn apply_room_sync(st: &Rc<RefCell<PlayerState>>, action: SyncAction) {
+    let Ok(mut s) = st.try_borrow_mut() else {
+        return;
+    };
+    let Some(player) = s.player.as_ref() else {
+        return;
+    };
+    match action {
+        SyncAction::Pause => player.set_pause(true),
+        SyncAction::Play => player.set_pause(false),
+        SyncAction::Seek(pos) => player.seek_abs(pos.max(0.0)),
+        SyncAction::SetSpeed(rate) => {
+            player.set_speed(rate);
+            s.room_speed_reset_at = Some(Instant::now() + Duration::from_secs(2));
+        }
+        SyncAction::None => {}
+    }
+}
+
 fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
     // Skip planı video başladıktan sonra arka planda geldi mi?
     {
@@ -2146,6 +2148,28 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         first_load = dur > 0.0 && !s.media_loaded;
         paused_for_cache = p.paused_for_cache();
         cache_time = p.cache_time();
+    }
+
+    // Oda varsa snapshot gönder ve misafir senkron eylemini uygula.
+    let (room, episode) = match st.try_borrow() {
+        Ok(s) => (
+            s.room.clone(),
+            format!("{}:{}:{}", s.title.id, s.ep.season, s.ep.episode),
+        ),
+        Err(_) => return,
+    };
+    if room.borrow().is_active() {
+        room.borrow_mut().snapshot(PlaybackSnapshot {
+            position: pos,
+            duration: dur,
+            paused,
+            buffering: paused_for_cache,
+            speed: 1.0,
+            episode,
+        });
+        if let Some(action) = room.borrow_mut().take_sync() {
+            apply_room_sync(st, action);
+        }
     }
 
     let mut advance_now = false;
@@ -2451,6 +2475,17 @@ fn tick(st: &Rc<RefCell<PlayerState>>, _start_volume: f64) {
         (ready_now, finished_now, auto_next_now)
     };
 
+    if let Ok(mut s) = st.try_borrow_mut() {
+        if let Some(at) = s.room_speed_reset_at {
+            if Instant::now() >= at {
+                if let Some(p) = s.player.as_ref() {
+                    p.set_speed(1.0);
+                }
+                s.room_speed_reset_at = None;
+            }
+        }
+    }
+
     if advance_now {
         advance_source(st);
         return;
@@ -2539,6 +2574,9 @@ fn show_chrome_locked(s: &mut PlayerState) {
 
 /// Misafir oturumunda host dışındaki oynatma kontrollerini kilitler.
 fn set_player_guest_lock(s: &PlayerState, guest: bool) {
+    if s.guest_lock.get() == guest {
+        return;
+    }
     s.guest_lock.set(guest);
     for w in &s.lock_widgets {
         w.set_sensitive(!guest);

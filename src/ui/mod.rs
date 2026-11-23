@@ -7,6 +7,7 @@ pub mod fansub_dialog;
 pub mod flashcard;
 pub mod operation_stack;
 pub mod play_quality_dialog;
+pub mod room_panel;
 pub mod row_menu;
 pub mod shortcuts;
 pub mod stats_view;

@@ -759,7 +759,7 @@ impl App {
         let app_watch = app_weak.clone();
         let on_watch_party: Rc<dyn Fn()> = Rc::new(move || {
             if let Some(app) = app_watch.upgrade() {
-                app.open_watch_party_dialog();
+                app.toggle_room_panel();
             }
         });
 
@@ -774,6 +774,7 @@ impl App {
             on_neighbor,
             on_download,
             on_watch_party,
+            room: self.room.clone(),
             on_ready,
             on_terminal,
         };
@@ -818,6 +819,7 @@ impl App {
             return false;
         };
         *self.player.borrow_mut() = Some(player);
+        self.sync_room_player();
         let page = crate::app::Page::Player {
             title: title.clone(),
             ep: ep.clone(),

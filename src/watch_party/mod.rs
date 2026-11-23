@@ -16,4 +16,4 @@ pub mod types;
 
 pub use invite::Invite;
 pub use session::{Event, SessionHandle};
-pub use types::{PlaybackSnapshot, SyncAction};
+pub use types::PlaybackSnapshot;

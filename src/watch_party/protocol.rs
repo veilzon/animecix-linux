@@ -2,7 +2,7 @@ use std::io::{self, Read, Write};
 
 use serde::{Deserialize, Serialize};
 
-use super::types::{PeerId, PeerInfo, PlaybackState};
+use super::types::{PeerId, PeerInfo, PlaybackState, RoomContent};
 
 pub const MAX_FRAME: usize = 64 * 1024;
 const KIND_JSON: u8 = b'J';
@@ -37,6 +37,8 @@ pub enum WireMsg {
         id: PeerId,
     },
     Playback(PlaybackState),
+    /// Host'un o anki sayfa/başlık/bölüm durumu (oynatma değil).
+    Content(RoomContent),
     Ready {
         id: PeerId,
         ready: bool,

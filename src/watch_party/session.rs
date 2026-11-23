@@ -11,7 +11,7 @@ use super::sync::{GuestSync, HostSync};
 use super::transport::ygg::{connect_with_retry, YggHelper};
 use super::transport::{advertised_addr, bind_listener, connect, PeerLink};
 use super::types::{
-    PeerId, PeerInfo, PlaybackSnapshot, PlaybackState, Role, SyncAction, MAX_PEERS,
+    PeerId, PeerInfo, PlaybackSnapshot, PlaybackState, Role, RoomContent, SyncAction, MAX_PEERS,
 };
 
 pub enum Command {
@@ -26,6 +26,7 @@ pub enum Command {
     Chat(String),
     Ptt(bool),
     Voice(Vec<i16>),
+    Content(RoomContent),
     Leave,
     /// Testlerde doğrudan mesh bağlantı sayısını okumak için.
     #[cfg(test)]
@@ -37,12 +38,14 @@ pub enum Event {
     /// Bu istemcinin odadaki kimliği (avatar ve kendi mesajları için).
     Me(PeerInfo),
     Joined {
+        #[allow(dead_code)]
         room: String,
         host: PeerInfo,
         peers: Vec<PeerInfo>,
     },
     Peers(Vec<PeerInfo>),
     Playback(PlaybackState),
+    Content(RoomContent),
     Sync(SyncAction),
     Chat(ChatMessage),
     Voice(VoiceFrame),
@@ -83,6 +86,11 @@ impl SessionHandle {
 
     pub fn chat(&self, text: impl Into<String>) {
         let _ = self.tx.send(Command::Chat(text.into()));
+    }
+
+    /// Host'un sayfa/başlık/bölüm durumunu yayınlar.
+    pub fn content(&self, content: RoomContent) {
+        let _ = self.tx.send(Command::Content(content));
     }
 
     pub fn ptt(&self, held: bool) {
@@ -386,6 +394,12 @@ impl Session {
                             }
                         }
                         State::Idle => {}
+                    },
+                    Command::Content(content) => match &mut state {
+                        State::Host(host) => {
+                            host.mesh.send_all(&Frame::Json(WireMsg::Content(content)));
+                        }
+                        State::Guest(_) | State::Idle => {}
                     },
                     Command::Leave => leave = true,
                     #[cfg(test)]
@@ -815,6 +829,9 @@ impl Session {
         frame: Frame,
     ) {
         match frame {
+            Frame::Json(WireMsg::Content(content)) => {
+                let _ = events.send(Event::Content(content));
+            }
             Frame::Json(WireMsg::Playback(state)) => {
                 if !guest
                     .mesh
