@@ -27,6 +27,9 @@ env:
 
 jobs:
   derle:
+    # Yalnızca kararlı sürümler için resmî deb/rpm üret. Test/pre-release
+    # yayınları bu iş akışını tetiklemesin.
+    if: github.event_name != 'release' || !github.event.release.prerelease
     runs-on: ubuntu-24.04
     container:
       image: debian:12
